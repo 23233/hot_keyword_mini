@@ -1,8 +1,9 @@
+// Package middleware i18n.go
 package middleware
 
 import (
 	"github.com/kataras/iris/v12"
-	"gorm_template/config"
+	"hot_keyword/config"
 )
 
 // SupportedLangs 是应用支持的语言列表, 将在 main.go 中动态填充

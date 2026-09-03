@@ -1,8 +1,9 @@
+// Package system migrate.go
 package system
 
 import (
-	"gorm_template/db"
-	"gorm_template/models"
+	"hot_keyword/db"
+	"hot_keyword/models"
 	"log"
 )
 

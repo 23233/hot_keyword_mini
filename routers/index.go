@@ -1,7 +1,8 @@
+// Package routers index.go
 package routers
 
 import (
-	"gorm_template/routers/middleware"
+	"hot_keyword/routers/middleware"
 
 	"github.com/iris-contrib/middleware/csrf"
 	"github.com/kataras/iris/v12"

@@ -1,4 +1,4 @@
-module gorm_template
+module hot_keyword
 
 go 1.25.3
 

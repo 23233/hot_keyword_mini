@@ -1,8 +1,9 @@
+// Package db mysql.go
 package db
 
 import (
 	"fmt"
-	"gorm_template/config"
+	"hot_keyword/config"
 	"log"
 
 	"github.com/23233/ggg/logger"

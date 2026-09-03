@@ -1,9 +1,10 @@
+// Package jwtToken jwt.go
 package jwtToken
 
 import (
 	"errors"
-	"gorm_template/db"
-	"gorm_template/models"
+	"hot_keyword/db"
+	"hot_keyword/models"
 
 	"github.com/iris-contrib/middleware/jwt"
 	"github.com/kataras/iris/v12"

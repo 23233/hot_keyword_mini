@@ -1,8 +1,9 @@
+// Package db redis.go
 package db
 
 import (
 	"context"
-	"gorm_template/config"
+	"hot_keyword/config"
 
 	"github.com/23233/ggg/logger"
 	"github.com/redis/go-redis/v9"

@@ -1,3 +1,4 @@
+// Package main main.go
 package main
 
 import (
@@ -7,14 +8,14 @@ import (
 	irisLogger "github.com/kataras/iris/v12/middleware/logger"
 	irisRecover "github.com/kataras/iris/v12/middleware/recover"
 	"github.com/kataras/realip"
-	"gorm_template/routers"
-	"gorm_template/routers/middleware"
+	"hot_keyword/routers"
+	"hot_keyword/routers/middleware"
 	"io/fs"
 	"strings"
 
-	"gorm_template/config"
-	"gorm_template/db"
-	"gorm_template/system"
+	"hot_keyword/config"
+	"hot_keyword/db"
+	"hot_keyword/system"
 	"os"
 )
 
