@@ -44,6 +44,9 @@ func registerAPIRoutes(party iris.Party) {
 	// 注册受控业务动作执行接口 (如游戏礼包兑换码防超发领取)
 	api.Post("/action/execute", ExecuteActionHandler)
 
+	// 注册 AI Model Context Protocol (MCP) 编排端点
+	api.Post("/mcp", HandleMCPRequest)
+
 	// Protected routes
 	userParty := api.Party("/user")
 	userParty.Use(jwtToken.SidAndJwtMiddleware, jwtToken.TokenToUserUidMiddleware)

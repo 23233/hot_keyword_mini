@@ -53,11 +53,24 @@
   - 公开端点：`GET /api/v1/share/card?app_id=...&page_id=...&type=app_message` 以 `image/png` 直接输出；
   - 管理后台一键“⚡ 自动生成微信 5:4 分享卡片”，自动回写并持久化至页面分享配置，转发时微信客户端自动展现高清卡片。
 
+### 5. AI Model Context Protocol (MCP) 编排服务与 7 大受控工具
+遵循 Model Context Protocol (JSON-RPC 2.0) 规范，支持外部 AI Agent 自主完成受控编排闭环：
+- **`sdui.template.list`**：查询短剧/游戏/查询/下载四大行业可用模板；
+- **`sdui.page.create`**：从模板派生创建草稿页面 (`status: draft`)；
+- **`sdui.page.patch`**：受控局部 JSON Patch 补丁原子打补丁；
+- **`sdui.page.validate`**：语法、ID冲突与动作参数机器可读强校验报告；
+- **`sdui.page.preview`**：模拟装配并输出响应信封；
+- **`sdui.page.screenshot`**：规范化图层合成，输出卡片 URL 与 SHA-256 图像哈希；
+- **`sdui.page.publish`**：通过强校验后显式确认发布，沉淀不可篡改版本快照；
+- **双通道接入**：支持 HTTP 端点 `POST /api/v1/mcp` 与独立 Stdio 命令行服务 `go run ./cmd/mcp-server`。
+
 ---
 
 ## 📁 系统工程目录结构
 
 ```
+├── cmd/
+│   └── mcp-server/             # 独立 Stdio 传输协议 AI MCP 命令行服务 (main.go)
 ├── models/                     # GORM 数据模型层
 │   ├── miniapp.go              # 多租户小程序模型 (MiniApp)
 │   ├── sdui.go                 # SDUI 动态页面 (DynamicPage)、原子积木 (BlockItem)、动作 (BlockAction)、分享 (PageShareConfig)
