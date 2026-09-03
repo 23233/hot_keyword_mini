@@ -148,6 +148,7 @@ export default function DynamicPageIndex() {
                 key={block.id}
                 block={block}
                 onAction={handleBlockAction}
+                context={{ entity: envelope?.data, query: router.params }}
               />
             ))}
           </View>
