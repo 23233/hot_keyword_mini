@@ -1,0 +1,41 @@
+.apple-navbar-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+  .apple-navbar-content {
+    display: flex;
+    align-items: center;
+    padding-left: 32rpx;
+    box-sizing: border-box;
+
+    .nav-title-group {
+      display: flex;
+      flex-direction: column;
+
+      .nav-title {
+        font-size: 32rpx;
+        font-weight: 700;
+        color: #ffffff;
+        letter-spacing: -0.5rpx;
+      }
+
+      .nav-subtitle {
+        font-size: 20rpx;
+        color: rgba(235, 235, 245, 0.6);
+        margin-top: 2rpx;
+      }
+    }
+  }
+}
+
+.apple-navbar-placeholder {
+  width: 100%;
+  flex-shrink: 0;
+}

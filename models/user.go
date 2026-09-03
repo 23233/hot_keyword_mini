@@ -1,3 +1,4 @@
+// Package models user.go
 package models
 
 import (
@@ -9,8 +10,9 @@ type User struct {
 	ID                  int64      `gorm:"column:id;primaryKey;autoIncrement;comment:ID" json:"id,omitempty"`
 	CreatedAt           time.Time  `gorm:"column:created_at;comment:创建时间" json:"created_at"`
 	UpdatedAt           time.Time  `gorm:"column:updated_at;comment:更新时间" json:"updated_at"`
+	AppID               string     `gorm:"column:app_id;size:64;default:'wx516563cfe994bbc6';uniqueIndex:idx_app_openid;comment:所属小程序AppID" json:"app_id,omitempty"`
 	PhoneNumber         string     `gorm:"column:phone_number;index;comment:手机号" json:"phone_number,omitempty"`
-	WechatOpenID        string     `gorm:"column:wechat_openid;index;comment:微信OpenID" json:"wechat_open_id,omitempty"`
+	WechatOpenID        string     `gorm:"column:wechat_openid;size:128;uniqueIndex:idx_app_openid;comment:微信OpenID" json:"wechat_open_id,omitempty"`
 	WechatUnionID       string     `gorm:"column:wechat_unionid;index;comment:微信UnionID" json:"wechat_union_id,omitempty"`
 	AvatarUrl           string     `gorm:"column:avatar_url;comment:用户头像" json:"avatar_url,omitempty"`   // 系统头像为名称
 	AvatarType          int        `gorm:"column:avatar_type;comment:头像类型" json:"avatar_type,omitempty"` // 0 系统头像 1 微信头像 2 自己上传的头像
@@ -37,6 +39,7 @@ func (u *User) TableName() string {
 func (u *User) SimpleUser() *User {
 	return &User{
 		ID:           u.ID,
+		AppID:        u.AppID,
 		NickName:     u.NickName,
 		AvatarUrl:    u.AvatarUrl,
 		AvatarType:   u.AvatarType,

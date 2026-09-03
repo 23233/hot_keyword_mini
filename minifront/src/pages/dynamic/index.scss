@@ -1,0 +1,105 @@
+.dynamic-page-container {
+  min-height: 100vh;
+  background-color: #0b0b0e;
+  box-sizing: border-box;
+  padding-bottom: 80rpx;
+  position: relative;
+
+  // 主题微调
+  &.theme-dark_glass {
+    background: radial-gradient(circle at 50% 0%, #1e1e24 0%, #0b0b0e 75%);
+  }
+
+  &.theme-cyber_neon {
+    background: radial-gradient(circle at 50% 0%, #161c2e 0%, #090b10 80%);
+  }
+
+  .page-scroll-body {
+    padding: 24rpx 32rpx;
+    box-sizing: border-box;
+  }
+
+  // 骨架屏 / 加载中
+  .sdui-loading-skeleton {
+    padding: 40rpx 32rpx;
+
+    .skeleton-hero {
+      width: 100%;
+      height: 440rpx;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 28rpx;
+      margin-bottom: 24rpx;
+      animation: pulse 1.5s infinite ease-in-out;
+    }
+
+    .skeleton-card {
+      width: 100%;
+      height: 200rpx;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 24rpx;
+      margin-bottom: 24rpx;
+      animation: pulse 1.5s infinite ease-in-out;
+    }
+
+    .skeleton-btn {
+      width: 100%;
+      height: 96rpx;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999rpx;
+      animation: pulse 1.5s infinite ease-in-out;
+    }
+  }
+
+  // 异常与空态
+  .sdui-error-panel,
+  .sdui-empty-panel {
+    padding: 120rpx 40rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+
+    .error-emoji,
+    .empty-emoji {
+      font-size: 80rpx;
+      margin-bottom: 24rpx;
+    }
+
+    .error-title,
+    .empty-title {
+      font-size: 32rpx;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 12rpx;
+    }
+
+    .error-desc,
+    .empty-desc {
+      font-size: 24rpx;
+      color: rgba(255, 255, 255, 0.5);
+      line-height: 1.5;
+      margin-bottom: 40rpx;
+    }
+
+    .retry-btn {
+      padding: 18rpx 48rpx;
+      background: #ff9f0a;
+      border-radius: 999rpx;
+      color: #fff;
+      font-size: 26rpx;
+      font-weight: 600;
+    }
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}

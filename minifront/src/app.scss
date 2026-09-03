@@ -1,0 +1,79 @@
+// 全局样式与苹果 HIG 设计规范变量定义
+:root {
+  --apple-bg: #000000;
+  --apple-card-bg: rgba(28, 28, 30, 0.72);
+  --apple-card-solid: #1c1c1e;
+  --apple-card-hover: #2c2c2e;
+  --apple-border: rgba(255, 255, 255, 0.1);
+  --apple-text-primary: #ffffff;
+  --apple-text-secondary: rgba(235, 235, 245, 0.6);
+  --apple-text-tertiary: rgba(235, 235, 245, 0.38);
+  --apple-accent: #ff9f0a;
+  --apple-accent-light: #ffb340;
+  --apple-accent-gradient: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+  --apple-gold-gradient: linear-gradient(135deg, #ffd60a 0%, #ff9f0a 100%);
+  --apple-radius-sm: 16rpx;
+  --apple-radius-md: 24rpx;
+  --apple-radius-lg: 36rpx;
+  --apple-radius-pill: 999rpx;
+}
+
+page {
+  background-color: #000000;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+// 通用卡片容器
+.apple-card {
+  background: rgba(28, 28, 30, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s ease;
+}
+
+// 触摸态微缩放反馈
+.apple-press-feedback {
+  &:active {
+    opacity: 0.82;
+    transform: scale(0.975);
+  }
+}
+
+// 苹果风胶囊高光按钮
+.apple-pill-btn {
+  background: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 24rpx rgba(255, 159, 10, 0.35);
+  transition: all 0.2s ease;
+
+  &:active {
+    opacity: 0.88;
+    transform: scale(0.96);
+  }
+}
+
+// 标签胶囊
+.apple-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}

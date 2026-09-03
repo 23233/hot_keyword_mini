@@ -1,0 +1,388 @@
+.motion-lab-container {
+  padding: 20rpx 32rpx calc(80rpx + env(safe-area-inset-bottom)) 32rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  animation: fadeIn 0.4s ease-out;
+
+  // 1. 顶部灵动状态胶囊栏 (单行舒展，绝不换行)
+  .status-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12rpx 24rpx;
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999rpx;
+
+    .left-badge {
+      display: flex;
+      align-items: center;
+      gap: 12rpx;
+      white-space: nowrap;
+
+      .pulse-dot {
+        width: 14rpx;
+        height: 14rpx;
+        background: #30d158;
+        border-radius: 50%;
+        box-shadow: 0 0 12rpx #30d158;
+        animation: pulseGreen 2s infinite ease-in-out;
+      }
+
+      .badge-text {
+        font-size: 24rpx;
+        font-weight: 700;
+        color: #ffffff;
+        letter-spacing: 0.5px;
+      }
+    }
+
+    .right-meta {
+      display: flex;
+      align-items: center;
+      gap: 12rpx;
+      white-space: nowrap;
+
+      .fps-pill {
+        display: flex;
+        align-items: baseline;
+        gap: 4rpx;
+        padding: 4rpx 14rpx;
+        background: rgba(48, 209, 88, 0.15);
+        border: 1px solid rgba(48, 209, 88, 0.3);
+        border-radius: 999rpx;
+
+        .fps-num {
+          font-size: 22rpx;
+          font-weight: 800;
+          color: #30d158;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .fps-label {
+          font-size: 16rpx;
+          color: rgba(48, 209, 88, 0.85);
+          font-weight: 700;
+        }
+      }
+
+      .reconnect-btn {
+        display: flex;
+        align-items: center;
+        gap: 6rpx;
+        padding: 6rpx 20rpx;
+        background: rgba(255, 159, 10, 0.18);
+        border: 1px solid rgba(255, 159, 10, 0.35);
+        border-radius: 999rpx;
+
+        .icon {
+          font-size: 20rpx;
+        }
+
+        .btn-txt {
+          font-size: 22rpx;
+          font-weight: 700;
+          color: #ff9f0a;
+          white-space: nowrap;
+        }
+      }
+    }
+  }
+
+  // 2. 核心画布视窗
+  .canvas-viewport {
+    height: 480rpx;
+    border-radius: 36rpx;
+    overflow: hidden;
+    position: relative;
+    background: #08080c;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.6);
+
+    .ambient-glow-layer {
+      position: absolute;
+      inset: -50%;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 159, 10, 0.15) 0%, rgba(255, 55, 95, 0.08) 40%, rgba(94, 92, 230, 0.06) 70%, transparent 100%);
+      filter: blur(40px);
+      animation: ambientRotate 12s infinite linear;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .motion-canvas {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      z-index: 2;
+    }
+
+    .viewport-glass-tip {
+      position: absolute;
+      bottom: 20rpx;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10rpx 28rpx;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 999rpx;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      pointer-events: none;
+      z-index: 5;
+      white-space: nowrap;
+
+      .tip-text {
+        font-size: 20rpx;
+        color: rgba(255, 255, 255, 0.75);
+        font-weight: 500;
+      }
+    }
+  }
+
+  // 3. 预设选择器 (工整 2x2 网格，拒绝滚动条切断)
+  .presets-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 0 8rpx;
+
+      .sec-title {
+        font-size: 26rpx;
+        font-weight: 700;
+        color: #ffffff;
+      }
+
+      .sec-sub {
+        font-size: 20rpx;
+        color: rgba(235, 235, 245, 0.5);
+      }
+    }
+
+    // 顶部分类分段胶囊栏
+    .category-segmented-bar {
+      display: flex;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 6rpx;
+      border-radius: 999rpx;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 6rpx;
+      margin-bottom: 4rpx;
+
+      .cat-tab {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12rpx 0;
+        border-radius: 999rpx;
+        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+        .cat-text {
+          font-size: 22rpx;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.65);
+          white-space: nowrap;
+        }
+
+        &.active {
+          background: rgba(255, 255, 255, 0.15);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.4);
+
+          .cat-text {
+            color: #ffffff;
+            font-weight: 700;
+          }
+        }
+      }
+    }
+
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16rpx;
+
+      .preset-grid-card {
+        padding: 22rpx 20rpx;
+        display: flex;
+        align-items: center;
+        gap: 16rpx;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24rpx;
+        transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+        .card-icon {
+          font-size: 44rpx;
+          flex-shrink: 0;
+        }
+
+        .card-text-group {
+          display: flex;
+          flex-direction: column;
+          gap: 4rpx;
+          overflow: hidden;
+
+          .card-name {
+            font-size: 26rpx;
+            font-weight: 700;
+            color: #ffffff;
+            white-space: nowrap;
+          }
+
+          .card-desc {
+            font-size: 18rpx;
+            color: rgba(235, 235, 245, 0.5);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        }
+
+        &.active {
+          background: rgba(255, 159, 10, 0.15);
+          border-color: #ff9f0a;
+          box-shadow: 0 0 20rpx rgba(255, 159, 10, 0.25);
+
+          .card-name {
+            color: #ff9f0a;
+          }
+        }
+      }
+    }
+  }
+
+  // 4. 物理参数调节控制台 (通栏分段器，彻底杜绝换行)
+  .controls-card {
+    padding: 28rpx;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 28rpx;
+    display: flex;
+    flex-direction: column;
+    gap: 28rpx;
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16rpx;
+
+      .group-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+
+        .group-title {
+          font-size: 24rpx;
+          font-weight: 700;
+          color: #ffffff;
+        }
+
+        .group-status {
+          font-size: 20rpx;
+          color: #ff9f0a;
+          font-weight: 600;
+        }
+      }
+
+      // iOS 原生通栏分段滑动轨道
+      .segmented-track {
+        display: flex;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 6rpx;
+        border-radius: 999rpx;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 6rpx;
+
+        .seg-item {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 14rpx 0;
+          border-radius: 999rpx;
+          transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+          .seg-text {
+            font-size: 22rpx;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.65);
+            white-space: nowrap; // 强制单行绝对不折叠
+            letter-spacing: 0.3px;
+          }
+
+          &.selected {
+            background: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+            box-shadow: 0 4rpx 14rpx rgba(255, 69, 58, 0.35);
+
+            .seg-text {
+              color: #ffffff;
+              font-weight: 700;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 5. 底部合规声明
+  .compliance-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6rpx;
+    padding: 16rpx 0;
+
+    .footer-txt {
+      font-size: 20rpx;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.35);
+      text-align: center;
+    }
+
+    .footer-sub {
+      font-size: 18rpx;
+      color: rgba(255, 255, 255, 0.2);
+      text-align: center;
+    }
+  }
+}
+
+@keyframes pulseGreen {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.6;
+  }
+}
+
+@keyframes ambientRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

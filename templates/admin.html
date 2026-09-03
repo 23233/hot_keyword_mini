@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>短剧与热词小程序一脑多控工作台 · 苹果所见即所得模拟器</title>
+  <style>
+    :root {
+      --bg-dark: #0a0a0c;
+      --panel-bg: rgba(26, 26, 30, 0.85);
+      --card-bg: rgba(38, 38, 42, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent: #ff9f0a;
+      --accent-gradient: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+      --text-main: #ffffff;
+      --text-sub: rgba(235, 235, 245, 0.6);
+      --apple-radius: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* 顶部导航工作台 */
+    .admin-header {
+      height: 68px;
+      padding: 0 32px;
+      background: rgba(18, 18, 20, 0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      background: var(--accent-gradient);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 4px 14px rgba(255, 159, 10, 0.35);
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+
+    .brand-tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: rgba(255, 159, 10, 0.15);
+      border: 1px solid rgba(255, 159, 10, 0.3);
+      color: var(--accent);
+      border-radius: 999px;
+      font-weight: 600;
+    }
+
+    /* 多小程序切换器 */
+    .tenant-selector-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 6px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .tenant-select {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .tenant-select option {
+      background: #1a1a1e;
+      color: #fff;
+    }
+
+    .btn-add-app {
+      background: rgba(255, 255, 255, 0.12);
+      border: none;
+      color: #fff;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-add-app:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .btn-save {
+      padding: 10px 24px;
+      background: var(--accent-gradient);
+      border: none;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+      box-shadow: 0 4px 16px rgba(255, 69, 58, 0.3);
+    }
+
+    .btn-save:hover {
+      transform: scale(1.02);
+      filter: brightness(1.1);
+    }
+
+    .btn-save:active {
+      transform: scale(0.98);
+    }
+
+    /* 主工作布局 */
+    .admin-layout {
+      flex: 1;
+      display: flex;
+      gap: 36px;
+      padding: 32px;
+      max-width: 1560px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* 左侧 iPhone 16 Pro 模拟器 */
+    .simulator-container {
+      flex: 0 0 410px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: sticky;
+      top: 96px;
+      height: fit-content;
+    }
+
+    .simulator-meta {
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-sub);
+    }
+
+    .simulator-meta .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #34c759;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34c759;
+    }
+
+    .iphone-shell {
+      width: 380px;
+      height: 780px;
+      background: #000;
+      border-radius: 52px;
+      border: 6px solid #2a2a2e;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(255, 255, 255, 0.1);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dynamic-island {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100px;
+      height: 28px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+    }
+
+    .island-camera {
+      width: 10px;
+      height: 10px;
+      background: #111;
+      border-radius: 50%;
+      box-shadow: inset 0 0 3px #333;
+    }
+
+    .phone-screen {
+      flex: 1;
+      background: #0b0b0e;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-top: 48px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 苹果风格导航栏模拟 */
+    .sim-navbar {
+      height: 48px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(18, 18, 20, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+
+    .sim-nav-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .sim-nav-pill {
+      font-size: 11px;
+      padding: 4px 10px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      color: #fff;
+    }
+
+    /* 模拟器内容视口 */
+    .sim-content-body {
+      padding: 16px 14px 40px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 右侧控制面板与 Tabs */
+    .editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Tab 导航 */
+    .tab-bar {
+      display: flex;
+      gap: 12px;
+      background: rgba(26, 26, 30, 0.6);
+      padding: 6px;
+      border-radius: 16px;
+      border: 1px solid var(--card-border);
+      width: fit-content;
+    }
+
+    .tab-btn {
+      padding: 8px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-sub);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .editor-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: var(--apple-radius);
+      border: 1px solid var(--card-border);
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .card-head .title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-head .desc {
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .form-group.full-width {
+      grid-column: span 2;
+    }
+
+    .form-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .form-input, .form-select, .form-textarea {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(255, 159, 10, 0.2);
+    }
+
+    /* 积木列表卡片流 */
+    .block-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .block-card-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .block-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .block-type-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 159, 10, 0.2);
+      color: #ff9f0a;
+      border: 1px solid rgba(255, 159, 10, 0.3);
+    }
+
+    .block-actions-bar {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-ctrl {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #fff;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-ctrl:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-ctrl.danger:hover {
+      background: #ff453a;
+    }
+
+    .add-block-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px dashed var(--card-border);
+    }
+
+    .btn-add-block {
+      flex: 1 1 calc(50% - 12px);
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px dashed rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-add-block:hover {
+      background: rgba(255, 159, 10, 0.15);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* 模板选择卡片网格 */
+    .template-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    .template-card {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      &:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+        background: rgba(255, 159, 10, 0.1);
+      }
+
+      .tpl-tag {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 6px;
+        width: fit-content;
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+      }
+
+      .tpl-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: #fff;
+      }
+
+      .tpl-desc {
+        font-size: 12px;
+        color: var(--text-sub);
+        line-height: 1.4;
+      }
+    }
+
+    /* 弹窗模态层 */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-dialog {
+      width: 520px;
+      max-width: 90vw;
+      background: #1c1c1e;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    }
+
+    .toast-msg {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 30, 32, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(20px);
+      padding: 12px 24px;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      display: none;
+      z-index: 2000;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部控制台 -->
+  <header class="admin-header">
+    <div class="brand-group">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <div class="brand-title">短剧与热词小程序一脑多控工作台</div>
+      </div>
+      <div class="brand-tag">SDUI Engine v1.3</div>
+    </div>
+
+    <!-- 多租户选择器 -->
+    <div class="tenant-selector-group">
+      <span style="font-size:13px; color:var(--text-sub);">📱 当前小程序:</span>
+      <select id="appSelect" class="tenant-select" onchange="onAppChanged()">
+        <option value="wx516563cfe994bbc6">猴王下山短剧 (wx516563cfe994bbc6)</option>
+      </select>
+      <button class="btn-add-app" onclick="openAddAppModal()">+ 新建小程序</button>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn-save" onclick="saveCurrentWork()">
+        <span>⚡ 保存并同步至小程序</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主布局 -->
+  <main class="admin-layout">
+
+    <!-- 左侧手机模拟器 -->
+    <div class="simulator-container">
+      <div class="simulator-meta">
+        <span class="status-dot"></span>
+        <span>iPhone 16 Pro · 实时同构渲染</span>
+      </div>
+
+      <div class="iphone-shell">
+        <div class="dynamic-island">
+          <div class="island-camera"></div>
+          <div style="width:12px; height:12px; background:#111; border-radius:50%;"></div>
+        </div>
+
+        <div class="phone-screen" id="phoneScreen">
+          <!-- 导航栏 -->
+          <div class="sim-navbar">
+            <span class="sim-nav-title" id="simNavTitle">猴王下山 - 精选剧场</span>
+            <span class="sim-nav-pill" id="simNavPill">模式: drama</span>
+          </div>
+
+          <!-- 模拟器积木流视口 -->
+          <div class="sim-content-body" id="simContentBody">
+            <!-- 动态积木将通过 JS 实时渲染于此 -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧配置与积木拼装面板 -->
+    <div class="editor-container">
+
+      <!-- 功能 Tab 切换 -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tabSDUI" onclick="switchTab('sdui')">🧩 SDUI 动态积木编排 (核心)</button>
+        <button class="tab-btn" id="tabDrama" onclick="switchTab('drama')">🎬 短剧展示模式 (传统)</button>
+        <button class="tab-btn" id="tabVideo" onclick="switchTab('video')">📺 视频号核心参数</button>
+      </div>
+
+      <!-- Tab 1: SDUI 动态积木编排 -->
+      <div id="panelSDUI" class="editor-card">
+        <div class="card-head">
+          <div>
+            <div class="title">动态页面与原子积木编排</div>
+            <div class="desc">纯粹通过协议 JSON 动态排版页面，发布后线上小程序 0ms 瞬间生效</div>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn-ctrl" onclick="openRevisionsModal()" style="background:rgba(255,255,255,0.15); color:#fff;">🕒 历史版本</button>
+            <button class="btn-ctrl" onclick="openTemplateModal()" style="background:linear-gradient(135deg,#5e5ce6,#0a84ff); color:#fff; font-weight:700;">📋 套用行业模板</button>
+            <button class="btn-ctrl" onclick="setCurrentAsHomePage()" style="background:var(--accent); color:#000; font-weight:700;">设为激活主页</button>
+            <button class="btn-ctrl" onclick="openAddPageModal()">+ 新建页面</button>
+          </div>
+        </div>
+
+        <!-- 页面元配置 -->
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">当前编辑页面</label>
+            <select id="pageSelect" class="form-select" onchange="onPageChanged()">
+              <option value="home">home (主页)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">页面主标题</label>
+            <input type="text" id="pageTitleInput" class="form-input" value="猴王下山 - 精选剧场" oninput="onMetaInputChanged()" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">业务类型 (BusinessType)</label>
+            <select id="pageBusinessType" class="form-select" onchange="onMetaInputChanged()">
+              <option value="drama">drama (短剧内容)</option>
+              <option value="game">game (游戏礼包)</option>
+              <option value="query">query (成绩/数据查询)</option>
+              <option value="download">download (资源下载)</option>
+              <option value="custom">custom (自由编排)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">主题风格与强制鉴权</label>
+            <div style="display:flex; gap:12px; align-items:center;">
+              <select id="pageTheme" class="form-select" style="flex:1;" onchange="onMetaInputChanged()">
+                <option value="dark_glass">dark_glass (深黑磨砂)</option>
+                <option value="light_clean">light_clean (极简冷白)</option>
+                <option value="cyber_neon">cyber_neon (赛博霓虹)</option>
+              </select>
+              <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" id="pageRequireAuth" onchange="onMetaInputChanged()" />
+                全页强制登录
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">页面状态 (时效/下架管理)</label>
+            <select id="pageStatus" class="form-select" onchange="onMetaInputChanged()">
+              <option value="published">published (正常上线展示)</option>
+              <option value="offline">offline (下架·自动切换安全兜底主页)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">当前版本修订号 (Revision)</label>
+            <input type="text" id="pageRevisionDisplay" class="form-input" readonly style="background:rgba(255,255,255,0.05); color:var(--accent); font-weight:700;" />
+          </div>
+        </div>
+
+        <!-- 微信分享配置与视觉卡片 -->
+        <div style="margin-top:20px; padding:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <span style="font-size:13px; font-weight:700; color:#fff;">🖼️ 微信视觉分享卡片 (AppMessage 5:4)</span>
+            <button class="btn-ctrl" onclick="generateShareCard()" style="background:var(--accent-gradient); color:#fff; font-weight:700;">⚡ 自动生成微信 5:4 分享卡片</button>
+          </div>
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div style="width:200px; height:160px; background:#000; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.15); flex-shrink:0;">
+              <img id="shareCardImgPreview" src="" alt="分享卡片预览" style="width:100%; height:100%; object-fit:cover;" />
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+              <div style="font-size:12px; color:var(--text-sub);">微信卡片官方比例 5:4 (1000×800)</div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.4); word-break:break-all;" id="shareCardUrlLabel">正在拉取分享图...</div>
+              <div style="font-size:11px; color:#ff9f0a;">提示：分享卡片按页面标题与热词自动合成，生成后微信好友转发直接展示该卡片。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 积木组件流 -->
+        <div style="margin-top:28px;">
+          <div style="font-size:14px; font-weight:700; margin-bottom:12px; display:flex; justify-content:space-between;">
+            <span>积木组件流 (Block Items)</span>
+            <span style="font-size:12px; color:var(--text-sub);" id="blockCountLabel">共 3 个组件</span>
+          </div>
+
+          <div class="block-list" id="blockListContainer">
+            <!-- 动态渲染每个积木编辑卡片 -->
+          </div>
+
+          <!-- 快速添加积木按钮 -->
+          <div class="add-block-row">
+            <button class="btn-add-block" onclick="addBlock('media_hero')">🎬 + 媒体海报/视频</button>
+            <button class="btn-add-block" onclick="addBlock('resource_card')">📦 + 网盘极速提取卡片</button>
+            <button class="btn-add-block" onclick="addBlock('action_button')">⚡ + 通栏主操作按钮</button>
+            <button class="btn-add-block" onclick="addBlock('notice')">📢 + 顶部通告栏</button>
+            <button class="btn-add-block" onclick="addBlock('game_card')">🎮 + 游戏礼包卡片</button>
+            <button class="btn-add-block" onclick="addBlock('form')">📝 + 查询表单组件</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: 短剧传统展示模式 -->
+      <div id="panelDrama" class="editor-card" style="display:none;">
+        <div class="card-head">
+          <div class="title">短剧展示风格模式切换</div>
+          <div class="desc">兼容旧版客户端的 4 种专属渲染模板</div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">展示模式</label>
+            <select id="inpDisplayMode" class="form-select">
+              <option value="immersive_video">沉浸影音模式 (immersive_video)</option>
+              <option value="episode_grid">剧集矩阵模式 (episode_grid)</option>
+              <option value="direct_portal">极速直达模式 (direct_portal)</option>
+              <option value="gallery_matrix">短剧画廊模式 (gallery_matrix)</option>
+              <option value="webview">Webview 网页直达模式</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">网页直达链接</label>
+            <input type="text" id="inpWebviewUrl" class="form-input" placeholder="https://example.com/play" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">顶部通告栏文字</label>
+            <input type="text" id="inpAnnouncement" class="form-input" value="🔥 全网热播短剧大结局已同步更新，高清免费看！" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">网盘承接名称</label>
+            <input type="text" id="inpPanName" class="form-input" value="夸克网盘极速看全集" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">网盘链接</label>
+            <input type="text" id="inpPanContent" class="form-input" value="https://pan.quark.cn/s/monkey_king_full_888" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">提取码</label>
+            <input type="text" id="inpPanCode" class="form-input" value="hwxs88" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: 视频号与核心参数 -->
+      <div id="panelVideo" class="editor-card" style="display:none;">
+        <div class="card-head">
+          <div class="title">微信视频号与短剧参数</div>
+          <div class="desc">对齐微信官方原生组件与 openChannelsActivity 入参</div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">短剧名称</label>
+            <input type="text" id="inpDramaTitle" class="form-input" value="猴王下山" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">宣传副标题</label>
+            <input type="text" id="inpDramaSubtitle" class="form-input" value="战神归来 · 逆风翻盘全网引爆" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">视频号 ID (finder_user_name)</label>
+            <input type="text" id="inpFinderUserName" class="form-input" value="gh_drama_official" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">视频号动态 ID (channels_feed_id)</label>
+            <input type="text" id="inpChannelsFeedId" class="form-input" value="export/UzFfdHQ5M1F2cTVXWll4eW1GZz09" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">竖版封面海报</label>
+            <input type="text" id="inpCoverUrl" class="form-input" value="https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">总集数与评分</label>
+            <div style="display:flex; gap:10px;">
+              <input type="number" id="inpTotalEpisodes" class="form-input" style="flex:1;" value="80" />
+              <input type="number" step="0.1" id="inpRating" class="form-input" style="flex:1;" value="9.8" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- 行业模板选择弹窗 -->
+  <div class="modal-overlay" id="templateModal">
+    <div class="modal-dialog" style="width:620px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:18px; font-weight:700;">📋 行业爆款模板包库</div>
+        <button class="btn-ctrl" onclick="closeTemplateModal()">✕</button>
+      </div>
+      <div style="font-size:13px; color:var(--text-sub);">
+        选择行业模板一键派生当前页面积木树，生成后支持逐块自由增删改与定制：
+      </div>
+      <div class="template-grid" id="templateGridContainer">
+        <!-- 模板卡片列表 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史版本与回滚模态框 -->
+  <div class="modal-overlay" id="revisionsModal">
+    <div class="modal-dialog" style="width:680px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:18px; font-weight:700;">🕒 历史版本快照与一键回滚</div>
+        <button class="btn-ctrl" onclick="closeRevisionsModal()">✕</button>
+      </div>
+      <div style="font-size:13px; color:var(--text-sub);">
+        每次保存与发布均自动沉淀不可篡改的快照；点击回滚将原子恢复历史状态并派生最新修订版：
+      </div>
+      <div style="max-height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;" id="revisionsListContainer">
+        <!-- 动态渲染历史版本 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增小程序模态框 -->
+  <div class="modal-overlay" id="addAppModal">
+    <div class="modal-dialog">
+      <div style="font-size:18px; font-weight:700;">添加新小程序主体</div>
+      <div class="form-group">
+        <label class="form-label">小程序 AppID (唯一标识)</label>
+        <input type="text" id="newAppId" class="form-input" placeholder="如 wx1234567890abcdef" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">小程序 Secret (换取 OpenID)</label>
+        <input type="text" id="newAppSecret" class="form-input" placeholder="微信公众平台生成的 32 位密钥" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">小程序名称 / 热词关键词</label>
+        <input type="text" id="newAppName" class="form-input" placeholder="如 绝世神豪 / 考试成绩查询" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+        <button class="btn-ctrl" onclick="closeAddAppModal()">取消</button>
+        <button class="btn-save" onclick="submitAddApp()">确定添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增动态页面模态框 -->
+  <div class="modal-overlay" id="addPageModal">
+    <div class="modal-dialog">
+      <div style="font-size:18px; font-weight:700;">创建新动态页面</div>
+      <div class="form-group">
+        <label class="form-label">页面标识 (page_id)</label>
+        <input type="text" id="newPageId" class="form-input" placeholder="如 drama_detail / game_redeem" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">页面主标题</label>
+        <input type="text" id="newPageTitle" class="form-input" placeholder="如 绝世神豪 - 选集播放" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">业务类型</label>
+        <select id="newPageBusinessType" class="form-select">
+          <option value="drama">drama (短剧内容)</option>
+          <option value="game">game (游戏兑换)</option>
+          <option value="query">query (数据查询)</option>
+          <option value="download">download (软件下载)</option>
+          <option value="custom">custom (自定义)</option>
+        </select>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+        <button class="btn-ctrl" onclick="closeAddPageModal()">取消</button>
+        <button class="btn-save" onclick="submitAddPage()">立即创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提示气泡 -->
+  <div class="toast-msg" id="toastMsg">已保存</div>
+
+  <script>
+    // 全局工作台状态
+    let currentAppId = 'wx516563cfe994bbc6';
+    let currentPageId = 'home';
+    let currentAppList = [];
+    let currentPageList = [];
+    let currentDynamicPage = null;
+
+    // 页面初始化
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadApps();
+      await loadPages();
+      await loadPageDetail();
+    });
+
+    // 切换功能 Tab
+    function switchTab(tab) {
+      document.getElementById('tabSDUI').className = `tab-btn ${tab === 'sdui' ? 'active' : ''}`;
+      document.getElementById('tabDrama').className = `tab-btn ${tab === 'drama' ? 'active' : ''}`;
+      document.getElementById('tabVideo').className = `tab-btn ${tab === 'video' ? 'active' : ''}`;
+
+      document.getElementById('panelSDUI').style.display = tab === 'sdui' ? 'block' : 'none';
+      document.getElementById('panelDrama').style.display = tab === 'drama' ? 'block' : 'none';
+      document.getElementById('panelVideo').style.display = tab === 'video' ? 'block' : 'none';
+    }
+
+    // 1. 加载小程序列表
+    async function loadApps() {
+      try {
+        const res = await fetch('/api/v1/admin/apps');
+        const json = await res.json();
+        if (json.code === 0 && json.data) {
+          currentAppList = json.data;
+          const select = document.getElementById('appSelect');
+          select.innerHTML = currentAppList.map(app => `
+            <option value="${app.app_id}" ${app.app_id === currentAppId ? 'selected' : ''}>
+              ${app.app_name} (${app.app_id})
+            </option>
+          `).join('');
+        }
+      } catch (err) {
+        console.error('加载小程序列表失败:', err);
+      }
+    }
+
+    // 小程序切换回调
+    async function onAppChanged() {
+      currentAppId = document.getElementById('appSelect').value;
+      currentPageId = 'home';
+      await loadPages();
+      await loadPageDetail();
+      showToast(`已切换至小程序: ${currentAppId}`);
+    }
+
+    // 2. 加载指定小程序的动态页面列表
+    async function loadPages() {
+      try {
+        const res = await fetch(`/api/v1/admin/pages?app_id=${encodeURIComponent(currentAppId)}`);
+        const json = await res.json();
+        if (json.code === 0 && json.data) {
+          currentPageList = json.data;
+          const select = document.getElementById('pageSelect');
+          select.innerHTML = currentPageList.map(p => `
+            <option value="${p.page_id}" ${p.page_id === currentPageId ? 'selected' : ''}>
+              ${p.page_id} (${p.title || '未命名'})
+            </option>
+          `).join('');
+        }
+      } catch (err) {
+        console.error('加载页面列表失败:', err);
+      }
+    }
+
+    // 动态页面切换回调
+    async function onPageChanged() {
+      currentPageId = document.getElementById('pageSelect').value;
+      await loadPageDetail();
+      showToast(`已加载页面: ${currentPageId}`);
+    }
+
+    // 3. 读取单个页面的完整 SDUI 协议
+    async function loadPageDetail() {
+      try {
+        const res = await fetch(`/api/v1/admin/page?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
+        const json = await res.json();
+        if (json.code === 0 && json.data) {
+          currentDynamicPage = json.data;
+          // 解析积木
+          if (typeof currentDynamicPage.blocks === 'string') {
+            try {
+              currentDynamicPage.blocks = JSON.parse(currentDynamicPage.blocks || '[]');
+            } catch (e) {
+              currentDynamicPage.blocks = [];
+            }
+          }
+          renderEditorFromProtocol();
+          renderSimulator();
+          updateShareCardPreview();
+        }
+      } catch (err) {
+        console.error('加载页面详情失败:', err);
+      }
+    }
+
+    // 将协议数据填入编辑器表单
+    function renderEditorFromProtocol() {
+      if (!currentDynamicPage) return;
+      document.getElementById('pageTitleInput').value = currentDynamicPage.title || '';
+      document.getElementById('pageBusinessType').value = currentDynamicPage.business_type || 'drama';
+      document.getElementById('pageTheme').value = currentDynamicPage.theme || 'dark_glass';
+      document.getElementById('pageRequireAuth').checked = !!currentDynamicPage.require_auth;
+      const statusSelect = document.getElementById('pageStatus');
+      if (statusSelect) statusSelect.value = currentDynamicPage.status || 'published';
+      const revDisplay = document.getElementById('pageRevisionDisplay');
+      if (revDisplay) revDisplay.value = `v${currentDynamicPage.revision || 1}`;
+      renderBlockListCards();
+    }
+
+    // 渲染积木编辑卡片列表
+    function renderBlockListCards() {
+      const container = document.getElementById('blockListContainer');
+      const blocks = currentDynamicPage?.blocks || [];
+      document.getElementById('blockCountLabel').innerText = `共 ${blocks.length} 个组件`;
+
+      if (blocks.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text-sub); font-size:13px;">暂无积木组件，请点击下方按钮添加或套用行业模板</div>`;
+        return;
+      }
+
+      container.innerHTML = blocks.map((b, idx) => `
+        <div class="block-card-item">
+          <div class="block-card-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="block-type-badge">${b.type}</span>
+              <span style="font-size:12px; color:rgba(255,255,255,0.4);">#${b.id}</span>
+            </div>
+            <div class="block-actions-bar">
+              <button class="btn-ctrl" onclick="moveBlock(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
+              <button class="btn-ctrl" onclick="moveBlock(${idx}, 1)" ${idx === blocks.length - 1 ? 'disabled' : ''}>↓</button>
+              <button class="btn-ctrl danger" onclick="deleteBlock(${idx})">✕</button>
+            </div>
+          </div>
+
+          <!-- 动态属性编辑区域 -->
+          ${renderBlockFields(b, idx)}
+        </div>
+      `).join('');
+    }
+
+    // 根据积木类型输出专属编辑字段
+    function renderBlockFields(b, idx) {
+      const p = b.props || {};
+      const act = b.action || {};
+      const payload = act.payload || {};
+
+      if (b.type === 'media_hero') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">标题</label>
+              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">宣传副标题</label>
+              <input class="form-input" value="${p.subtitle || ''}" oninput="updateBlockProp(${idx}, 'subtitle', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">竖版封面图 URL</label>
+              <input class="form-input" value="${p.cover_url || ''}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">视频地址 (试看播放)</label>
+              <input class="form-input" value="${p.video_url || ''}" oninput="updateBlockProp(${idx}, 'video_url', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'resource_card') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">渠道名称</label>
+              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">提取码 / 口令</label>
+              <input class="form-input" value="${p.fetch_code || ''}" oninput="updateBlockProp(${idx}, 'fetch_code', this.value)" />
+            </div>
+            <div class="form-group full-width">
+              <label class="form-label">复制核心内容 (网盘链接等)</label>
+              <input class="form-input" value="${payload.text || p.content || ''}" oninput="updateBlockActionPayload(${idx}, 'text', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'action_button') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">主按钮文案</label>
+              <input class="form-input" value="${p.text || ''}" oninput="updateBlockProp(${idx}, 'text', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">徽标角标提示</label>
+              <input class="form-input" value="${p.badge || ''}" oninput="updateBlockProp(${idx}, 'badge', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'notice') {
+        return `
+          <div class="form-group">
+            <label class="form-label">通告文案</label>
+            <input class="form-input" value="${p.text || p.content || ''}" oninput="updateBlockProp(${idx}, 'text', this.value)" />
+          </div>
+        `;
+      }
+
+      if (b.type === 'game_card') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">游戏名称</label>
+              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">版本标识</label>
+              <input class="form-input" value="${p.version || ''}" oninput="updateBlockProp(${idx}, 'version', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">封面图 URL</label>
+              <input class="form-input" value="${p.cover_url || ''}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">独家兑换码</label>
+              <input class="form-input" value="${p.redeem_code || ''}" oninput="updateBlockProp(${idx}, 'redeem_code', this.value); updateBlockActionPayload(${idx}, 'text', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'form') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">表单标题</label>
+              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">按钮文案</label>
+              <input class="form-input" value="${p.btn_text || ''}" oninput="updateBlockProp(${idx}, 'btn_text', this.value)" />
+            </div>
+            <div class="form-group full-width">
+              <label class="form-label">输入提示占位符</label>
+              <input class="form-input" value="${p.placeholder || ''}" oninput="updateBlockProp(${idx}, 'placeholder', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      return `<div style="font-size:12px; color:var(--text-sub);">通用组件属性</div>`;
+    }
+
+    // 积木属性修改
+    function updateBlockProp(idx, key, val) {
+      if (!currentDynamicPage?.blocks?.[idx]) return;
+      if (!currentDynamicPage.blocks[idx].props) currentDynamicPage.blocks[idx].props = {};
+      currentDynamicPage.blocks[idx].props[key] = val;
+      renderSimulator();
+    }
+
+    // 积木动作载荷修改
+    function updateBlockActionPayload(idx, key, val) {
+      if (!currentDynamicPage?.blocks?.[idx]) return;
+      if (!currentDynamicPage.blocks[idx].action) {
+        currentDynamicPage.blocks[idx].action = { type: 'copy_text', payload: {} };
+      }
+      if (!currentDynamicPage.blocks[idx].action.payload) {
+        currentDynamicPage.blocks[idx].action.payload = {};
+      }
+      currentDynamicPage.blocks[idx].action.payload[key] = val;
+      renderSimulator();
+    }
+
+    // 积木顺序移动
+    function moveBlock(idx, direction) {
+      const blocks = currentDynamicPage?.blocks;
+      if (!blocks) return;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= blocks.length) return;
+      const temp = blocks[idx];
+      blocks[idx] = blocks[targetIdx];
+      blocks[targetIdx] = temp;
+      renderBlockListCards();
+      renderSimulator();
+    }
+
+    // 删除积木
+    function deleteBlock(idx) {
+      if (!currentDynamicPage?.blocks) return;
+      currentDynamicPage.blocks.splice(idx, 1);
+      renderBlockListCards();
+      renderSimulator();
+    }
+
+    // 添加新积木
+    function addBlock(type) {
+      if (!currentDynamicPage) return;
+      if (!currentDynamicPage.blocks) currentDynamicPage.blocks = [];
+      const newId = `block_${type}_${Date.now().toString().slice(-4)}`;
+
+      let newBlock = {
+        id: newId,
+        type: type,
+        props: {},
+        style: { border_radius: '28rpx', glass_blur: true }
+      };
+
+      if (type === 'media_hero') {
+        newBlock.props = {
+          title: '精彩短剧',
+          subtitle: '高清全集 · 爆款首播',
+          cover_url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80',
+          rating: 9.8
+        };
+      } else if (type === 'resource_card') {
+        newBlock.props = {
+          title: '百度网盘极速看全集',
+          desc: '超清完整版 免费提取',
+          fetch_code: '8888'
+        };
+        newBlock.action = {
+          type: 'copy_text',
+          payload: { text: 'https://pan.baidu.com/s/sample 提取码: 8888', toast: '已复制网盘链接' }
+        };
+      } else if (type === 'action_button') {
+        newBlock.props = { text: '⚡ 立即获取完整全集', badge: '免费' };
+        newBlock.style.border_radius = '999rpx';
+      } else if (type === 'notice') {
+        newBlock.props = { text: '🔥 精彩全集已上线，请点击下方网盘自取！' };
+      } else if (type === 'game_card') {
+        newBlock.props = {
+          title: '绝地天王：觉醒',
+          subtitle: '硬核 3D 动作手游',
+          cover_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80',
+          version: '公测版',
+          redeem_code: 'VIP888GOLD'
+        };
+        newBlock.action = {
+          type: 'copy_text',
+          payload: { text: 'VIP888GOLD', toast: '兑换码已复制！' }
+        };
+      } else if (type === 'form') {
+        newBlock.props = {
+          title: '官方成绩极速查询',
+          placeholder: '请输入准考证号或身份证号',
+          btn_text: '立即查询结果'
+        };
+        newBlock.action = {
+          type: 'toast',
+          payload: { text: '查询服务已受理' }
+        };
+      }
+
+      currentDynamicPage.blocks.push(newBlock);
+      renderBlockListCards();
+      renderSimulator();
+      showToast(`已添加 ${type} 积木`);
+    }
+
+    // 页面元数据修改
+    function onMetaInputChanged() {
+      if (!currentDynamicPage) return;
+      currentDynamicPage.title = document.getElementById('pageTitleInput').value;
+      currentDynamicPage.business_type = document.getElementById('pageBusinessType').value;
+      currentDynamicPage.theme = document.getElementById('pageTheme').value;
+      currentDynamicPage.require_auth = document.getElementById('pageRequireAuth').checked;
+      const statusSelect = document.getElementById('pageStatus');
+      if (statusSelect) currentDynamicPage.status = statusSelect.value;
+      renderSimulator();
+    }
+
+    // 4. iPhone 16 Pro 模拟器实时同构渲染引擎
+    function renderSimulator() {
+      if (!currentDynamicPage) return;
+
+      document.getElementById('simNavTitle').innerText = currentDynamicPage.title || '精选剧场';
+      document.getElementById('simNavPill').innerText = `模式: ${currentDynamicPage.business_type || 'drama'}`;
+
+      const container = document.getElementById('simContentBody');
+      const blocks = currentDynamicPage.blocks || [];
+
+      if (blocks.length === 0) {
+        container.innerHTML = `
+          <div style="padding:60px 20px; text-align:center; color:rgba(255,255,255,0.4);">
+            <div style="font-size:36px; margin-bottom:8px;">📭</div>
+            <div style="font-size:13px;">页面暂无积木</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = blocks.map(b => {
+        const p = b.props || {};
+        if (b.type === 'media_hero') {
+          return `
+            <div style="background:#151518; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
+              <div style="height:190px; background:#000; position:relative;">
+                <img src="${p.cover_url || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80'}" style="width:100%; height:100%; object-fit:cover;" />
+                <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:3px 10px; border-radius:999px; font-size:10px; color:#fff;">🎬 精选热播</div>
+              </div>
+              <div style="padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:14px; font-weight:700; color:#fff;">${p.title || '精彩短剧'}</div>
+                  <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px;">${p.subtitle || ''}</div>
+                </div>
+                <div style="font-size:15px; font-weight:800; color:#ff9f0a;">★ ${p.rating || '9.8'}</div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (b.type === 'resource_card') {
+          return `
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px; backdrop-filter:blur(20px);">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <div style="background:linear-gradient(135deg,#ff9f0a,#ff453a); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px;">网盘全集</div>
+                <div style="font-size:13px; font-weight:700; color:#fff;">${p.title || '网盘极速看全集'}</div>
+              </div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.6); margin-bottom:12px;">${p.desc || '高清未删减版 免费自取'}</div>
+              <div style="background:rgba(0,0,0,0.3); border-radius:12px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-size:11px; color:#ff9f0a; font-weight:600;">提取码: ${p.fetch_code || '直接访问'}</div>
+                <div style="background:var(--accent-gradient); color:#fff; font-size:11px; font-weight:700; padding:5px 14px; border-radius:999px;">复制</div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (b.type === 'action_button') {
+          return `
+            <div style="width:100%; height:46px; border-radius:999px; background:var(--accent-gradient); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; font-weight:700; box-shadow:0 6px 18px rgba(255,159,10,0.4); position:relative;">
+              <span>${p.text || '立即前往'}</span>
+              ${p.badge ? `<span style="position:absolute; top:-6px; right:16px; background:#30d158; color:#fff; font-size:9px; padding:2px 8px; border-radius:999px;">${p.badge}</span>` : ''}
+            </div>
+          `;
+        }
+
+        if (b.type === 'notice') {
+          return `
+            <div style="background:rgba(255,159,10,0.15); border:1px solid rgba(255,159,10,0.3); border-radius:12px; padding:8px 12px; display:flex; align-items:center; gap:8px; font-size:11px; color:#ff9f0a;">
+              <span>📢</span>
+              <span>${p.text || p.content || ''}</span>
+            </div>
+          `;
+        }
+
+        if (b.type === 'game_card') {
+          return `
+            <div style="background:#14161d; border-radius:18px; overflow:hidden; border:1px solid rgba(48,209,88,0.3); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
+              <div style="height:150px; background:#000; position:relative;">
+                <img src="${p.cover_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80'}" style="width:100%; height:100%; object-fit:cover;" />
+                <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.65); padding:3px 10px; border-radius:999px; font-size:10px; color:#30d158; font-weight:700;">🎮 官方公测</div>
+              </div>
+              <div style="padding:12px 14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                  <div style="font-size:14px; font-weight:700; color:#fff;">${p.title || '游戏名称'}</div>
+                  <div style="font-size:10px; color:rgba(255,255,255,0.5);">${p.version || ''}</div>
+                </div>
+                <div style="background:rgba(0,0,0,0.4); border-radius:10px; padding:8px 12px; border:1px dashed rgba(48,209,88,0.4); display:flex; justify-content:space-between; align-items:center;">
+                  <div>
+                    <div style="font-size:9px; color:rgba(255,255,255,0.4);">礼包码</div>
+                    <div style="font-size:14px; font-weight:800; color:#30d158; letter-spacing:1px;">${p.redeem_code || 'VIP888'}</div>
+                  </div>
+                  <div style="background:linear-gradient(135deg,#30d158,#00c7be); color:#000; font-size:10px; font-weight:700; padding:4px 12px; border-radius:999px;">复制</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (b.type === 'form') {
+          return `
+            <div style="background:rgba(26,26,30,0.8); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px;">
+              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:12px;">${p.title || '信息查询'}</div>
+              <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:10px 12px; color:rgba(255,255,255,0.4); font-size:12px; margin-bottom:12px;">
+                ${p.placeholder || '请输入查询内容'}
+              </div>
+              <div style="background:linear-gradient(135deg,#0a84ff,#5e5ce6); height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700;">
+                ${p.btn_text || '立即查询'}
+              </div>
+            </div>
+          `;
+        }
+
+        return `<div style="padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">积木: ${b.type}</div>`;
+      }).join('');
+    }
+
+    // 5. 保存并同步到线上
+    async function saveCurrentWork() {
+      if (!currentDynamicPage) return;
+
+      const payload = {
+        app_id: currentAppId,
+        page_id: currentPageId,
+        title: currentDynamicPage.title,
+        business_type: currentDynamicPage.business_type,
+        intent: currentDynamicPage.intent || 'watch',
+        theme: currentDynamicPage.theme,
+        accent_color: currentDynamicPage.accent_color || '#FF9F0A',
+        require_auth: currentDynamicPage.require_auth,
+        share_config: typeof currentDynamicPage.share_config === 'string' ? currentDynamicPage.share_config : JSON.stringify(currentDynamicPage.share_config || {}),
+        blocks: JSON.stringify(currentDynamicPage.blocks || []),
+        status: 'published'
+      };
+
+      try {
+        const res = await fetch('/api/v1/admin/page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          showToast('⚡ SDUI 页面协议已成功保存并下发至小程序！');
+        } else {
+          showToast('❌ 保存失败: ' + json.msg);
+        }
+      } catch (err) {
+        showToast('❌ 网络错误: ' + err.message);
+      }
+    }
+
+    // 设为当前线上主页
+    async function setCurrentAsHomePage() {
+      try {
+        const res = await fetch('/api/v1/admin/page/set_current', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: currentAppId, page_id: currentPageId })
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          showToast(`⚡ 已成功将 ${currentPageId} 设为 ${currentAppId} 线上主页！`);
+        } else {
+          showToast('❌ 设置失败: ' + json.msg);
+        }
+      } catch (err) {
+        showToast('❌ 网络错误: ' + err.message);
+      }
+    }
+
+    // 行业模板库弹窗
+    async function openTemplateModal() {
+      document.getElementById('templateModal').style.display = 'flex';
+      try {
+        const res = await fetch('/api/v1/admin/templates');
+        const json = await res.json();
+        if (json.code === 0 && json.data) {
+          const container = document.getElementById('templateGridContainer');
+          container.innerHTML = json.data.map(tpl => `
+            <div class="template-card" onclick="applyTemplate('${tpl.template_id}')">
+              <span class="tpl-tag">${tpl.business_type} · ${tpl.intent}</span>
+              <div class="tpl-name">${tpl.name}</div>
+              <div class="tpl-desc">${tpl.description}</div>
+              <div style="font-size:11px; color:var(--accent); font-weight:700; margin-top:4px;">⚡ 点击一键套用</div>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        console.error('加载行业模板失败:', e);
+      }
+    }
+
+    function closeTemplateModal() {
+      document.getElementById('templateModal').style.display = 'none';
+    }
+
+    // 一键套用模板
+    async function applyTemplate(templateId) {
+      if (!confirm('套用模板将用预设积木替换当前页面内容，是否确认？')) return;
+
+      try {
+        const res = await fetch('/api/v1/admin/templates/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_id: templateId,
+            app_id: currentAppId,
+            page_id: currentPageId
+          })
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          closeTemplateModal();
+          await loadPageDetail();
+          showToast('✅ 模板套用成功，页面已更新！');
+        } else {
+          alert('套用失败: ' + json.msg);
+        }
+      } catch (e) {
+        alert('套用异常: ' + e.message);
+      }
+    }
+
+    // 弹窗控制：添加小程序
+    function openAddAppModal() {
+      document.getElementById('addAppModal').style.display = 'flex';
+    }
+    function closeAddAppModal() {
+      document.getElementById('addAppModal').style.display = 'none';
+    }
+    async function submitAddApp() {
+      const appId = document.getElementById('newAppId').value.trim();
+      const appSecret = document.getElementById('newAppSecret').value.trim();
+      const appName = document.getElementById('newAppName').value.trim();
+      if (!appId || !appName) {
+        alert('请完整填写 AppID 与小程序名称');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/v1/admin/apps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: appId, app_secret: appSecret, app_name: appName })
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          closeAddAppModal();
+          currentAppId = appId;
+          await loadApps();
+          await onAppChanged();
+          showToast('✅ 小程序添加成功！');
+        } else {
+          alert('添加失败: ' + json.msg);
+        }
+      } catch (e) {
+        alert('提交异常: ' + e.message);
+      }
+    }
+
+    // 弹窗控制：添加动态页面
+    function openAddPageModal() {
+      document.getElementById('addPageModal').style.display = 'flex';
+    }
+    function closeAddPageModal() {
+      document.getElementById('addPageModal').style.display = 'none';
+    }
+    async function submitAddPage() {
+      const pageId = document.getElementById('newPageId').value.trim();
+      const pageTitle = document.getElementById('newPageTitle').value.trim();
+      const businessType = document.getElementById('newPageBusinessType').value;
+      if (!pageId || !pageTitle) {
+        alert('请完整填写页面标识与页面主标题');
+        return;
+      }
+
+      const newPagePayload = {
+        app_id: currentAppId,
+        page_id: pageId,
+        title: pageTitle,
+        business_type: businessType,
+        intent: 'watch',
+        theme: 'dark_glass',
+        accent_color: '#FF9F0A',
+        blocks: '[]',
+        status: 'published'
+      };
+
+      try {
+        const res = await fetch('/api/v1/admin/page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newPagePayload)
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          closeAddPageModal();
+          currentPageId = pageId;
+          await loadPages();
+          await loadPageDetail();
+          showToast(`✅ 新页面 ${pageId} 创建成功！`);
+        } else {
+          alert('创建失败: ' + json.msg);
+        }
+      } catch (e) {
+        alert('提交异常: ' + e.message);
+      }
+    }
+
+    // 生成微信分享卡片并回写
+    async function generateShareCard() {
+      try {
+        const res = await fetch('/api/v1/admin/page/generate_share_card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app_id: currentAppId,
+            page_id: currentPageId
+          })
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          updateShareCardPreview();
+          showToast('✅ 微信 5:4 分享卡片已自动生成并更新！');
+        } else {
+          alert('生成分享图失败: ' + json.msg);
+        }
+      } catch (e) {
+        alert('生成异常: ' + e.message);
+      }
+    }
+
+    // 更新分享卡片预览
+    function updateShareCardPreview() {
+      const cardUrl = `/api/v1/share/card?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}&type=app_message&t=${Date.now()}`;
+      const img = document.getElementById('shareCardImgPreview');
+      const label = document.getElementById('shareCardUrlLabel');
+      if (img) img.src = cardUrl;
+      if (label) label.innerText = cardUrl;
+    }
+
+    // 打开历史版本弹窗
+    async function openRevisionsModal() {
+      try {
+        const res = await fetch(`/api/v1/admin/page/revisions?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
+        const json = await res.json();
+        const container = document.getElementById('revisionsListContainer');
+        if (json.code === 0 && Array.isArray(json.data)) {
+          if (json.data.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-sub);">暂无历史快照版本</div>';
+          } else {
+            container.innerHTML = json.data.map(rev => {
+              let blockCount = 0;
+              try { blockCount = JSON.parse(rev.blocks || '[]').length; } catch(e){}
+              const timeStr = new Date(rev.created_at).toLocaleString();
+              const isCurrent = rev.revision === currentDynamicPage?.revision;
+              return `
+                <div style="background:rgba(255,255,255,0.04); border:1px solid ${isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.1)'}; border-radius:12px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
+                  <div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="font-weight:700; color:#fff; font-size:14px;">v${rev.revision}</span>
+                      ${isCurrent ? '<span style="font-size:10px; background:var(--accent); color:#000; padding:2px 6px; border-radius:999px; font-weight:700;">当前线上激活</span>' : ''}
+                      <span style="font-size:12px; color:var(--text-sub);">${rev.business_type}</span>
+                      <span style="font-size:12px; color:rgba(255,255,255,0.4);">共 ${blockCount} 个积木</span>
+                    </div>
+                    <div style="font-size:12px; color:rgba(255,255,255,0.5); margin-top:4px;">${rev.title} · ${rev.remark || '发布版本'} · ${timeStr}</div>
+                  </div>
+                  <div>
+                    ${isCurrent ? '' : `<button class="btn-ctrl" onclick="rollbackToRevision(${rev.revision})" style="background:rgba(255,159,10,0.2); border:1px solid var(--accent); color:var(--accent); font-size:12px;">↩️ 回滚到此版</button>`}
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+        }
+        document.getElementById('revisionsModal').style.display = 'flex';
+      } catch (e) {
+        alert('获取历史版本失败: ' + e.message);
+      }
+    }
+
+    // 关闭历史版本弹窗
+    function closeRevisionsModal() {
+      document.getElementById('revisionsModal').style.display = 'none';
+    }
+
+    // 回滚至指定版本
+    async function rollbackToRevision(targetRev) {
+      if (!confirm(`确定要将当前页面原子回滚至历史版本 v${targetRev} 吗？`)) return;
+      try {
+        const res = await fetch('/api/v1/admin/page/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app_id: currentAppId,
+            page_id: currentPageId,
+            target_revision: targetRev
+          })
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          closeRevisionsModal();
+          await loadPageDetail();
+          showToast(`✅ ${json.msg}`);
+        } else {
+          alert('回滚失败: ' + json.msg);
+        }
+      } catch (e) {
+        alert('回滚异常: ' + e.message);
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastMsg');
+      toast.innerText = msg;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 2500);
+    }
+  </script>
+</body>
+</html>

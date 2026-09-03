@@ -1,0 +1,201 @@
+.index-page-container {
+  min-height: 100vh;
+  background-color: #000000;
+  box-sizing: border-box;
+
+  .page-body {
+    padding-top: 16rpx; // 依托 AppleNavbar 自身占位块精确自适应
+
+    .announcement-banner {
+      margin: 0 32rpx 16rpx 32rpx;
+      padding: 14rpx 24rpx;
+      background: rgba(255, 159, 10, 0.12);
+      border: 1px solid rgba(255, 159, 10, 0.25);
+      border-radius: 16rpx;
+
+      .announcement-text {
+        font-size: 22rpx;
+        color: #ff9f0a;
+        font-weight: 500;
+      }
+    }
+
+    // 骨架屏
+    .skeleton-container {
+      padding: 0 32rpx;
+      display: flex;
+      flex-direction: column;
+      gap: 24rpx;
+
+      .skeleton-block {
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.6s infinite ease-in-out;
+        border-radius: 24rpx;
+      }
+
+      .skeleton-hero {
+        width: 100%;
+        height: 380rpx;
+      }
+
+      .skeleton-title {
+        width: 60%;
+        height: 60rpx;
+      }
+
+      .skeleton-tags {
+        width: 40%;
+        height: 40rpx;
+      }
+
+      .skeleton-cards {
+        width: 100%;
+        height: 260rpx;
+      }
+    }
+
+    // 错误状态
+    .error-state-card {
+      margin: 60rpx 32rpx;
+      padding: 60rpx 32rpx;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+
+      .error-icon {
+        font-size: 64rpx;
+        margin-bottom: 20rpx;
+      }
+
+      .error-text {
+        font-size: 26rpx;
+        color: rgba(235, 235, 245, 0.6);
+        margin-bottom: 32rpx;
+      }
+
+      .retry-btn {
+        padding: 16rpx 48rpx;
+
+        .btn-text {
+          font-size: 26rpx;
+        }
+      }
+    }
+
+    .mode-render-wrapper {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    // Webview 模式过渡引导卡片
+    .webview-portal-card {
+      margin: 80rpx 32rpx;
+      padding: 60rpx 40rpx;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      background: linear-gradient(135deg, rgba(10, 132, 255, 0.15) 0%, rgba(0, 0, 0, 0.4) 100%);
+      border: 1px solid rgba(10, 132, 255, 0.3);
+
+      .portal-icon {
+        font-size: 72rpx;
+        margin-bottom: 24rpx;
+      }
+
+      .portal-title {
+        font-size: 34rpx;
+        font-weight: 800;
+        color: #ffffff;
+        margin-bottom: 12rpx;
+      }
+
+      .portal-sub {
+        font-size: 24rpx;
+        color: rgba(235, 235, 245, 0.6);
+        margin-bottom: 40rpx;
+      }
+
+      .portal-btn {
+        padding: 18rpx 56rpx;
+        background: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+
+        .btn-text {
+          font-size: 28rpx;
+          font-weight: 600;
+          color: #ffffff;
+        }
+      }
+    }
+  }
+
+  // 动态悬浮胶囊按钮 (有浮动的按钮就显示浮动的)
+  .page-floating-action {
+    position: fixed;
+    right: 32rpx;
+    bottom: calc(140rpx + env(safe-area-inset-bottom));
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+    padding: 18rpx 36rpx;
+    background: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+    border-radius: 999rpx;
+    box-shadow: 0 12rpx 32rpx rgba(255, 69, 58, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+    animation: floatPulse 3s infinite ease-in-out;
+
+    .fab-badge {
+      position: absolute;
+      top: -12rpx;
+      right: 12rpx;
+      background: #ffffff;
+      color: #ff3b30;
+      font-size: 18rpx;
+      font-weight: 800;
+      padding: 2rpx 10rpx;
+      border-radius: 999rpx;
+      box-shadow: 0 4rpx 8rpx rgba(0, 0, 0, 0.2);
+    }
+
+    .fab-icon {
+      font-size: 32rpx;
+    }
+
+    .fab-text {
+      font-size: 26rpx;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+  }
+}
+
+@keyframes floatPulse {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8rpx);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

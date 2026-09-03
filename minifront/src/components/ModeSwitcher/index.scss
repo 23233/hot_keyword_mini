@@ -1,0 +1,56 @@
+.mode-switcher-wrapper {
+  padding: 12rpx 24rpx;
+  box-sizing: border-box;
+
+  .apple-segmented-control {
+    background: rgba(118, 118, 128, 0.24);
+    border-radius: 999rpx;
+    padding: 6rpx;
+    display: flex;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+
+    .segmented-item {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10rpx 0;
+      border-radius: 999rpx;
+      transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+      position: relative;
+      gap: 4rpx;
+
+      .item-label {
+        font-size: 22rpx;
+        color: rgba(235, 235, 245, 0.6);
+        font-weight: 500;
+        transition: color 0.2s ease;
+      }
+
+      .item-tag {
+        font-size: 16rpx;
+        padding: 2rpx 6rpx;
+        border-radius: 6rpx;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(235, 235, 245, 0.4);
+      }
+
+      &.active {
+        background: rgba(255, 255, 255, 0.16);
+        box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.25);
+
+        .item-label {
+          color: #ffffff;
+          font-weight: 600;
+        }
+
+        .item-tag {
+          background: rgba(255, 159, 10, 0.25);
+          color: #ff9f0a;
+          font-weight: 600;
+        }
+      }
+    }
+  }
+}

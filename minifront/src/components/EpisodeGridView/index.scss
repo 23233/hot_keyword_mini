@@ -1,0 +1,279 @@
+.episode-grid-view {
+  padding: 0 32rpx calc(48rpx + env(safe-area-inset-bottom)) 32rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+
+  .poster-hero-card {
+    padding: 28rpx;
+    display: flex;
+    gap: 28rpx;
+
+    .poster-img {
+      width: 200rpx;
+      height: 280rpx;
+      border-radius: 20rpx;
+      flex-shrink: 0;
+      background: #222;
+    }
+
+    .poster-meta {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+
+      .meta-top {
+        .drama-title {
+          font-size: 38rpx;
+          font-weight: 800;
+          color: #ffffff;
+        }
+
+        .drama-subtitle {
+          font-size: 22rpx;
+          color: rgba(235, 235, 245, 0.6);
+          margin-top: 8rpx;
+          line-height: 1.4;
+        }
+      }
+
+      .meta-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8rpx;
+        margin: 12rpx 0;
+      }
+
+      .meta-footer {
+        display: flex;
+        align-items: center;
+        gap: 16rpx;
+
+        .rating-badge {
+          display: flex;
+          align-items: center;
+          gap: 4rpx;
+          background: rgba(255, 159, 10, 0.18);
+          padding: 4rpx 14rpx;
+          border-radius: 8rpx;
+
+          .star {
+            color: #ff9f0a;
+            font-size: 24rpx;
+          }
+
+          .score {
+            color: #ff9f0a;
+            font-size: 26rpx;
+            font-weight: 700;
+          }
+        }
+
+        .ep-status {
+          font-size: 22rpx;
+          color: rgba(235, 235, 245, 0.5);
+        }
+      }
+    }
+  }
+
+  .fast-unlock-banner {
+    padding: 24rpx 28rpx;
+    background: linear-gradient(135deg, rgba(255, 159, 10, 0.2) 0%, rgba(255, 69, 58, 0.2) 100%);
+    border: 1px solid rgba(255, 159, 10, 0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    .banner-left {
+      display: flex;
+      align-items: center;
+      gap: 16rpx;
+
+      .banner-icon {
+        font-size: 40rpx;
+      }
+
+      .banner-text-group {
+        display: flex;
+        flex-direction: column;
+
+        .banner-title {
+          font-size: 26rpx;
+          font-weight: 700;
+          color: #ffffff;
+        }
+
+        .banner-desc {
+          font-size: 20rpx;
+          color: rgba(235, 235, 245, 0.6);
+          margin-top: 2rpx;
+        }
+      }
+    }
+
+    .banner-btn {
+      padding: 12rpx 24rpx;
+
+      .btn-text {
+        font-size: 22rpx;
+      }
+    }
+  }
+
+  .grid-section {
+    padding: 28rpx;
+
+    .section-header {
+      margin-bottom: 20rpx;
+
+      .section-title {
+        font-size: 30rpx;
+        font-weight: 700;
+        color: #ffffff;
+      }
+
+      .section-tip {
+        font-size: 20rpx;
+        color: rgba(235, 235, 245, 0.45);
+        margin-left: 12rpx;
+      }
+    }
+
+    .tabs-row {
+      display: flex;
+      gap: 12rpx;
+      margin-bottom: 24rpx;
+
+      .tab-btn {
+        flex: 1;
+        padding: 12rpx 0;
+        border-radius: 999rpx;
+        background: rgba(255, 255, 255, 0.08);
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+
+        .tab-text {
+          font-size: 22rpx;
+          color: rgba(235, 235, 245, 0.6);
+        }
+
+        &.active {
+          background: rgba(255, 159, 10, 0.25);
+          border-color: #ff9f0a;
+
+          .tab-text {
+            color: #ff9f0a;
+            font-weight: 700;
+          }
+        }
+      }
+    }
+
+    .episodes-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16rpx;
+
+      .grid-item {
+        height: 104rpx;
+        background: rgba(44, 44, 46, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18rpx;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+
+        .item-num {
+          font-size: 28rpx;
+          font-weight: 700;
+          color: #ffffff;
+        }
+
+        .item-status {
+          margin-top: 2rpx;
+
+          .status-text {
+            font-size: 18rpx;
+            color: rgba(235, 235, 245, 0.45);
+          }
+        }
+
+        &.free {
+          border-color: rgba(48, 209, 88, 0.4);
+
+          .item-num {
+            color: #30d158;
+          }
+
+          .status-text {
+            color: #30d158;
+          }
+        }
+
+        &.locked {
+          .status-text {
+            color: #ffd60a;
+          }
+        }
+      }
+    }
+  }
+
+  .recom-section {
+    padding: 28rpx;
+
+    .recom-header {
+      margin-bottom: 20rpx;
+
+      .recom-title {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #ffffff;
+      }
+    }
+
+    .recom-scroll {
+      width: 100%;
+      white-space: nowrap;
+
+      .recom-list {
+        display: flex;
+        gap: 20rpx;
+
+        .recom-item {
+          width: 160rpx;
+          display: flex;
+          flex-direction: column;
+          flex-shrink: 0;
+
+          .recom-cover {
+            width: 160rpx;
+            height: 220rpx;
+            border-radius: 16rpx;
+            background: #222;
+          }
+
+          .recom-name {
+            font-size: 22rpx;
+            color: #ffffff;
+            font-weight: 600;
+            margin-top: 8rpx;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .recom-score {
+            font-size: 18rpx;
+            color: #ff9f0a;
+            margin-top: 2rpx;
+          }
+        }
+      }
+    }
+  }
+}

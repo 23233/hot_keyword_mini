@@ -1,0 +1,127 @@
+.universal-player-wrapper {
+  width: 100%;
+  height: 420rpx;
+  position: relative;
+  overflow: hidden;
+  background: #000000;
+  border-radius: 28rpx;
+
+  .core-video {
+    width: 100%;
+    height: 100%;
+  }
+
+  .channels-embedded-box {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .core-channel-video {
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  .player-card {
+    width: 100%;
+    height: 100%;
+    position: relative;
+
+    .card-bg {
+      width: 100%;
+      height: 100%;
+      filter: brightness(0.65);
+    }
+
+    .card-mask {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30rpx;
+      box-sizing: border-box;
+
+      .badge-pill {
+        background: #07c160;
+        color: #ffffff;
+        padding: 4rpx 16rpx;
+        border-radius: 999rpx;
+        font-size: 20rpx;
+        font-weight: 700;
+        margin-bottom: 12rpx;
+      }
+
+      .card-icon {
+        font-size: 52rpx;
+        margin-bottom: 12rpx;
+      }
+
+      .card-title {
+        font-size: 30rpx;
+        font-weight: 800;
+        color: #ffffff;
+      }
+
+      .card-sub {
+        font-size: 22rpx;
+        color: rgba(235, 235, 245, 0.6);
+        margin-top: 6rpx;
+        margin-bottom: 24rpx;
+      }
+
+      .action-btn {
+        padding: 16rpx 40rpx;
+
+        .btn-txt {
+          font-size: 24rpx;
+        }
+      }
+
+      .pan-quick-card {
+        width: 90%;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 159, 10, 0.3);
+        border-radius: 20rpx;
+        padding: 16rpx 24rpx;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+
+        .pan-info {
+          display: flex;
+          flex-direction: column;
+
+          .pan-name {
+            font-size: 24rpx;
+            font-weight: 700;
+            color: #ffffff;
+          }
+
+          .pan-code {
+            font-size: 20rpx;
+            color: #ff9f0a;
+            margin-top: 4rpx;
+          }
+        }
+
+        .pan-btn {
+          padding: 10rpx 24rpx;
+
+          .btn-txt {
+            font-size: 20rpx;
+          }
+        }
+      }
+    }
+  }
+}

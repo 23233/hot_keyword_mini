@@ -1,0 +1,46 @@
+.motion-page-container {
+  min-height: 100vh;
+  background-color: #000000;
+  box-sizing: border-box;
+
+  .motion-page-body {
+    padding-top: 16rpx;
+
+    .debug-info-banner {
+      margin: 0 32rpx 16rpx 32rpx;
+      padding: 14rpx 24rpx;
+      background: rgba(10, 132, 255, 0.12);
+      border: 1px solid rgba(10, 132, 255, 0.28);
+      border-radius: 18rpx;
+      display: flex;
+      align-items: center;
+      gap: 12rpx;
+
+      .badge {
+        background: #0a84ff;
+        color: #ffffff;
+        font-size: 18rpx;
+        font-weight: 800;
+        padding: 4rpx 10rpx;
+        border-radius: 999rpx;
+        white-space: nowrap;
+      }
+
+      .desc {
+        flex: 1;
+        font-size: 20rpx;
+        color: rgba(235, 235, 245, 0.7);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .back-btn {
+        font-size: 20rpx;
+        font-weight: 700;
+        color: #0a84ff;
+        white-space: nowrap;
+      }
+    }
+  }
+}

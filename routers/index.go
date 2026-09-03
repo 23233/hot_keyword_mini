@@ -31,4 +31,9 @@ func RegisterRouters(party iris.Party) {
 	// 注册 API 路由
 	registerAPIRoutes(party)
 
+	// 管理后台可视化工作台页面 (含手机模拟器与实时编辑器)
+	party.Get("/admin", func(ctx iris.Context) {
+		_ = ctx.View("admin.html")
+	})
+
 }

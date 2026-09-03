@@ -1,0 +1,180 @@
+.action-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: fadeIn 0.25s ease-out;
+
+  .action-modal-sheet {
+    background: #1c1c1e;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 40rpx 40rpx 0 0;
+    padding: 24rpx 32rpx calc(48rpx + env(safe-area-inset-bottom)) 32rpx;
+    box-sizing: border-box;
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+    .sheet-handle {
+      width: 72rpx;
+      height: 8rpx;
+      border-radius: 999rpx;
+      background: rgba(255, 255, 255, 0.25);
+      margin: 0 auto 24rpx auto;
+    }
+
+    .sheet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 32rpx;
+
+      .header-left {
+        display: flex;
+        flex-direction: column;
+
+        .header-title {
+          font-size: 34rpx;
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: -0.5rpx;
+        }
+
+        .header-subtitle {
+          font-size: 24rpx;
+          color: rgba(235, 235, 245, 0.6);
+          margin-top: 6rpx;
+        }
+      }
+
+      .close-btn {
+        width: 56rpx;
+        height: 56rpx;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        .close-icon {
+          font-size: 24rpx;
+          color: rgba(255, 255, 255, 0.7);
+        }
+      }
+    }
+
+    .channels-list {
+      display: flex;
+      flex-direction: column;
+      gap: 20rpx;
+      margin-bottom: 32rpx;
+
+      .channel-card {
+        padding: 24rpx 28rpx;
+        background: rgba(44, 44, 46, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24rpx;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+
+        .card-left {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          margin-right: 20rpx;
+
+          .badge-tag {
+            align-self: flex-start;
+            font-size: 18rpx;
+            color: #ff9f0a;
+            background: rgba(255, 159, 10, 0.15);
+            padding: 2rpx 12rpx;
+            border-radius: 6rpx;
+            margin-bottom: 6rpx;
+            font-weight: 600;
+          }
+
+          .channel-name {
+            font-size: 28rpx;
+            font-weight: 600;
+            color: #ffffff;
+          }
+
+          .channel-desc {
+            font-size: 22rpx;
+            color: rgba(235, 235, 245, 0.55);
+            margin-top: 4rpx;
+          }
+
+          .code-box {
+            display: flex;
+            align-items: center;
+            margin-top: 8rpx;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4rpx 12rpx;
+            border-radius: 8rpx;
+            width: fit-content;
+
+            .code-label {
+              font-size: 20rpx;
+              color: rgba(235, 235, 245, 0.5);
+            }
+
+            .code-val {
+              font-size: 22rpx;
+              font-weight: 700;
+              color: #ffd60a;
+              letter-spacing: 1rpx;
+            }
+          }
+        }
+
+        .card-action-btn {
+          padding: 16rpx 28rpx;
+          border-radius: 999rpx;
+          flex-shrink: 0;
+
+          .btn-text {
+            font-size: 24rpx;
+            font-weight: 600;
+          }
+        }
+      }
+    }
+
+    .sheet-footer {
+      display: flex;
+      justify-content: center;
+
+      .footer-tip {
+        font-size: 20rpx;
+        color: rgba(235, 235, 245, 0.4);
+      }
+    }
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
