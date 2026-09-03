@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="{{ Lang | default:'zh-CN' }}" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} - {{ Tr("Logo") }}</title>
+    <meta name="description" content="{% block description %}{% endblock %}">
+    <meta name="keywords" content="{% block keywords %}{% endblock %}">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // 为JS提供语言前缀
+        window.LangPrefix = "{{ LangPrefix }}";
+    </script>
+    <script src="/js/init.js"></script>
+
+    {% block head_extend %}{% endblock %}
+    {% block ld_json %}{% endblock %}
+</head>
+<body class="bg-apple-gray text-apple-dark-gray font-sans">
+<header class="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-200">
+    <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+            <div class="flex-shrink-0">
+                <a href="{{ LangPrefix }}/" class="text-xl font-bold tracking-tight">
+                    {{ Tr("Logo") }}
+                </a>
+            </div>
+            <div class="hidden sm:block">
+                <div class="ml-10 flex items-center space-x-4">
+                    <a href="{{ LangPrefix }}/link-packages" class="text-gray-600 hover:text-apple-blue px-3 py-2 rounded-md text-sm font-medium">{{ Tr("LinkPackages.MarketTitle") }}</a>
+
+                    <!-- Language Switcher -->
+                    <div class="text-sm space-x-2">
+                        {% for code, url in AlternateURLs %}
+                        {% if code != Lang %}
+                        <a href="{{ url }}" class="text-gray-600 hover:text-apple-blue">{{ Tr("Lang."|add:code) }}</a>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+
+                </div>
+            </div>
+            <div class="-mr-2 flex sm:hidden">
+                <button id="mobile-menu-button" type="button" class="bg-white inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-apple-blue" aria-controls="mobile-menu" aria-expanded="false">
+                    <span class="sr-only">Open main menu</span>
+                    <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="sm:hidden hidden" id="mobile-menu">
+        <div class="px-2 pt-2 pb-3 space-y-1">
+            <a href="{{ LangPrefix }}/link-packages" class="text-gray-600 hover:text-apple-blue block px-3 py-2 rounded-md text-base font-medium">{{ Tr("LinkPackages.MarketTitle") }}</a>
+
+            <!-- Language Switcher Mobile -->
+            <div class="border-t border-gray-200 my-2"></div>
+            {% for code, url in AlternateURLs %}
+            {% if code != Lang %}
+            <a href="{{ url }}" class="text-gray-600 hover:text-apple-blue block px-3 py-2 rounded-md text-base font-medium">{{ Tr("Lang."|add:code) }}</a>
+            {% endif %}
+            {% endfor %}
+            <div class="border-t border-gray-200 my-2"></div>
+
+            {% if IsLogin %}
+            <a href="{{ LangPrefix }}/profile" class="text-gray-600 hover:text-apple-blue block px-3 py-2 rounded-md text-base font-medium">{{ Tr("Profile.Title") }}</a>
+            <a href="{{ LangPrefix }}/logout" class="text-gray-600 hover:text-apple-blue block px-3 py-2 rounded-md text-base font-medium">{{ Tr("Logout.Logout") }}</a>
+            {% else %}
+            <a href="{{ LangPrefix }}/login" class="text-gray-600 hover:text-apple-blue block px-3 py-2 rounded-md text-base font-medium">{{ Tr("Login.LoginButton") }}</a>
+            <a href="{{ LangPrefix }}/register" class="bg-apple-blue text-white block px-4 py-2 rounded-md text-base font-medium hover:bg-opacity-90">{{ Tr("Register.RegisterButton") }}</a>
+            {% endif %}
+        </div>
+    </div>
+</header>
+
+<main>
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </div>
+</main>
+
+<footer class="bg-white">
+    <div class="container mx-auto py-6 px-4 sm:px-6 lg:px-8 text-center text-gray-500 text-sm">
+        <p>&copy; 2025 {{ Tr("Logo") }}. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+{% block scripts %}{% endblock %}
+
+
+</body>
+</html>

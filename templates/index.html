@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ Tr("HomePage") }}{% endblock %}
+
+{% block head_extend %}
+
+{% endblock %}
+
+{% block content %}
+<div class="bg-white">
+    <!-- Hero Section -->
+    <div class="text-center py-20 px-4 sm:px-6 lg:px-8">
+        <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-900 tracking-tight">
+            {{ Tr("Home.Title") }}
+        </h1>
+        <p class="mt-4 max-w-2xl mx-auto text-lg sm:text-xl text-gray-500">
+            {{ Tr("Home.Subtitle") }}
+        </p>
+    </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+db_host: "192.168.0.104"
+db_port: "6666"
+db_user: "root"
+db_password: "tT#123123" #
+db_name: "test"
+
+redis_host: "192.168.0.104"
+redis_port: "6380"
+redis_password: "2DafftuTzwA7jXcueecscn4cgebBtErH"
+redis_db: "2"
+redis_enable: true

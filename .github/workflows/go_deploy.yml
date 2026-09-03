@@ -1,0 +1,76 @@
+name: Go Deploy
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  check_commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Check commit message
+        id: check_commit
+        run: |
+          commit_message=$(git log --format=%B -n 1)
+          if [[ $commit_message == deploy* ]]; then
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "deploy=false" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      deploy: ${{ steps.check_commit.outputs.deploy }}
+
+  uploads:
+    needs: check_commit
+    if: needs.check_commit.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: './go.mod'
+
+      - run: go version
+      - name: Install dependencies
+        run: go get .
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Determine image tag
+        id: image_tag
+        shell: bash
+        run: |
+          branch_name="${GITHUB_REF_NAME}"
+
+          if [[ "$branch_name" == "main" ]]; then
+            image_tag="latest"
+          else
+            image_tag=$(printf '%s' "$branch_name" | sed 's#[^A-Za-z0-9_.-]#-#g; s/^[.-]\+//; s/[.-]\+$//')
+
+            if [[ -z "$image_tag" ]]; then
+              echo "无法根据分支名 '$branch_name' 生成有效的镜像标签" >&2
+              exit 1
+            fi
+          fi
+
+          echo "tag=$image_tag" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ steps.image_tag.outputs.tag }}
