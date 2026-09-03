@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"hot_keyword/routers/middleware"
 	"hot_keyword/services"
 	"strings"
 
@@ -123,6 +124,13 @@ type PatchPageReq struct {
 // RegisterAdminRoutes 注册管理后台相关路由
 func RegisterAdminRoutes(party iris.Party) {
 	adminParty := party.Party("/api/v1/admin")
+
+	// 挂载管理员认证拦截中间件 (保护所有后续敏感接口，放行 /auth/login)
+	adminParty.Use(middleware.AdminAuthMiddleware)
+
+	// 挂载管理员登录与账户生命周期 CRUD 路由
+	RegisterAdminUserRoutes(adminParty)
+
 	dramaService := services.NewDramaService()
 	sduiService := services.NewSDUIService()
 

@@ -591,7 +591,12 @@
       <button class="btn-add-app" onclick="openAddAppModal()">+ 新建小程序</button>
     </div>
 
-    <div class="header-actions">
+    <div class="header-actions" style="display:flex; align-items:center; gap:16px;">
+      <div id="adminUserBadge" style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-sub); background:rgba(255,255,255,0.06); padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.1);">
+        <span>👤</span>
+        <span id="currentAdminName" style="color:#fff; font-weight:600;">未登录</span>
+        <button onclick="adminLogout()" style="background:none; border:none; color:#ff453a; cursor:pointer; font-size:12px; margin-left:4px;">[退出]</button>
+      </div>
       <button class="btn-save" onclick="saveCurrentWork()">
         <span>⚡ 保存并同步至小程序</span>
       </button>
@@ -637,6 +642,8 @@
         <button class="tab-btn active" id="tabSDUI" onclick="switchTab('sdui')">🧩 SDUI 动态积木编排 (核心)</button>
         <button class="tab-btn" id="tabDrama" onclick="switchTab('drama')">🎬 短剧展示模式 (传统)</button>
         <button class="tab-btn" id="tabVideo" onclick="switchTab('video')">📺 视频号核心参数</button>
+        <button class="tab-btn" id="tabUsers" onclick="switchTab('users')">👥 管理员中心 (CRUD)</button>
+        <button class="tab-btn" id="tabMCP" onclick="switchTab('mcp')">🤖 AI MCP 智能编排</button>
       </div>
 
       <!-- Tab 1: SDUI 动态积木编排 -->
@@ -821,8 +828,215 @@
         </div>
       </div>
 
+      <!-- Tab 4: 👥 管理员中心 (Admin Users CRUD) -->
+      <div id="panelUsers" class="editor-card" style="display:none;">
+        <div class="card-head">
+          <div>
+            <div class="title">👥 管理员权限中心 (Admin Users CRUD)</div>
+            <div class="desc">管理可以登录后台的工作人员账号、分配权限角色及密码维护</div>
+          </div>
+          <div>
+            <button class="btn-ctrl" onclick="openAddAdminModal()" style="background:var(--accent); color:#000; font-weight:700;">+ 新建管理员</button>
+          </div>
+        </div>
+
+        <div style="overflow-x:auto; margin-top:16px;">
+          <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
+            <thead>
+              <tr style="border-bottom:1px solid rgba(255,255,255,0.1); color:var(--text-sub);">
+                <th style="padding:10px 12px;">ID</th>
+                <th style="padding:10px 12px;">登录账号</th>
+                <th style="padding:10px 12px;">姓名/备注</th>
+                <th style="padding:10px 12px;">角色</th>
+                <th style="padding:10px 12px;">状态</th>
+                <th style="padding:10px 12px;">最后登录</th>
+                <th style="padding:10px 12px; text-align:right;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="adminUserTableBody">
+              <!-- 动态管理员列表 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 5: 🤖 AI MCP 智能编排中心 -->
+      <div id="panelMCP" class="editor-card" style="display:none;">
+        <div class="card-head">
+          <div>
+            <div class="title">🤖 AI MCP 智能编排中心 (Model Context Protocol)</div>
+            <div class="desc">遵循标准 JSON-RPC 2.0 协议，展示 7 大受控工具与在线测试试运行器</div>
+          </div>
+          <div>
+            <span style="font-size:12px; background:rgba(48,209,88,0.2); color:#30d158; border:1px solid rgba(48,209,88,0.3); padding:4px 10px; border-radius:999px; font-weight:700;">● MCP 服务正常运行中</span>
+          </div>
+        </div>
+
+        <!-- 7个受控工具卡片矩阵 -->
+        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; margin-top:16px;">
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.template.list</span>
+              <span style="font-size:10px; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">只读查询</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">查询短剧、游戏、查询、下载四大行业模板包与所需实体</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.page.create</span>
+              <span style="font-size:10px; background:rgba(255,159,10,0.2); color:var(--accent); padding:2px 6px; border-radius:4px;">创建草稿</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">从模板派生或空白创建新页面 (默认置为 draft，安全隔离)</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.page.patch</span>
+              <span style="font-size:10px; background:rgba(10,132,255,0.2); color:#0a84ff; padding:2px 6px; border-radius:4px;">JSON Patch</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">对页面执行受控局部打补丁并自增 revision 沉淀快照</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.page.validate</span>
+              <span style="font-size:10px; background:rgba(48,209,88,0.2); color:#30d158; padding:2px 6px; border-radius:4px;">强校验器</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">深度审计协议语法、积木ID冲突与动作参数，输出修复建议</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.page.preview</span>
+              <span style="font-size:10px; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">装配模拟</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">模拟装配完整信封、实体插值与 ETag 缓存</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.page.screenshot</span>
+              <span style="font-size:10px; background:rgba(191,90,242,0.2); color:#bf5af2; padding:2px 6px; border-radius:4px;">无头合成</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">纯 Go 后端合成微信卡片，生成 SHA-256 图像指纹</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px; grid-column:span 2;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:#ff453a;">sdui.page.publish</span>
+              <span style="font-size:10px; background:rgba(255,69,58,0.2); color:#ff453a; padding:2px 6px; border-radius:4px;">发布门禁</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">显式发布已通过强校验的页面，沉淀历史快照并发布至线上生产</div>
+          </div>
+        </div>
+
+        <!-- MCP 在线试运行 Playground -->
+        <div style="margin-top:20px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px;">
+          <div style="font-size:14px; font-weight:700; margin-bottom:10px;">🧪 在线 MCP 试运行测试工具 (JSON-RPC Playground)</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">选择调用工具</label>
+              <select id="mcpToolSelect" class="form-select" onchange="onMcpToolSelectChanged()">
+                <option value="sdui.template.list">sdui.template.list (查询行业模板)</option>
+                <option value="sdui.page.validate">sdui.page.validate (强校验当前页面)</option>
+                <option value="sdui.page.preview">sdui.page.preview (装配预览当前页面)</option>
+                <option value="sdui.page.screenshot">sdui.page.screenshot (后端截图卡片)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">传输端点</label>
+              <input class="form-input" value="POST /api/v1/mcp" readonly style="opacity:0.7;" />
+            </div>
+            <div class="form-group full-width">
+              <label class="form-label">调用入参 JSON (arguments)</label>
+              <textarea id="mcpArgsInput" class="form-input" style="height:90px; font-family:monospace; font-size:12px;">{ "business_type": "game" }</textarea>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+            <button class="btn-ctrl" onclick="executeMcpTest()" style="background:var(--accent); color:#000; font-weight:700; padding:10px 20px;">⚡ 发起 JSON-RPC 工具调用</button>
+            <span id="mcpRunStatus" style="font-size:12px; color:var(--text-sub);">准备就绪</span>
+          </div>
+          <div style="margin-top:12px;">
+            <label class="form-label">返回结果 JSON-RPC Response</label>
+            <pre id="mcpResultOutput" style="background:#111; color:#0f0; padding:12px; border-radius:8px; font-size:12px; max-height:200px; overflow-y:auto; border:1px solid rgba(255,255,255,0.1);">// 点击上方按钮发起调用测试</pre>
+          </div>
+        </div>
+      </div>
+
     </div>
   </main>
+
+  <!-- 管理员安全登录弹窗 (未登录时强制拦截) -->
+  <div class="modal-overlay" id="loginModal" style="display:none; z-index:9999; background:rgba(0,0,0,0.85); backdrop-filter:blur(30px);">
+    <div class="modal-dialog" style="width:400px; text-align:center; padding:32px 28px;">
+      <div style="font-size:42px; margin-bottom:12px;">🔐</div>
+      <div style="font-size:20px; font-weight:700; color:#fff;">管理员身份验证</div>
+      <div style="font-size:13px; color:var(--text-sub); margin-top:6px; margin-bottom:24px;">请输入管理后台账号与密码进入一脑多控工作台</div>
+      
+      <div style="text-align:left; display:flex; flex-direction:column; gap:14px;">
+        <div>
+          <label class="form-label">管理员登录账号</label>
+          <input type="text" id="loginUsername" class="form-input" placeholder="请输入账号 (默认: admin)" value="admin" />
+        </div>
+        <div>
+          <label class="form-label">登录密码</label>
+          <input type="password" id="loginPassword" class="form-input" placeholder="请输入密码 (默认: admin123456)" value="admin123456" onkeydown="if(event.key==='Enter')executeAdminLogin()" />
+        </div>
+        <div style="font-size:12px; color:rgba(255,255,255,0.4); background:rgba(255,255,255,0.04); padding:8px 12px; border-radius:8px;">
+          💡 初始超管：<code style="color:var(--accent);">admin</code> / <code style="color:var(--accent);">admin123456</code>
+        </div>
+        <button class="btn-save" onclick="executeAdminLogin()" style="width:100%; margin-top:10px; padding:12px;">
+          <span>🚀 安全登录并进入工作台</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新建/编辑管理员用户弹窗 -->
+  <div class="modal-overlay" id="adminUserModal">
+    <div class="modal-dialog" style="width:480px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:18px; font-weight:700;" id="adminUserModalTitle">👤 新建管理员账户</div>
+        <button class="btn-ctrl" onclick="closeAdminUserModal()">✕</button>
+      </div>
+      <input type="hidden" id="editAdminId" value="" />
+      <div style="margin-top:16px; display:flex; flex-direction:column; gap:14px;">
+        <div>
+          <label class="form-label">登录账号 (Username)</label>
+          <input type="text" id="adminFormUsername" class="form-input" placeholder="英文/数字，创建后不可修改" />
+        </div>
+        <div>
+          <label class="form-label">真实姓名 / 备注名</label>
+          <input type="text" id="adminFormRealName" class="form-input" placeholder="例如：运营专员 - 小张" />
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">角色权限</label>
+            <select id="adminFormRole" class="form-select">
+              <option value="editor">运营编辑 (editor)</option>
+              <option value="super_admin">超级管理员 (super_admin)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">账号状态</label>
+            <select id="adminFormStatus" class="form-select">
+              <option value="active">正常启用 (active)</option>
+              <option value="disabled">冻结禁用 (disabled)</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="form-label" id="adminFormPasswordLabel">初始登录密码</label>
+          <input type="password" id="adminFormPassword" class="form-input" placeholder="不少于6位密码 (编辑时留空表示不修改)" />
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
+          <button class="btn-ctrl" onclick="closeAdminUserModal()">取消</button>
+          <button class="btn-ctrl" onclick="submitAdminUserForm()" style="background:var(--accent); color:#000; font-weight:700;">💾 保存提交</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- 行业模板选择弹窗 -->
   <div class="modal-overlay" id="templateModal">
@@ -919,28 +1133,128 @@
     let currentPageList = [];
     let currentDynamicPage = null;
 
-    // 页面初始化
+    // 封装管理员 API 请求 (自动附加 Bearer Token 与 401 拦截)
+    async function adminFetch(url, options = {}) {
+      const token = localStorage.getItem('admin_token');
+      options.headers = options.headers || {};
+      if (token) {
+        options.headers['Authorization'] = 'Bearer ' + token;
+      }
+      const res = await fetch(url, options);
+      if (res.status === 401) {
+        localStorage.removeItem('admin_token');
+        showLoginModal();
+        throw new Error('未授权或凭证已过期');
+      }
+      return res;
+    }
+
+    // 页面初始化与身份认证守卫
     window.addEventListener('DOMContentLoaded', async () => {
-      await loadApps();
-      await loadPages();
-      await loadPageDetail();
+      await checkAdminAuth();
     });
+
+    // 检查管理员登录态
+    async function checkAdminAuth() {
+      const token = localStorage.getItem('admin_token');
+      if (!token) {
+        showLoginModal();
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/admin/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const json = await res.json();
+        if (json.code === 0 && json.data) {
+          hideLoginModal();
+          const info = json.data;
+          document.getElementById('currentAdminName').innerText = `${info.real_name || info.username} (${info.role || 'admin'})`;
+          await loadApps();
+          await loadPages();
+          await loadPageDetail();
+        } else {
+          showLoginModal();
+        }
+      } catch (e) {
+        showLoginModal();
+      }
+    }
+
+    // 显示与隐藏登录弹窗
+    function showLoginModal() {
+      document.getElementById('loginModal').style.display = 'flex';
+    }
+    function hideLoginModal() {
+      document.getElementById('loginModal').style.display = 'none';
+    }
+
+    // 执行管理员登录
+    async function executeAdminLogin() {
+      const u = document.getElementById('loginUsername').value.trim();
+      const p = document.getElementById('loginPassword').value.trim();
+      if (!u || !p) {
+        alert('请输入管理员用户名和密码');
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/admin/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const json = await res.json();
+        if (json.code === 0 && json.data?.token) {
+          localStorage.setItem('admin_token', json.data.token);
+          hideLoginModal();
+          const user = json.data.user;
+          document.getElementById('currentAdminName').innerText = `${user.real_name || user.username} (${user.role})`;
+          await loadApps();
+          await loadPages();
+          await loadPageDetail();
+          showToast(`🎉 欢迎登录，${user.real_name || user.username}`);
+        } else {
+          alert('登录失败: ' + (json.msg || '账号或密码错误'));
+        }
+      } catch (err) {
+        alert('登录网络异常: ' + err.message);
+      }
+    }
+
+    // 退出管理员登录
+    async function adminLogout() {
+      if (!confirm('确定要退出当前管理后台登录吗？')) return;
+      try {
+        await adminFetch('/api/v1/admin/auth/logout', { method: 'POST' });
+      } catch (e) {}
+      localStorage.removeItem('admin_token');
+      document.getElementById('currentAdminName').innerText = '未登录';
+      showLoginModal();
+    }
 
     // 切换功能 Tab
     function switchTab(tab) {
       document.getElementById('tabSDUI').className = `tab-btn ${tab === 'sdui' ? 'active' : ''}`;
       document.getElementById('tabDrama').className = `tab-btn ${tab === 'drama' ? 'active' : ''}`;
       document.getElementById('tabVideo').className = `tab-btn ${tab === 'video' ? 'active' : ''}`;
+      document.getElementById('tabUsers').className = `tab-btn ${tab === 'users' ? 'active' : ''}`;
+      document.getElementById('tabMCP').className = `tab-btn ${tab === 'mcp' ? 'active' : ''}`;
 
       document.getElementById('panelSDUI').style.display = tab === 'sdui' ? 'block' : 'none';
       document.getElementById('panelDrama').style.display = tab === 'drama' ? 'block' : 'none';
       document.getElementById('panelVideo').style.display = tab === 'video' ? 'block' : 'none';
+      document.getElementById('panelUsers').style.display = tab === 'users' ? 'block' : 'none';
+      document.getElementById('panelMCP').style.display = tab === 'mcp' ? 'block' : 'none';
+
+      if (tab === 'users') {
+        loadAdminUsers();
+      }
     }
 
     // 1. 加载小程序列表
     async function loadApps() {
       try {
-        const res = await fetch('/api/v1/admin/apps');
+        const res = await adminFetch('/api/v1/admin/apps');
         const json = await res.json();
         if (json.code === 0 && json.data) {
           currentAppList = json.data;
@@ -968,7 +1282,7 @@
     // 2. 加载指定小程序的动态页面列表
     async function loadPages() {
       try {
-        const res = await fetch(`/api/v1/admin/pages?app_id=${encodeURIComponent(currentAppId)}`);
+        const res = await adminFetch(`/api/v1/admin/pages?app_id=${encodeURIComponent(currentAppId)}`);
         const json = await res.json();
         if (json.code === 0 && json.data) {
           currentPageList = json.data;
@@ -994,7 +1308,7 @@
     // 3. 读取单个页面的完整 SDUI 协议
     async function loadPageDetail() {
       try {
-        const res = await fetch(`/api/v1/admin/page?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
+        const res = await adminFetch(`/api/v1/admin/page?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
         const json = await res.json();
         if (json.code === 0 && json.data) {
           currentDynamicPage = json.data;
@@ -1431,7 +1745,7 @@
       };
 
       try {
-        const res = await fetch('/api/v1/admin/page', {
+        const res = await adminFetch('/api/v1/admin/page', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1450,7 +1764,7 @@
     // 设为当前线上主页
     async function setCurrentAsHomePage() {
       try {
-        const res = await fetch('/api/v1/admin/page/set_current', {
+        const res = await adminFetch('/api/v1/admin/page/set_current', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ app_id: currentAppId, page_id: currentPageId })
@@ -1470,7 +1784,7 @@
     async function openTemplateModal() {
       document.getElementById('templateModal').style.display = 'flex';
       try {
-        const res = await fetch('/api/v1/admin/templates');
+        const res = await adminFetch('/api/v1/admin/templates');
         const json = await res.json();
         if (json.code === 0 && json.data) {
           const container = document.getElementById('templateGridContainer');
@@ -1497,7 +1811,7 @@
       if (!confirm('套用模板将用预设积木替换当前页面内容，是否确认？')) return;
 
       try {
-        const res = await fetch('/api/v1/admin/templates/apply', {
+        const res = await adminFetch('/api/v1/admin/templates/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1536,7 +1850,7 @@
       }
 
       try {
-        const res = await fetch('/api/v1/admin/apps', {
+        const res = await adminFetch('/api/v1/admin/apps', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ app_id: appId, app_secret: appSecret, app_name: appName })
@@ -1585,7 +1899,7 @@
       };
 
       try {
-        const res = await fetch('/api/v1/admin/page', {
+        const res = await adminFetch('/api/v1/admin/page', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newPagePayload)
@@ -1608,7 +1922,7 @@
     // 生成微信分享卡片并回写
     async function generateShareCard() {
       try {
-        const res = await fetch('/api/v1/admin/page/generate_share_card', {
+        const res = await adminFetch('/api/v1/admin/page/generate_share_card', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1640,7 +1954,7 @@
     // 打开历史版本弹窗
     async function openRevisionsModal() {
       try {
-        const res = await fetch(`/api/v1/admin/page/revisions?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
+        const res = await adminFetch(`/api/v1/admin/page/revisions?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
         const json = await res.json();
         const container = document.getElementById('revisionsListContainer');
         if (json.code === 0 && Array.isArray(json.data)) {
@@ -1686,7 +2000,7 @@
     async function rollbackToRevision(targetRev) {
       if (!confirm(`确定要将当前页面原子回滚至历史版本 v${targetRev} 吗？`)) return;
       try {
-        const res = await fetch('/api/v1/admin/page/rollback', {
+        const res = await adminFetch('/api/v1/admin/page/rollback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1705,6 +2019,249 @@
         }
       } catch (e) {
         alert('回滚异常: ' + e.message);
+      }
+    }
+
+    // ==================== 管理员账户 CRUD ====================
+    let currentAdminUsers = [];
+
+    // 加载管理员列表
+    async function loadAdminUsers() {
+      try {
+        const res = await adminFetch('/api/v1/admin/users');
+        const json = await res.json();
+        if (json.code === 0 && Array.isArray(json.data)) {
+          currentAdminUsers = json.data;
+          renderAdminUserTable();
+        }
+      } catch (e) {
+        console.error('加载管理员列表失败:', e);
+      }
+    }
+
+    // 渲染管理员列表表格
+    function renderAdminUserTable() {
+      const tbody = document.getElementById('adminUserTableBody');
+      if (!tbody) return;
+      if (currentAdminUsers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-sub);">暂无管理员数据</td></tr>';
+        return;
+      }
+      tbody.innerHTML = currentAdminUsers.map(u => {
+        const isSuper = u.role === 'super_admin';
+        const isActive = u.status === 'active';
+        const loginTime = u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '从未登录';
+        return `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+            <td style="padding:12px;">${u.id}</td>
+            <td style="padding:12px; font-weight:600; color:#fff;">${u.username}</td>
+            <td style="padding:12px; color:rgba(255,255,255,0.8);">${u.real_name || '-'}</td>
+            <td style="padding:12px;">
+              <span style="font-size:11px; padding:3px 8px; border-radius:6px; font-weight:700; background:${isSuper ? 'rgba(255,159,10,0.2)' : 'rgba(10,132,255,0.2)'}; color:${isSuper ? 'var(--accent)' : '#0a84ff'};">
+                ${isSuper ? '超级管理员' : '运营编辑'}
+              </span>
+            </td>
+            <td style="padding:12px;">
+              <span style="font-size:11px; padding:3px 8px; border-radius:6px; background:${isActive ? 'rgba(48,209,88,0.2)' : 'rgba(255,69,58,0.2)'}; color:${isActive ? '#30d158' : '#ff453a'};">
+                ${isActive ? '● 正常启用' : '✕ 已禁用'}
+              </span>
+            </td>
+            <td style="padding:12px; color:var(--text-sub); font-size:12px;">${loginTime}</td>
+            <td style="padding:12px; text-align:right;">
+              <button class="btn-ctrl" onclick="openEditAdminModal(${u.id})" style="font-size:12px; margin-right:6px;">✏️ 编辑/改密</button>
+              <button class="btn-ctrl danger" onclick="deleteAdminUser(${u.id}, '${u.username}')" style="font-size:12px;">🗑️ 删除</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // 打开新建管理员弹窗
+    function openAddAdminModal() {
+      document.getElementById('adminUserModalTitle').innerText = '👤 新建管理员账户';
+      document.getElementById('editAdminId').value = '';
+      document.getElementById('adminFormUsername').value = '';
+      document.getElementById('adminFormUsername').removeAttribute('readonly');
+      document.getElementById('adminFormRealName').value = '';
+      document.getElementById('adminFormRole').value = 'editor';
+      document.getElementById('adminFormStatus').value = 'active';
+      document.getElementById('adminFormPassword').value = '';
+      document.getElementById('adminFormPasswordLabel').innerText = '初始登录密码 (必填)';
+      document.getElementById('adminUserModal').style.display = 'flex';
+    }
+
+    // 打开编辑管理员弹窗
+    function openEditAdminModal(id) {
+      const u = currentAdminUsers.find(item => item.id === id);
+      if (!u) return;
+      document.getElementById('adminUserModalTitle').innerText = `✏️ 编辑管理员: ${u.username}`;
+      document.getElementById('editAdminId').value = u.id;
+      document.getElementById('adminFormUsername').value = u.username;
+      document.getElementById('adminFormUsername').setAttribute('readonly', 'true');
+      document.getElementById('adminFormRealName').value = u.real_name || '';
+      document.getElementById('adminFormRole').value = u.role || 'editor';
+      document.getElementById('adminFormStatus').value = u.status || 'active';
+      document.getElementById('adminFormPassword').value = '';
+      document.getElementById('adminFormPasswordLabel').innerText = '重置密码 (留空保持原密码不变)';
+      document.getElementById('adminUserModal').style.display = 'flex';
+    }
+
+    // 关闭管理员弹窗
+    function closeAdminUserModal() {
+      document.getElementById('adminUserModal').style.display = 'none';
+    }
+
+    // 提交管理员表单 (Create / Update)
+    async function submitAdminUserForm() {
+      const editId = document.getElementById('editAdminId').value;
+      const username = document.getElementById('adminFormUsername').value.trim();
+      const realName = document.getElementById('adminFormRealName').value.trim();
+      const role = document.getElementById('adminFormRole').value;
+      const status = document.getElementById('adminFormStatus').value;
+      const password = document.getElementById('adminFormPassword').value.trim();
+
+      if (!editId) {
+        // 新建
+        if (!username || !password) {
+          alert('账号和初始密码为必填项');
+          return;
+        }
+        if (password.length < 6) {
+          alert('密码长度不能少于6位');
+          return;
+        }
+        try {
+          const res = await adminFetch('/api/v1/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: username,
+              password: password,
+              real_name: realName,
+              role: role
+            })
+          });
+          const json = await res.json();
+          if (json.code === 0) {
+            closeAdminUserModal();
+            await loadAdminUsers();
+            showToast('✅ 管理员创建成功');
+          } else {
+            alert('创建失败: ' + json.msg);
+          }
+        } catch (e) {
+          alert('网络错误: ' + e.message);
+        }
+      } else {
+        // 编辑
+        try {
+          const payload = {
+            real_name: realName,
+            role: role,
+            status: status
+          };
+          if (password) {
+            if (password.length < 6) {
+              alert('新密码长度不能少于6位');
+              return;
+            }
+            payload.new_password = password;
+          }
+          const res = await adminFetch(`/api/v1/admin/users/${editId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const json = await res.json();
+          if (json.code === 0) {
+            closeAdminUserModal();
+            await loadAdminUsers();
+            showToast('✅ 管理员信息已更新');
+          } else {
+            alert('更新失败: ' + json.msg);
+          }
+        } catch (e) {
+          alert('网络错误: ' + e.message);
+        }
+      }
+    }
+
+    // 删除管理员
+    async function deleteAdminUser(id, username) {
+      if (!confirm(`确定要彻底删除管理员账号【${username}】吗？此操作不可逆！`)) return;
+      try {
+        const res = await adminFetch(`/api/v1/admin/users/${id}`, {
+          method: 'DELETE'
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          await loadAdminUsers();
+          showToast(`✅ 管理员【${username}】已删除`);
+        } else {
+          alert('删除失败: ' + json.msg);
+        }
+      } catch (e) {
+        alert('删除异常: ' + e.message);
+      }
+    }
+
+    // ==================== AI MCP 在线测试 Playground ====================
+    function onMcpToolSelectChanged() {
+      const tool = document.getElementById('mcpToolSelect').value;
+      const inp = document.getElementById('mcpArgsInput');
+      if (tool === 'sdui.template.list') {
+        inp.value = JSON.stringify({ business_type: 'game' }, null, 2);
+      } else if (tool === 'sdui.page.validate') {
+        inp.value = JSON.stringify({ app_id: currentAppId, page_id: currentPageId }, null, 2);
+      } else if (tool === 'sdui.page.preview') {
+        inp.value = JSON.stringify({ app_id: currentAppId, page_id: currentPageId, query: { from: 'mcp' } }, null, 2);
+      } else if (tool === 'sdui.page.screenshot') {
+        inp.value = JSON.stringify({ app_id: currentAppId, page_id: currentPageId, card_type: 'app_message' }, null, 2);
+      }
+    }
+
+    async function executeMcpTest() {
+      const tool = document.getElementById('mcpToolSelect').value;
+      const argsStr = document.getElementById('mcpArgsInput').value.trim();
+      const statusEl = document.getElementById('mcpRunStatus');
+      const outEl = document.getElementById('mcpResultOutput');
+
+      let parsedArgs = {};
+      try {
+        parsedArgs = JSON.parse(argsStr || '{}');
+      } catch (e) {
+        alert('参数 JSON 格式有误: ' + e.message);
+        return;
+      }
+
+      statusEl.innerText = '正在执行 JSON-RPC 调用...';
+      statusEl.style.color = 'var(--accent)';
+
+      try {
+        const reqBody = {
+          jsonrpc: '2.0',
+          id: Date.now(),
+          method: 'tools/call',
+          params: {
+            name: tool,
+            arguments: parsedArgs
+          }
+        };
+
+        const res = await fetch('/api/v1/mcp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reqBody)
+        });
+
+        const json = await res.json();
+        statusEl.innerText = '调用完成 (200 OK)';
+        statusEl.style.color = '#30d158';
+        outEl.innerText = JSON.stringify(json, null, 2);
+      } catch (err) {
+        statusEl.innerText = '执行失败: ' + err.message;
+        statusEl.style.color = '#ff453a';
+        outEl.innerText = '// 执行异常: ' + err.message;
       }
     }
 

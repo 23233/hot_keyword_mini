@@ -2,10 +2,14 @@
 package system
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"log"
 	"time"
+
+	"github.com/23233/ggg/ut"
 )
 
 // Migrate 数据库迁移
@@ -22,6 +26,7 @@ func Migrate() error {
 		&models.UserSession{},
 		&models.GameRedeemPackage{},
 		&models.GameRedeemRecord{},
+		&models.AdminUser{},
 	}
 
 	err := db.Mysql.AutoMigrate(migrateList...)
@@ -195,6 +200,28 @@ func SeedMultiTenantAndSDUIData() error {
 			UpdatedAt:      time.Now(),
 		}
 		_ = db.Mysql.Create(&defaultPkg).Error
+	}
+
+	// 4. 初始化默认超级管理员账户 (admin / admin123456)
+	var adminCount int64
+	db.Mysql.Model(&models.AdminUser{}).Where("username = ?", "admin").Count(&adminCount)
+	if adminCount == 0 {
+		salt := "sdui_salt_" + ut.RandomStr(16)
+		hasher := sha256.New()
+		hasher.Write([]byte("admin123456" + salt))
+		pwdHash := hex.EncodeToString(hasher.Sum(nil))
+
+		superAdmin := models.AdminUser{
+			Username:     "admin",
+			PasswordHash: pwdHash,
+			Salt:         salt,
+			RealName:     "系统超级管理员",
+			Role:         "super_admin",
+			Status:       "active",
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		_ = db.Mysql.Create(&superAdmin).Error
 	}
 
 	return nil
