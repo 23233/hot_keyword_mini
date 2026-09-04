@@ -309,6 +309,19 @@ SDUI 内核
 
 协议不得下发任意脚本、远程组件、任意小程序路径或任意网页域名。`open_webview` 只能使用已配置的业务域名，`open_mini_program` 只能跳转已审核的 AppID 和路径。动作参数的字段命名必须统一，不能同时出现 `feed_id` 与 `feedId`。
 
+#### 3.9.1 图片资源存储与 CDN 访问行为
+
+图片资源统一写入腾讯云 COS，固定对象前缀为 `miniapps/`，便于在 COS 控制台按前缀匹配权限和生命周期规则。对象路径约定如下：
+
+```text
+miniapps/{app_id}/{owner_type}/{yyyy}/{MM}/{uuid}.{ext}
+miniapps/{app_id}/share/{uuid}-{card_type}.png
+```
+
+管理后台调用 `POST /api/v1/admin/files/presigned-upload-url` 获取短时 PUT 预签名地址，上传请求只携带约定的 `Content-Type`，不附加对象 ACL；`miniapps/*` 的公共读或 CDN 回源权限由 COS 控制台统一管理。上传完成后业务数据只保存当前小程序的 `cos_cdn_url` 拼接地址。每个 `MiniApp` 可配置独立 `cos_cdn_url`，未配置时回退到全局 `COS_CDN_URL`，再回退到 COS Bucket 地址。
+
+服务端生成的微信分享卡片同样写入 `miniapps/{app_id}/share/`，不会把后端渲染接口地址作为持久化图片地址。COS 凭据只在服务端配置，绝不下发到小程序；小程序使用的 CDN 域名必须加入微信合法域名，并确保 CDN/TLS 证书有效。
+
 ### 3.10 页面分享协议
 
 分享配置属于 `DynamicPage`，每个页面都可以独立设置分享给朋友和分享到朋友圈的参数；未配置时使用租户默认值，禁止由客户端自行拼接业务敏感参数：

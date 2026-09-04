@@ -167,7 +167,9 @@ pnpm run build:weapp
 
 ### 5. COS 图片存储与小程序 CDN 配置
 
-图片统一存储在腾讯云 COS，管理后台通过短时 PUT 预签名地址直传，页面协议和业务表只保存 CDN 访问地址。COS 凭据与存储桶是服务级配置，建议通过环境变量注入：
+当前状态：COS 上传链路已接入，所有新图片对象统一使用固定 `miniapps/` 前缀。管理后台通过短时 PUT 预签名地址直传，页面协议和业务表只保存 CDN 访问地址。代码不会在每次上传时附加对象 ACL，访问权限完全由 COS 控制台配置的 `miniapps/*` 规则负责。
+
+COS 凭据与存储桶是服务级配置，建议通过环境变量注入：
 
 ```text
 COS_SECRET_ID
@@ -177,3 +179,7 @@ COS_CDN_URL=https://默认CDN域名（可选）
 ```
 
 管理后台新增或编辑小程序时，在“图片 CDN 根地址”填写该小程序已加入微信合法域名白名单的 HTTPS 地址。每次上传会按 `miniapps/{app_id}/...` 生成独立对象路径，并返回当前小程序 CDN 地址；COS 存储桶需要允许后台来源的 PUT CORS 请求。未配置 COS 时开发环境仍可启动，但图片上传接口会返回“COS 服务未配置”，生产环境会在启动阶段阻断缺失的 COS 凭据。
+
+管理后台上传接口为 `POST /api/v1/admin/files/presigned-upload-url`，请求字段为 `appId`、`fileName`、`fileSize`、`contentType`、`ownerType`，返回 `presignedUrl`、`finalCosFileUrl` 和 `fileKey`。接口需要管理员 Bearer Token，仅允许 JPG、PNG、WebP、GIF，单张图片不超过 10 MB。分享卡片由服务端生成后也写入 `miniapps/{app_id}/share/`。
+
+验证状态（2026-09-04）：预签名上传、COS 签名读取以及关闭证书校验后的 CDN 读取均已通过，测试对象已清理；本机使用默认 TLS 校验访问 `minicdn.a0free.com` 仍返回 `SEC_E_CERT_EXPIRED`，需以 CDN 实际边缘节点证书状态为准。Go 项目已通过 `go test ./...` 与 `go build ./...`。
