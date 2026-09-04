@@ -97,8 +97,15 @@ func main() {
 		ip := realip.Get(ctx.Request())
 		_, _ = ctx.WriteString(ip)
 	})
-	app.Get("/debug/log", iris.FromStd(logger.JM.ViewQueueFunc))
-	app.Get("/debug/log_stats", iris.FromStd(logger.JM.ViewStatsFunc))
+
+	// 系统运行日志端点：严禁生产环境无鉴权公开，仅在非生产环境或经管理员认证后方可查看
+	if !config.Pro && !config.Cfg.IsProduction() {
+		debugParty := app.Party("/debug", middleware.AdminAuthMiddleware)
+		{
+			debugParty.Get("/log", iris.FromStd(logger.JM.ViewQueueFunc))
+			debugParty.Get("/log_stats", iris.FromStd(logger.JM.ViewStatsFunc))
+		}
+	}
 
 	routers.RegisterRouters(app)
 

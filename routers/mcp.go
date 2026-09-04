@@ -23,7 +23,16 @@ func HandleMCPRequest(ctx iris.Context) {
 	}
 
 	mcpService := services.NewMCPService()
-	respBytes, err := mcpService.HandleJSONRPC(body)
+	actorID := ctx.Values().GetStringDefault("mcp_actor_id", "mcp_anonymous")
+	tenantID := ctx.Values().GetStringDefault("mcp_tenant_id", "")
+	var scopes []string
+	if rawScopes := ctx.Values().Get("mcp_scopes"); rawScopes != nil {
+		if s, ok := rawScopes.([]string); ok {
+			scopes = s
+		}
+	}
+
+	respBytes, err := mcpService.HandleJSONRPCWithContext(actorID, tenantID, scopes, body)
 	if err != nil {
 		ctx.JSON(iris.Map{
 			"jsonrpc": "2.0",

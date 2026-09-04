@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+// minifront/src/pages/index/index.tsx
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import { DramaHomeData, DramaInfo, EpisodeItem, ActionChannel } from '../../types/drama'
+import { PageResponseEnvelope, BlockItem } from '../../types/sdui'
 import { request } from '../../utils/request'
+import { dispatchAction } from '../../utils/action'
 import { AppleNavbar } from '../../components/AppleNavbar'
 import { ActionModal } from '../../components/ActionModal'
 import { ImmersiveVideoView } from '../../components/ImmersiveVideoView'
@@ -11,15 +14,33 @@ import { DirectPortalView } from '../../components/DirectPortalView'
 import { GalleryMatrixView } from '../../components/GalleryMatrixView'
 import { DetailPlayerModal } from '../../components/DetailPlayerModal'
 import { MotionLab } from '../../components/MotionLab'
+import { BlockRenderer } from '../../components/SDUI/BlockRenderer'
 import './index.scss'
 
 export default function Index() {
-  // 首页全量驱动数据 (读取接口才展示内容，杜绝前端写死)
+  // SDUI 动态主页优先信封
+  const [sduiEnvelope, setSduiEnvelope] = useState<PageResponseEnvelope | null>(null)
+  // 首页全量驱动短剧数据 (降级模式)
   const [pageData, setPageData] = useState<DramaHomeData | null>(null)
   // 加载中状态
   const [loading, setLoading] = useState<boolean>(true)
   // 错误信息
   const [errorMsg, setErrorMsg] = useState<string>('')
+  // 页面响应式状态空间 ($state.* 真实闭环)
+  const [pageState, setPageState] = useState<Record<string, any>>({})
+  const [blockStates, setBlockStates] = useState<Record<string, string>>({})
+
+  // 状态原子更新方法 (支持 actions.save_as 触发 React 重新渲染)
+  const updateState = useCallback((key: string, value: any) => {
+    setPageState((prev) => ({
+      ...prev,
+      [key]: value
+    }))
+  }, [])
+
+  // 获取 URL Query 传参
+  const routerParams = Taro.getCurrentInstance().router?.params || {}
+
   // 开发者动效调试模式 (可通过 ?mode=motion 或长按导航栏标题 1.2 秒触发)
   const [debugMotionMode, setDebugMotionMode] = useState<boolean>(false)
   const longPressTimerRef = useRef<any>(null)
@@ -49,17 +70,40 @@ export default function Index() {
   const [actionModalVisible, setActionModalVisible] = useState<boolean>(false)
   const [targetEpisodeNum, setTargetEpisodeNum] = useState<number | undefined>(undefined)
 
+
   // 短剧播放详情弹窗/抽屉 (画廊模式点击进入)
   const [detailModalVisible, setDetailModalVisible] = useState<boolean>(false)
   const [detailDrama, setDetailDrama] = useState<DramaInfo | null>(null)
   const [detailEpisodes, setDetailEpisodes] = useState<EpisodeItem[]>([])
 
-  // 从后端接口拉取首页数据
+  // 从后端接口拉取首页数据 (优先连接 SDUI 线上激活主页，无则优雅降级为短剧模式)
   const fetchHomeData = useCallback(async () => {
     try {
       setLoading(true)
       setErrorMsg('')
 
+      // 1. 尝试拉取当前租户设为“激活主页”的 SDUI 动态页面协议
+      try {
+        const sduiRes = await request<PageResponseEnvelope>({
+          url: '/api/v1/page/home',
+          method: 'GET'
+        })
+
+        if (sduiRes?.page?.blocks && sduiRes.page.blocks.length > 0) {
+          setSduiEnvelope(sduiRes)
+          if (sduiRes.page.title) {
+            Taro.setNavigationBarTitle({ title: sduiRes.page.title })
+          }
+          setLoading(false)
+          return
+        }
+      } catch (sduiErr) {
+        // SDUI 页面不存在或处于草稿未发布时，静默走经典短剧接口降级
+        console.log('未配置或未发布 SDUI 首页，进入经典短剧主页模式')
+      }
+
+      // 2. 降级为经典短剧业务主页
+      setSduiEnvelope(null)
       const data = await request<DramaHomeData>({
         url: '/api/v1/drama/home',
         method: 'GET'
@@ -100,8 +144,66 @@ export default function Index() {
     fetchHomeData()
   }, [fetchHomeData])
 
-  // 微信转发分享 (完全取自接口下发的分享配置)
+  // 处理 SDUI 积木交互点击 (注入响应式 pageState 与 updateState 回调，透传 query 等上下文)
+  const handleBlockAction = (action?: any, extraContext?: Record<string, any>) => {
+    dispatchAction(action, {
+      refresh: fetchHomeData,
+      entity: sduiEnvelope?.data,
+      page: sduiEnvelope?.page,
+      query: routerParams,
+      state: pageState,
+      updateState,
+      blockStates,
+      setBlockState: (blockId: string, state: string) => setBlockStates((prev) => ({ ...prev, [blockId]: state })),
+      ...extraContext
+    })
+  }
+
+  // 首页与动态页统一消费服务端 Layout IR，避免同一页面走两套 block 解释路径。
+  const effectiveSduiBlocks = useMemo<BlockItem[]>(() => {
+    const nodes = sduiEnvelope?.layout_ir?.nodes
+    if (!nodes || nodes.length === 0) return sduiEnvelope?.page?.blocks || []
+    const toBlock = (node: any): BlockItem => ({
+      id: node.id,
+      type: node.type,
+      props: {
+        ...(node.props || {}),
+        ...(node.children?.length ? { children: node.children.map(toBlock) } : {}),
+        _layout_height: node.bounding_box?.height
+      },
+      action: node.action,
+      events: node.events,
+      loading: node.loading,
+      empty: node.empty,
+      error: node.error,
+      fallback: node.fallback,
+      style: {
+        margin_y: `${node.margin_y || 0}px`,
+        border_radius: `${node.border_radius || 0}px`,
+        padding: `${node.padding || 0}px`,
+        glass_blur: node.glass_blur
+      }
+    })
+    return nodes.filter((node) => node.visible !== false).map(toBlock)
+  }, [sduiEnvelope])
+
+  // 微信转发分享 (优先消费 SDUI 激活页面配置，降级使用旧版 pageData)
   useShareAppMessage(() => {
+    if (sduiEnvelope?.page?.share_config?.friend?.enabled) {
+      const friendConfig = sduiEnvelope.page.share_config.friend
+      return {
+        title: friendConfig.title || sduiEnvelope.page.title || '精选推荐',
+        path: friendConfig.path || '/pages/index/index',
+        imageUrl: friendConfig.image_url || sduiEnvelope.page.share_config.default_image_url || ''
+      }
+    }
+    if (sduiEnvelope?.page) {
+      return {
+        title: sduiEnvelope.page.title || '精选推荐',
+        path: '/pages/index/index',
+        imageUrl: sduiEnvelope.page.share_config?.default_image_url || ''
+      }
+    }
     return {
       title: pageData?.share_title || pageData?.page_title || '',
       path: '/pages/index/index',
@@ -109,8 +211,23 @@ export default function Index() {
     }
   })
 
-  // 微信朋友圈分享 (完全取自接口下发的分享配置)
+  // 微信朋友圈分享 (优先消费 SDUI 激活页面配置，降级使用旧版 pageData)
   useShareTimeline(() => {
+    if (sduiEnvelope?.page?.share_config?.timeline?.enabled) {
+      const timelineConfig = sduiEnvelope.page.share_config.timeline
+      return {
+        title: timelineConfig.title || sduiEnvelope.page.title || '精选推荐',
+        query: timelineConfig.query || '',
+        imageUrl: timelineConfig.image_url || sduiEnvelope.page.share_config.default_image_url || ''
+      }
+    }
+    if (sduiEnvelope?.page) {
+      return {
+        title: sduiEnvelope.page.title || '精选推荐',
+        query: '',
+        imageUrl: sduiEnvelope.page.share_config?.default_image_url || ''
+      }
+    }
     return {
       title: pageData?.share_title || pageData?.page_title || '',
       query: '',
@@ -225,8 +342,30 @@ export default function Index() {
           </View>
         )}
 
-        {/* 3. 常规短剧模式渲染 */}
-        {!loading && !debugMotionMode && pageData && (
+        {/* 2. SDUI 动态激活主页渲染 (当后台将任一页面设为激活主页时生效) */}
+        {!loading && !debugMotionMode && effectiveSduiBlocks.length > 0 && (
+          <View className='sdui-home-blocks-container' style={{ padding: '24rpx' }}>
+            {effectiveSduiBlocks.map((block) => (
+              <BlockRenderer
+                key={block.id}
+                block={block}
+                onAction={handleBlockAction}
+                context={{
+                  entity: sduiEnvelope?.data,
+                  page: sduiEnvelope?.page,
+                  query: routerParams,
+                  state: pageState,
+                  updateState,
+                  blockStates,
+                  setBlockState: (blockId: string, state: string) => setBlockStates((prev) => ({ ...prev, [blockId]: state }))
+                }}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* 3. 常规短剧模式渲染 (未配置 SDUI 时的优雅降级底座) */}
+        {!loading && !debugMotionMode && !sduiEnvelope && pageData && (
           <View className='mode-render-wrapper'>
             {/* 风格 1：沉浸影音模式 */}
             {pageData.display_mode === 'immersive_video' && (
@@ -237,6 +376,7 @@ export default function Index() {
                 onOpenActionModal={handleOpenActionModal}
               />
             )}
+
 
             {/* 风格 2：剧集矩阵模式 */}
             {pageData.display_mode === 'episode_grid' && (

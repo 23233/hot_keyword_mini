@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build:weapp": "taro build --type weapp",
-    "dev:weapp": "taro build --type weapp --watch"
+    "dev:weapp": "taro build --type weapp --watch",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@tarojs/components": "4.2.1",

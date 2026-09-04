@@ -209,22 +209,40 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			ID:   "block_game_card",
 			Type: "game_card",
 			Props: map[string]interface{}{
-				"title":       "绝地天王：觉醒",
-				"subtitle":    "年度硬核魔幻 3D 手游",
-				"cover_url":   "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
-				"version":     "v2.5.0 全新公测",
-				"redeem_code": "VIP888GOLD",
-				"remaining":   "仅剩 12% 剩余",
+				"title":        "绝地天王：觉醒",
+				"subtitle":     "年度硬核魔幻 3D 手游",
+				"cover_url":    "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
+				"version":      "v2.5.0 全新公测",
+				"package_id":   "pkg_game_novice_888",
+				"claim_status": "unclaimed",
+				"redeem_code":  "点击立即授权领取",
+				"remaining":    "仅剩 12% 剩余",
 			},
 			Style: &models.BlockStyle{
 				BorderRadius: "28rpx",
 				GlassBlur:    true,
 			},
 			Action: &models.BlockAction{
-				Type: "copy_text",
+				Type:        "request_data",
+				RequireAuth: true,
 				Payload: map[string]interface{}{
-					"text":  "VIP888GOLD",
-					"toast": "游戏兑换码【VIP888GOLD】已复制，游戏中粘贴兑换！",
+					"endpoint": "game.redeem",
+					"body": map[string]interface{}{
+						"package_id": "pkg_game_novice_888",
+					},
+					"response": map[string]interface{}{
+						"data_path": "data",
+						"save_as":   "redeem_result",
+					},
+					"on_success": []map[string]interface{}{
+						{
+							"type": "copy_text",
+							"payload": map[string]interface{}{
+								"path":  "$result.code",
+								"toast": "公测专属礼包码已成功领取并复制！",
+							},
+						},
+					},
 				},
 			},
 		},
@@ -232,7 +250,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			ID:   "block_btn_game",
 			Type: "action_button",
 			Props: map[string]interface{}{
-				"text":  "🎮 复制礼包码并启动游戏",
+				"text":  "🎮 登录领取独家公测礼包码",
 				"badge": "限量礼包",
 			},
 			Style: &models.BlockStyle{
@@ -240,10 +258,26 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				AccentColor:  "#30D158",
 			},
 			Action: &models.BlockAction{
-				Type: "copy_text",
+				Type:        "request_data",
+				RequireAuth: true,
 				Payload: map[string]interface{}{
-					"text":  "VIP888GOLD",
-					"toast": "兑换码已复制",
+					"endpoint": "game.redeem",
+					"body": map[string]interface{}{
+						"package_id": "pkg_game_novice_888",
+					},
+					"response": map[string]interface{}{
+						"data_path": "data",
+						"save_as":   "redeem_result",
+					},
+					"on_success": []map[string]interface{}{
+						{
+							"type": "copy_text",
+							"payload": map[string]interface{}{
+								"path":  "$result.code",
+								"toast": "礼包码已复制，请进入游戏兑换！",
+							},
+						},
+					},
 				},
 			},
 		},

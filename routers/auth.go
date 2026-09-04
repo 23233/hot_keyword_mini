@@ -12,7 +12,7 @@ import (
 
 // WechatLoginReq 微信小程序免密登录入参
 type WechatLoginReq struct {
-	// 小程序 AppID (可选，若为空则自动通过 X-App-Id Header 或默认值识别)
+	// 小程序 AppID (可选，公开请求为空时由微信 Referer/X-WX-AppID 识别)
 	AppID string `json:"app_id"`
 	// wx.login 返回的临时授权凭证 code (必填)
 	Code string `json:"code"`
@@ -58,9 +58,10 @@ func WechatLoginHandler(ctx iris.Context) {
 		return
 	}
 
-	appID := req.AppID
+	appID, _ := middleware.RequireTenantAppID(ctx)
 	if appID == "" {
-		appID = middleware.GetTenantAppID(ctx)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "无法识别当前小程序租户"})
+		return
 	}
 
 	srv := services.NewAuthService()
@@ -92,9 +93,10 @@ func RefreshSessionHandler(ctx iris.Context) {
 		return
 	}
 
-	appID := req.AppID
+	appID, _ := middleware.RequireTenantAppID(ctx)
 	if appID == "" {
-		appID = middleware.GetTenantAppID(ctx)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "无法识别当前小程序租户"})
+		return
 	}
 
 	srv := services.NewAuthService()

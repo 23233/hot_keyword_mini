@@ -23,6 +23,14 @@ type MiniApp struct {
 	CreatedAt time.Time `gorm:"column:created_at;comment:创建时间" json:"created_at"`
 	// 更新时间
 	UpdatedAt time.Time `gorm:"column:updated_at;comment:更新时间" json:"updated_at"`
+	// 微信支付普通商户号
+	PaymentMchID string `gorm:"column:payment_mch_id;size:32;comment:微信支付商户号" json:"-"`
+	// 微信支付商户证书序列号
+	PaymentMchSerialNo string `gorm:"column:payment_mch_serial_no;size:64;comment:微信支付商户证书序列号" json:"-"`
+	// 微信支付 API v3 密钥
+	PaymentAPIv3Key string `gorm:"column:payment_api_v3_key;size:64;comment:微信支付APIv3密钥" json:"-"`
+	// 微信支付商户 API 私钥 PEM 内容
+	PaymentPrivateKey string `gorm:"column:payment_private_key;type:text;comment:微信支付商户私钥" json:"-"`
 }
 
 // TableName 自定义 MiniApp 模型的表名

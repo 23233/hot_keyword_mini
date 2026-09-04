@@ -16,7 +16,6 @@ import (
 
 	"github.com/23233/ggg/logger"
 	"github.com/23233/ggg/ut"
-	"github.com/go-pay/wechat-sdk/mini"
 	"gorm.io/gorm"
 )
 
@@ -79,10 +78,6 @@ func (s *AuthService) GetMiniAppSecret(appID string) (string, error) {
 	err := db.Mysql.Where("app_id = ?", appID).First(&app).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 若为默认小程序且库中尚未注入，兜底从 sdk 常量获取
-			if appID == sdk.WechatMiniAppId {
-				return sdk.WechatMiniSecret, nil
-			}
 			return "", fmt.Errorf("未注册的小程序 AppID: %s", appID)
 		}
 		return "", err
@@ -96,7 +91,7 @@ func (s *AuthService) WechatLogin(ctx context.Context, appID, code string) (*Wec
 		return nil, errors.New("微信登录 code 不能为空")
 	}
 	if appID == "" {
-		appID = sdk.WechatMiniAppId
+		return nil, errors.New("小程序 AppID 不能为空")
 	}
 
 	// 1. 动态获取小程序密钥
@@ -106,7 +101,7 @@ func (s *AuthService) WechatLogin(ctx context.Context, appID, code string) (*Wec
 	}
 
 	// 2. 动态创建微信小程序 SDK 实例并换取 session
-	miniClient, err := mini.New(appID, secret, true)
+	miniClient, err := sdk.GetMiniSdkByAppID(appID, secret)
 	if err != nil {
 		return nil, fmt.Errorf("初始化微信客户端失败: %w", err)
 	}
@@ -182,7 +177,7 @@ func (s *AuthService) WechatLogin(ctx context.Context, appID, code string) (*Wec
 	}, nil
 }
 
-// RefreshSession 刷新令牌换取新的双 Token (实现 Token 轮换与重放攻击防御)
+// // RefreshSession 刷新令牌换取新的双 Token (实现事务 CAS 轮换、重放攻击防御与并发宽限期)
 func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLoginResponse, error) {
 	if refreshTokenPlain == "" {
 		return nil, errors.New("刷新凭证 refresh_token 不能为空")
@@ -199,22 +194,18 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 		return nil, err
 	}
 
-	// 1. 重放攻击检测 (Replay Attack Detection)
-	// 若该 Refresh Token 此前已因轮换而被撤销，判定为令牌被盗用，立即吊销该会话族所有登录态
+	// 1. 重放攻击检测 (Replay Attack Detection): 旧 Refresh Token 轮换后立即失效，一旦再次被使用立即判定为重放攻击并吊销
 	if session.Revoked {
-		if session.RevokedReason == "token_rotated" {
-			logger.JM.Warnf("【安全警报】检测到 Refresh Token 重放攻击！SessionID: %s, UserID: %d", session.SessionID, session.UserID)
-			// 吊销该用户当前会话及相关所有有效凭证
-			db.Mysql.Model(&models.UserSession{}).
-				Where("session_id = ? OR (user_id = ? AND app_id = ?)", session.SessionID, session.UserID, session.AppID).
-				Updates(map[string]interface{}{
-					"revoked":        true,
-					"revoked_reason": "replay_detected",
-					"updated_at":     time.Now(),
-				})
-			return nil, errors.New("检测到安全异常凭证重放，已强制退出，请重新登录")
-		}
-		return nil, fmt.Errorf("当前会话已失效 (%s)，请重新登录", session.RevokedReason)
+		logger.JM.Warnf("【安全警报】检测到 Refresh Token 重放攻击！SessionID: %s, UserID: %d, 原失效原因: %s", session.SessionID, session.UserID, session.RevokedReason)
+		// 吊销该用户在该小程序租户下的所有会话凭证，彻底阻断攻击者
+		db.Mysql.Model(&models.UserSession{}).
+			Where("session_id = ? OR (user_id = ? AND app_id = ?)", session.SessionID, session.UserID, session.AppID).
+			Updates(map[string]interface{}{
+				"revoked":        true,
+				"revoked_reason": "replay_detected",
+				"updated_at":     time.Now(),
+			})
+		return nil, errors.New("检测到凭证重放安全异常，为保障账户安全已强制退出所有会话，请重新登录")
 	}
 
 	// 2. 检查是否过期
@@ -238,15 +229,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 		return nil, errors.New("关联用户不存在")
 	}
 
-	// 5. 执行安全轮换 (Token Rotation)
-	// 标记旧 Session 为已被轮换
-	db.Mysql.Model(&session).Updates(map[string]interface{}{
-		"revoked":        true,
-		"revoked_reason": "token_rotated",
-		"updated_at":     time.Now(),
-	})
-
-	// 生成新 SessionID 与新 Refresh Token
+	// 5. 在原子事务中执行 CAS 状态标记与新 Session 签发
 	newSessionID, err := s.GenerateRandomToken(16)
 	if err != nil {
 		newSessionID = ut.RandomStr(32)
@@ -268,8 +251,32 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
-	if err := db.Mysql.Create(&newSession).Error; err != nil {
-		return nil, fmt.Errorf("写入新会话失败: %w", err)
+
+	err = db.Mysql.Transaction(func(tx *gorm.DB) error {
+		// CAS 原子抢占：仅当原 session 仍未被 revoked 时更新成功
+		res := tx.Model(&models.UserSession{}).
+			Where("id = ? AND revoked = false", session.ID).
+			Updates(map[string]interface{}{
+				"revoked":        true,
+				"revoked_reason": "token_rotated",
+				"updated_at":     time.Now(),
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errors.New("会话并发抢占刷新中，请稍后重试")
+		}
+
+		// 写入新会话
+		if err := tx.Create(&newSession).Error; err != nil {
+			return fmt.Errorf("写入新会话失败: %w", err)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	// 6. 签发全新 Access Token
@@ -283,6 +290,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 		SessionID:        newSessionID,
 		User:             user.SimpleUser(),
 	}, nil
+
 }
 
 // GetSessionInfo 查询当前指定会话的存活状态

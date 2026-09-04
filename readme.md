@@ -1,6 +1,6 @@
 # 爆款热词与短剧小程序矩阵一体化系统 (SDUI 动态组件引擎)
 
-本项目为针对微信搜一搜爆款关键词与上升指数词流量承接打造的高并发小程序矩阵系统。采用 **Golang (Iris + Gorm) 服务端驱动动态引擎 (Server-Driven UI, SDUI)** 与 **Taro 4 + React 微信小程序跨端技术栈**，界面严格遵循**苹果人机交互设计规范 (Apple HIG)**，并配备了**多租户一脑多控管理工作台与 iPhone 16 Pro 手机同构模拟器**。
+本项目为针对微信搜一搜爆款关键词与上升指数词流量承接打造的高并发小程序矩阵系统。采用 **Golang (Iris + Gorm) 服务端驱动动态引擎 (Server-Driven UI, SDUI)** 与 **Taro 4 + React 微信小程序跨端技术栈**，界面严格遵循**苹果人机交互设计规范 (Apple HIG)**，并配备了**多租户一脑多控管理工作台与微信开发者工具默认 iPhone 12/13 Pro 同构模拟器**。
 
 ---
 
@@ -23,7 +23,7 @@
 
 ### 2. 企业级多租户矩阵与双 Token 会话底层
 - **多租户数据物理隔离**：
-  - 小程序前端通过请求拦截器自动注入 `X-App-Id` Header；
+  - 小程序前端不内置 AppID，请求由微信运行时 `Referer` 或 `X-WX-AppID` 识别租户；
   - 后端中间件提取租户上下文，数据库表（`users`, `dynamic_pages`, `user_sessions`）均以 `app_id` 为联合唯一键隔离；
 - **双 Token 轮换与防重放攻击 (Anti-Replay Attack)**：
   - 短期 Access Token（2小时有效）+ 长期加密 Refresh Token（30天有效）；
@@ -40,7 +40,7 @@
   - **通用信息查询结果模板 (`tpl_query_result`)**：考分查询表单 + 查询结果时间线；
   - **极速软件/资源下载模板 (`tpl_download_resource`)**：安装包说明 + 夸克/百度网盘高速通道；
   - 点击一键套用模板瞬间派生当前页面，生成后支持逐块自由增删改查；
-- **iPhone 16 Pro 手机模拟器 0ms 实时同构渲染**：
+- **iPhone 12/13 Pro 手机模拟器 0ms 实时同构渲染**：
   - 左侧模拟器采用真实 CSS 毛玻璃磨砂与苹果质感，与小程序同构渲染；
   - 右侧改动任何标题、积木内容、样式或动作，左侧模拟器 0ms 实时热更新，所见即所得。
 
@@ -94,7 +94,7 @@
 │   ├── api.go                  # API 路由总控与 /api/v1/share/card 公开图片流
 │   └── index.go                # Web 路由与 /admin 工作台入口
 ├── templates/
-│   └── admin.html              # 可视化管理工作台 (多租户操盘 + 模板库 + iPhone 16 Pro 手机模拟器)
+│   └── admin.html              # 可视化管理工作台 (多租户操盘 + 模板库 + iPhone 12/13 Pro 手机模拟器)
 ├── system/
 │   └── migrate.go              # 数据库自动迁移与多租户/SDUI 种子自举注入
 ├── minifront/                  # 微信小程序前端工程 (Taro 4 + React + TypeScript)
@@ -140,7 +140,7 @@ go run main.go
 👉 **`http://localhost:8080/admin`**
 1. **多小程序管理**：顶部切换或添加小程序；
 2. **行业模板套用**：点击“📋 套用行业模板”，在短剧爆款、游戏礼包、考分查询、资源下载中自由选择；
-3. **积木编排**：拖拽排序、增删组件、修改文字、配置跳转动作，左侧 iPhone 16 Pro 模拟器实时响应；
+3. **积木编排**：拖拽排序、增删组件、修改文字、配置跳转动作，左侧 iPhone 12/13 Pro 模拟器实时响应；
 4. **一键生成分享卡片**：点击“⚡ 自动生成微信 5:4 分享卡片”，即刻实时预览并在发布后下发；
 5. **发布生效**：点击右上角“⚡ 保存并同步至小程序”，线上小程序无需重新发布代码包即可秒级生效！
 
@@ -158,3 +158,9 @@ pnpm run build:weapp
 # 使用微信开发者工具 CLI 打开预览
 & "C:\Program Files (x86)\Tencent\微信web开发者工具\cli.bat" open --project "c:\Users\Admin\Desktop\projects\hot_keyword_mini\minifront"
 ```
+
+### 4. 微信支付配置（每个小程序独立普通商户）
+
+在管理后台为对应 AppID 填写 `payment_mch_id`、`payment_mch_serial_no`、`payment_api_v3_key`、`payment_private_key`。支付回调地址由后端根据 `public_base_url` 和 AppID 自动生成，不再在后台手工填写。其中 `payment_private_key` 是商户 API 私钥 `apiclient_key.pem` 的完整 PEM 内容，不是商户证书文件；`payment_mch_serial_no` 是商户 API 证书 `apiclient_cert.pem` 的证书序列号，平台证书由 SDK 使用 API v3 Key 自动下载和轮换。还必须在微信支付商户平台完成该小程序 AppID 与商户号绑定并开通 JSAPI/小程序支付权限。
+
+商品通过商品表维护，前端动作只提交 SKU，金额始终由后端读取 `price_fen`。支付通知地址必须使用路径携带 AppID，例如 `https://实际域名/api/v1/payment/notify/wx2e8feeb13a20fb1b`；支付成功后客户端通过 `GET /api/v1/payment/orders/{out_trade_no}` 查询最终状态。

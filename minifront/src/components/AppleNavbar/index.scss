@@ -13,23 +13,33 @@
     display: flex;
     align-items: center;
     padding-left: 32rpx;
+    padding-right: 180rpx;
     box-sizing: border-box;
 
     .nav-title-group {
       display: flex;
       flex-direction: column;
+      min-width: 0;
 
       .nav-title {
         font-size: 32rpx;
         font-weight: 700;
         color: #ffffff;
-        letter-spacing: -0.5rpx;
+        letter-spacing: 0;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .nav-subtitle {
         font-size: 20rpx;
         color: rgba(235, 235, 245, 0.6);
         margin-top: 2rpx;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
   }

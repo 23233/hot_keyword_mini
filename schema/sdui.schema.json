@@ -1,0 +1,300 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hotkeyword.cn/schemas/sdui.schema.json",
+  "title": "PageResponseEnvelope",
+  "description": "服务端驱动动态组件引擎 (SDUI) 统一响应信封与动态页面契约标准 Schema (Version 1.1)",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "schema_version",
+    "request_id",
+    "page"
+  ],
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "description": "协议版本号，当前基准为 1.1",
+      "enum": ["1.0", "1.1"]
+    },
+    "schema_version": {
+      "type": "integer",
+      "description": "模式契约版本，当前为 3",
+      "minimum": 1
+    },
+    "request_id": {
+      "type": "string",
+      "description": "唯一请求追踪跟踪 ID"
+    },
+    "page": {
+      "type": "object",
+      "description": "动态页面核心传输实体 (DynamicPageDTO)",
+      "required": [
+        "page_id",
+        "revision",
+        "status",
+        "title",
+        "business_type",
+        "blocks"
+      ],
+      "properties": {
+        "page_id": {
+          "type": "string",
+          "description": "页面唯一英文标识符",
+          "pattern": "^[a-z0-9_-]{1,64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "description": "版本修订序号，单调严格递增",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "description": "页面生命周期状态",
+          "enum": ["draft", "published", "archived", "reviewing"]
+        },
+        "title": {
+          "type": "string",
+          "description": "页面主标题",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "business_type": {
+          "type": "string",
+          "description": "业务领域类型",
+          "enum": ["drama", "game", "query", "download", "custom"]
+        },
+        "intent": {
+          "type": "string",
+          "description": "页面核心转化搜索意图",
+          "enum": ["watch", "redeem", "query", "download", "buy", "book", "join"]
+        },
+        "theme": {
+          "type": "string",
+          "description": "视觉主题风格",
+          "enum": ["dark_glass", "light_clean", "cyber_neon"]
+        },
+        "accent_color": {
+          "type": "string",
+          "description": "苹果强调色十六进制代码",
+          "pattern": "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$"
+        },
+        "require_auth": {
+          "type": "boolean",
+          "description": "页面级强制微信登录拦截"
+        },
+        "share_config": {
+          "$ref": "#/definitions/PageShareConfig"
+        },
+        "blocks": {
+          "type": "array",
+          "description": "按序排列的原子积木组件列表",
+          "items": {
+            "$ref": "#/definitions/BlockItem"
+          }
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "后端绑定的主业务实体详情与受控上下文数据",
+      "additionalProperties": true
+    },
+    "layout_ir": {
+      "type": "object",
+      "description": "服务端计算生成的统一同构布局中间表示 (IR)"
+    },
+    "capabilities_required": {
+      "type": "array",
+      "description": "渲染此页必需的客户端能力声明",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cache": {
+      "type": "object",
+      "description": "信封缓存控制元数据",
+      "required": ["etag", "max_age"],
+      "properties": {
+        "etag": {
+          "type": "string",
+          "description": "页面版本 ETag 哈希"
+        },
+        "max_age": {
+          "type": "integer",
+          "description": "客户端缓存最大生命周期(秒)"
+        }
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "description": "异常降级页面路由方案",
+      "required": ["page_id", "mode"],
+      "properties": {
+        "page_id": { "type": "string" },
+        "mode": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "PageShareConfig": {
+      "type": "object",
+      "description": "页面级微信分享整体配置",
+      "properties": {
+        "default_image_url": { "type": "string" },
+        "friend": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "title": { "type": "string" },
+            "path": { "type": "string" },
+            "image_url": { "type": "string" }
+          }
+        },
+        "timeline": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "title": { "type": "string" },
+            "query": { "type": "string" },
+            "image_url": { "type": "string" }
+          }
+        }
+      }
+    },
+    "BlockItem": {
+      "type": "object",
+      "required": ["id", "type", "props"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "积木组件实例唯一 ID"
+        },
+        "type": {
+          "type": "string",
+          "description": "原子积木组件标识；未知扩展类型由客户端按 fallback 或占位策略降级"
+        },
+        "props": {
+          "type": "object",
+          "description": "传递给积木的属性，支持受控数据绑定求值"
+        },
+        "style": {
+          "type": "object",
+          "properties": {
+            "border_radius": { "type": "string" },
+            "accent_color": { "type": "string" },
+            "margin_y": { "type": "string" },
+            "margin_x": { "type": "string" },
+            "padding": { "type": "string" },
+            "glass_blur": { "type": "boolean" },
+            "background": { "type": "string" }
+          }
+        },
+        "visible_when": {
+          "description": "受控条件可见性表达式",
+          "type": "object"
+        },
+        "repeat": {
+          "type": "object",
+          "description": "列表循环展开配置",
+          "properties": {
+            "path": { "type": "string" },
+            "items": { "type": "array" }
+          }
+        },
+        "loading": {
+          "$ref": "#/definitions/BlockItem"
+        },
+        "empty": {
+          "$ref": "#/definitions/BlockItem"
+        },
+        "error": {
+          "$ref": "#/definitions/BlockItem"
+        },
+        "action": {
+          "$ref": "#/definitions/BlockAction"
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/BlockAction" }
+          }
+        },
+        "fallback": {
+          "$ref": "#/definitions/BlockItem"
+        }
+      }
+    },
+    "BlockAction": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "标准动作类型",
+          "enum": [
+            "copy_text",
+            "navigate_page",
+            "open_channels_activity",
+            "open_mini_program",
+            "preview_image",
+            "open_webview",
+            "request_data",
+            "request_payment",
+            "require_auth",
+            "toast",
+            "refresh",
+            "share",
+            "subscribe_message"
+          ]
+        },
+        "require_auth": {
+          "type": "boolean",
+          "description": "是否需要强制登录前置门禁"
+        },
+        "condition": {
+          "type": "object",
+          "description": "动作触发前置条件表达式"
+        },
+        "confirm": {
+          "type": "object",
+          "description": "动作触发前置二次确认配置",
+          "properties": {
+            "title": { "type": "string" },
+            "message": { "type": "string" },
+            "content": { "type": "string" },
+            "confirm_text": { "type": "string" },
+            "cancel_text": { "type": "string" }
+          }
+        },
+        "on_success": {
+          "type": "array",
+          "description": "动作执行成功后的链式动作列表",
+          "items": {
+            "$ref": "#/definitions/BlockAction"
+          }
+        },
+        "on_error": {
+          "type": "array",
+          "description": "动作执行失败/异常后的链式动作列表",
+          "items": {
+            "$ref": "#/definitions/BlockAction"
+          }
+        },
+        "track": {
+          "type": "object",
+          "description": "动作交互数据埋点配置",
+          "properties": {
+            "event_name": { "type": "string" },
+            "event_id": { "type": "string" },
+            "params": { "type": "object" }
+          }
+        },
+        "payload": {
+          "type": "object",
+          "description": "动作入参负载字典"
+        }
+      }
+    }
+  }
+}

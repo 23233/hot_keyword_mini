@@ -413,3 +413,216 @@
     }
   }
 }
+
+// 10. 通用图片积木 (ImageBlock)
+.sdui-image-block {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+
+  .sdui-img-inner {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .sdui-img-placeholder {
+    width: 100%;
+    height: 100%;
+    min-height: 240rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+
+    .placeholder-icon {
+      font-size: 54rpx;
+      margin-bottom: 12rpx;
+      opacity: 0.6;
+    }
+
+    .placeholder-hint {
+      font-size: 24rpx;
+      color: rgba(255, 255, 255, 0.4);
+    }
+  }
+}
+
+// 11. 通用文本积木 (TextBlock)
+.sdui-text-block {
+  width: 100%;
+  box-sizing: border-box;
+  color: #f5f5f7;
+
+  .sdui-text-content {
+    display: inline;
+  }
+
+  @for $i from 1 through 5 {
+    &.sdui-text-clamp-#{$i} {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: $i;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+
+.sdui-generic-block {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20rpx;
+  color: #f5f5f7;
+
+  .sdui-generic-image {
+    width: 100%;
+    height: 240rpx;
+    border-radius: 14rpx;
+  }
+
+  .sdui-generic-title {
+    font-size: 30rpx;
+    font-weight: 700;
+  }
+
+  .sdui-generic-content {
+    font-size: 25rpx;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.68);
+  }
+}
+
+// 12. 选项卡积木 (TabsBlock)
+.sdui-tabs-block {
+  width: 100%;
+
+  .tabs-header-bar {
+    display: flex;
+    gap: 12rpx;
+    padding: 8rpx;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 24rpx;
+    border: 1rpx solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 24rpx;
+
+    .tab-pill-item {
+      flex: 1;
+      padding: 14rpx 0;
+      text-align: center;
+      border-radius: 18rpx;
+      transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+
+      .tab-pill-text {
+        font-size: 26rpx;
+        color: rgba(255, 255, 255, 0.6);
+        font-weight: 500;
+      }
+
+      &.is-active {
+        background: rgba(255, 255, 255, 0.15);
+        box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.3);
+
+        .tab-pill-text {
+          color: #ffffff;
+          font-weight: 700;
+        }
+      }
+    }
+  }
+}
+
+// 13. 通用空态卡片积木 (EmptyBlock)
+.sdui-empty-card-block {
+  width: 100%;
+  padding: 64rpx 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 28rpx;
+  border: 1rpx dashed rgba(255, 255, 255, 0.15);
+  box-sizing: border-box;
+
+  .state-icon {
+    font-size: 64rpx;
+    margin-bottom: 16rpx;
+  }
+
+  .state-title {
+    font-size: 30rpx;
+    font-weight: 700;
+    color: #f5f5f7;
+    margin-bottom: 10rpx;
+  }
+
+  .state-desc {
+    font-size: 24rpx;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    line-height: 1.5;
+    margin-bottom: 24rpx;
+  }
+
+  .state-action-btn {
+    padding: 12rpx 36rpx;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1rpx solid rgba(255, 255, 255, 0.2);
+    border-radius: 999rpx;
+
+    .action-btn-text {
+      font-size: 26rpx;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.2);
+    }
+  }
+}
+
+// 14. 通用骨架屏积木 (SkeletonBlock)
+.sdui-skeleton-block {
+  width: 100%;
+  padding: 24rpx;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 24rpx;
+
+  .skeleton-line {
+    height: 32rpx;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.05) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.6s infinite ease-in-out;
+    border-radius: 8rpx;
+    margin-bottom: 20rpx;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    &.is-hero {
+      height: 160rpx;
+      border-radius: 16rpx;
+      margin-bottom: 28rpx;
+    }
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

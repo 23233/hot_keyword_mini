@@ -1,3 +1,4 @@
+// index.tsx
 import React, { useMemo } from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
@@ -17,12 +18,12 @@ export const AppleNavbar: React.FC<AppleNavbarProps> = ({
     try {
       const menu = Taro.getMenuButtonBoundingClientRect()
       const sys = Taro.getSystemInfoSync()
-      const statusHeight = sys.statusBarHeight || 20
+      const statusHeight = Number(sys.statusBarHeight) > 0 ? Number(sys.statusBarHeight) : 20
 
       // 微信官方推荐导航栏总高度公式: (胶囊top - 状态栏height)*2 + 胶囊height + 状态栏height
       let navHeight = 88
-      if (menu && menu.top && menu.height) {
-        navHeight = (menu.top - statusHeight) * 2 + menu.height + statusHeight
+      if (menu && Number(menu.top) >= statusHeight && Number(menu.height) > 0) {
+        navHeight = (Number(menu.top) - statusHeight) * 2 + Number(menu.height) + statusHeight
       } else {
         navHeight = statusHeight + 44
       }
@@ -33,8 +34,8 @@ export const AppleNavbar: React.FC<AppleNavbarProps> = ({
       }
     } catch {
       return {
-        navBarHeight: 88,
-        statusBarHeight: 44
+        navBarHeight: 64,
+        statusBarHeight: 20
       }
     }
   }, [])

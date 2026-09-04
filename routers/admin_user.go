@@ -2,6 +2,7 @@
 package routers
 
 import (
+	"hot_keyword/routers/middleware"
 	"hot_keyword/services"
 	"strconv"
 
@@ -94,8 +95,8 @@ func RegisterAdminUserRoutes(adminParty iris.Party) {
 		})
 	})
 
-	// 5. 新建管理员 (Create)
-	adminParty.Post("/users", func(ctx iris.Context) {
+	// 5. 新建管理员 (Create) - 仅限超级管理员
+	adminParty.Post("/users", middleware.RequireAdminRole("super_admin"), func(ctx iris.Context) {
 		var req CreateAdminUserReq
 		if err := ctx.ReadJSON(&req); err != nil {
 			ctx.JSON(iris.Map{"code": 400, "msg": "参数反序列化失败"})
@@ -115,8 +116,8 @@ func RegisterAdminUserRoutes(adminParty iris.Party) {
 		})
 	})
 
-	// 6. 修改管理员信息或密码 (Update)
-	adminParty.Put("/users/{id:int64}", func(ctx iris.Context) {
+	// 6. 修改管理员信息或密码 (Update) - 仅限超级管理员
+	adminParty.Put("/users/{id:int64}", middleware.RequireAdminRole("super_admin"), func(ctx iris.Context) {
 		id, _ := ctx.Params().GetInt64("id")
 		var req UpdateAdminUserReq
 		if err := ctx.ReadJSON(&req); err != nil {
@@ -137,8 +138,8 @@ func RegisterAdminUserRoutes(adminParty iris.Party) {
 		})
 	})
 
-	// 7. 删除管理员 (Delete)
-	adminParty.Delete("/users/{id:int64}", func(ctx iris.Context) {
+	// 7. 删除管理员 (Delete) - 仅限超级管理员
+	adminParty.Delete("/users/{id:int64}", middleware.RequireAdminRole("super_admin"), func(ctx iris.Context) {
 		id, _ := ctx.Params().GetInt64("id")
 		var currentAdminID int64
 		if rawID := ctx.Values().Get("admin_id"); rawID != nil {

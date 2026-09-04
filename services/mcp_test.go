@@ -3,6 +3,7 @@ package services
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -16,13 +17,13 @@ func TestMCPToolDefinitions(t *testing.T) {
 	}
 
 	expectedTools := map[string]bool{
-		"sdui.template.list":  false,
-		"sdui.page.create":    false,
-		"sdui.page.patch":     false,
+		"sdui.template.list":   false,
+		"sdui.page.create":     false,
+		"sdui.page.patch":      false,
 		"sdui.page.validate":   false,
-		"sdui.page.preview":   false,
+		"sdui.page.preview":    false,
 		"sdui.page.screenshot": false,
-		"sdui.page.publish":   false,
+		"sdui.page.publish":    false,
 	}
 
 	for _, tool := range tools {
@@ -92,5 +93,29 @@ func TestMCPToolCall_TemplateList(t *testing.T) {
 	_ = json.Unmarshal(callRespBytes, &resp)
 	if resp.Error != nil {
 		t.Fatalf("工具执行报错: %v", resp.Error)
+	}
+}
+
+// TestMCPToolCall_PublishGate 测试发布必须人工显式确认与权限作用域控制
+func TestMCPToolCall_PublishGate(t *testing.T) {
+	service := NewMCPService()
+
+	// 1. 尝试无 release 权限发布，预期被拦截
+	_, err := service.ExecuteToolWithContext("ai_agent_1", "wx_test", []string{"read", "write:draft"}, "sdui.page.publish", map[string]interface{}{
+		"app_id":    "wx_test",
+		"page_id":   "home",
+		"confirmed": true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "release") {
+		t.Fatalf("预期缺少 release 权限报错，实际为: %v", err)
+	}
+
+	// 2. 有 release 权限但缺少 confirmed: true 人工显式确认，预期被门禁拦截
+	_, err = service.ExecuteToolWithContext("ai_agent_1", "wx_test", []string{"release"}, "sdui.page.publish", map[string]interface{}{
+		"app_id":  "wx_test",
+		"page_id": "home",
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirmed") {
+		t.Fatalf("预期缺少人工确认门禁报错，实际为: %v", err)
 	}
 }

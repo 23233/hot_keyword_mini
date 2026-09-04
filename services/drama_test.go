@@ -75,4 +75,3 @@ func TestGetMockGalleryList(t *testing.T) {
 		t.Fatalf("期望覆盖所有播放模式(channels_video, channels_embedded, direct_video, web_view, none)")
 	}
 }
-

@@ -1,43 +1,13 @@
 import Taro from '@tarojs/taro'
 import { UserSessionState } from '../types/sdui'
+import { getBaseUrl } from '../config/env'
 
 // 本地存储会话键名
 const SESSION_STORAGE_KEY = 'hot_mini_user_session'
-// 租户 AppID 存储键名
-const APP_ID_STORAGE_KEY = 'hot_mini_app_id'
-// 默认小程序 AppID
-export const DEFAULT_APP_ID = 'wx516563cfe994bbc6'
-// 后端 API 基础地址
-const BASE_URL = 'http://127.0.0.1:8080'
-
 // 并发刷新请求锁与 Promise 共享句柄
 let refreshPromise: Promise<UserSessionState | null> | null = null
 // 并发微信登录请求锁与 Promise 共享句柄
 let loginPromise: Promise<UserSessionState | null> | null = null
-
-/**
- * 获取当前小程序租户 AppID
- */
-export function getAppId(): string {
-  try {
-    const cached = Taro.getStorageSync(APP_ID_STORAGE_KEY)
-    if (cached) return cached
-  } catch (e) {
-    // ignore
-  }
-  return DEFAULT_APP_ID
-}
-
-/**
- * 设置当前小程序租户 AppID
- */
-export function setAppId(appId: string): void {
-  try {
-    Taro.setStorageSync(APP_ID_STORAGE_KEY, appId)
-  } catch (e) {
-    // ignore
-  }
-}
 
 /**
  * 获取本地缓存的登录会话信息
@@ -111,17 +81,15 @@ export async function loginWithWechat(): Promise<UserSessionState | null> {
         throw new Error('获取微信登录凭证 code 失败')
       }
 
-      const appId = getAppId()
       const res = await Taro.request<{ code: number; msg?: string; data: UserSessionState }>({
-        url: `${BASE_URL}/api/v1/auth/wechat-login`,
+        url: `${getBaseUrl()}/api/v1/auth/wechat-login`,
         method: 'POST',
+
         data: {
-          app_id: appId,
           code: loginRes.code
         },
         header: {
           'content-type': 'application/json',
-          'X-App-Id': appId,
           'X-SDUI-Version': '1.1'
         }
       })
@@ -165,17 +133,15 @@ export async function refreshSession(): Promise<UserSessionState | null> {
         return null
       }
 
-      const appId = getAppId()
       const res = await Taro.request<{ code: number; msg?: string; data: UserSessionState }>({
-        url: `${BASE_URL}/api/v1/auth/refresh`,
+        url: `${getBaseUrl()}/api/v1/auth/refresh`,
         method: 'POST',
+
         data: {
-          app_id: appId,
           refresh_token: session.refresh_token
         },
         header: {
           'content-type': 'application/json',
-          'X-App-Id': appId,
           'X-SDUI-Version': '1.1'
         }
       })
@@ -245,12 +211,11 @@ export async function logout(): Promise<void> {
   if (session?.session_id && session?.access_token) {
     try {
       await Taro.request({
-        url: `${BASE_URL}/api/v1/auth/logout`,
+        url: `${getBaseUrl()}/api/v1/auth/logout`,
         method: 'POST',
         data: { session_id: session.session_id },
         header: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'X-App-Id': getAppId()
+          'Authorization': `Bearer ${session.access_token}`
         }
       })
     } catch (e) {

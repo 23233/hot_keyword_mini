@@ -47,16 +47,16 @@ type DramaEpisode struct {
 
 // ActionChannel 看后续转化渠道配置项
 type ActionChannel struct {
-	Type        string `json:"type"`        // 渠道类型: pan(网盘), mp(公众号), customer(微信客服), mini(正版小程序)
-	Name        string `json:"name"`        // 渠道名称: 如 "夸克网盘极速看全集" / "官方公众号"
-	Icon        string `json:"icon"`        // 图标标识
-	Desc        string `json:"desc"`        // 说明文案: 如 "高清4K未删减版 免费自取"
-	BtnText     string `json:"btn_text"`    // 按钮文案: 如 "一键复制网盘链接"
-	Content     string `json:"content"`     // 核心复制内容: 网盘链接、微信号或公众号名称
-	FetchCode   string `json:"fetch_code"`  // 提取码(如有)
-	TargetAppID string `json:"target_appid"`// 目标小程序AppID(如有)
-	TargetPath  string `json:"target_path"` // 目标小程序页面路径(如有)
-	TipNotice   string `json:"tip_notice"`  // 复制后的操作指引提示
+	Type        string `json:"type"`         // 渠道类型: pan(网盘), mp(公众号), customer(微信客服), mini(正版小程序)
+	Name        string `json:"name"`         // 渠道名称: 如 "夸克网盘极速看全集" / "官方公众号"
+	Icon        string `json:"icon"`         // 图标标识
+	Desc        string `json:"desc"`         // 说明文案: 如 "高清4K未删减版 免费自取"
+	BtnText     string `json:"btn_text"`     // 按钮文案: 如 "一键复制网盘链接"
+	Content     string `json:"content"`      // 核心复制内容: 网盘链接、微信号或公众号名称
+	FetchCode   string `json:"fetch_code"`   // 提取码(如有)
+	TargetAppID string `json:"target_appid"` // 目标小程序AppID(如有)
+	TargetPath  string `json:"target_path"`  // 目标小程序页面路径(如有)
+	TipNotice   string `json:"tip_notice"`   // 复制后的操作指引提示
 }
 
 // FloatingButton 首页悬浮按钮配置(可选，接口有值才展示)

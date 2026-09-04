@@ -2,7 +2,9 @@
 package routers
 
 import (
+	"hot_keyword/jwtToken"
 	"hot_keyword/services"
+	"strings"
 
 	"github.com/kataras/iris/v12"
 )
@@ -21,10 +23,9 @@ type ExecuteActionReq struct {
 func ExecuteActionHandler(ctx iris.Context) {
 	appID := ctx.Values().GetString("app_id")
 	if appID == "" {
-		appID = ctx.GetHeader("X-App-Id")
-	}
-	if appID == "" {
-		appID = "wx516563cfe994bbc6"
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "无法识别当前小程序租户"})
+		return
 	}
 
 	var req ExecuteActionReq
@@ -33,11 +34,36 @@ func ExecuteActionHandler(ctx iris.Context) {
 		return
 	}
 
-	// 尝试从登录态上下文中提取真实 open_id
+	// 尝试从登录态上下文中提取真实 open_id，未提取到时严格解析并校验 Authorization Header
 	openID := ctx.Values().GetString("open_id")
+	if openID == "" {
+		authHeader := ctx.GetHeader("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+			_, user, claims, err := jwtToken.ValidateTokenSessionAndTenant(tokenStr, appID)
+			if err == nil {
+				if user != nil && user.WechatOpenID != "" {
+					openID = user.WechatOpenID
+				} else if oid, ok := claims["openId"].(string); ok {
+					openID = oid
+				}
+			}
+		}
+	}
+
+	// 敏感端点要求前置登录态校验
+	if req.Endpoint == "game.redeem" && openID == "" {
+		ctx.StatusCode(iris.StatusUnauthorized)
+		ctx.JSON(iris.Map{
+			"code": 401,
+			"msg":  "执行兑换动作前必须完成微信登录授权",
+		})
+		return
+	}
 
 	actionService := services.NewActionEndpointService()
 	res, err := actionService.ExecuteActionEndpoint(appID, openID, req.Endpoint, req.Payload, req.IdempotencyKey)
+
 	if err != nil {
 		ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
 		return

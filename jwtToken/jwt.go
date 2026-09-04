@@ -6,13 +6,24 @@ import (
 	"fmt"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"os"
 	"time"
 
+	"github.com/23233/ggg/logger"
+	"github.com/23233/ggg/ut"
+	golangjwt "github.com/golang-jwt/jwt/v4"
 	"github.com/iris-contrib/middleware/jwt"
 	"github.com/kataras/iris/v12"
 )
 
-var MySecret = []byte("HefNcCJPz2eT7rq2eW7L9WaFLYO4zZOy")
+// MySecret 用户JWT签名密钥 (优先通过环境变量 JWT_SECRET 注入，非生产环境生成一次性随机安全密钥)
+var MySecret = func() []byte {
+	if s := os.Getenv("JWT_SECRET"); s != "" {
+		return []byte(s)
+	}
+	logger.JM.Warn("【安全提示】环境变量 JWT_SECRET 未配置，已生成运行时一次性随机安全密钥")
+	return []byte("sdui_user_jwt_" + ut.RandomStr(32))
+}()
 
 // 自定义JWT配置
 var jwtConfig = jwt.Config{
@@ -47,6 +58,20 @@ func init() {
 }
 
 // ContextGetClaims 从当前请求上下文中获取 JWT Claims 数据
+// ParseTokenString 解析任意 Token 字符串并验证签名与时效性
+func ParseTokenString(tokenString string) (golangjwt.MapClaims, error) {
+	token, err := golangjwt.Parse(tokenString, func(t *golangjwt.Token) (interface{}, error) {
+		return MySecret, nil
+	})
+	if err != nil || token == nil || !token.Valid {
+		return nil, errors.New("无效或过期的访问凭证")
+	}
+	if claims, ok := token.Claims.(golangjwt.MapClaims); ok {
+		return claims, nil
+	}
+	return nil, errors.New("无法解析凭证 Claims 数据")
+}
+
 func ContextGetClaims(ctx iris.Context) (jwt.MapClaims, error) {
 	if ctx.Values().Exists("jwt") {
 		info := ctx.Values().Get("jwt").(*jwt.Token)
@@ -156,13 +181,13 @@ func TokenToUserUidMiddleware(ctx iris.Context) {
 func GenAccessToken(openId, appId, sessionId string, userId int64) (string, time.Time) {
 	expireTime := time.Now().Add(AccessTokenExpired)
 	token := jwt.NewTokenWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"openId":      openId,
-		JwtAppId:      appId,
-		JwtSessionId:  sessionId,
-		JwtUserId:     userId,
-		"version":     2,
-		"loginTime":   time.Now().Format("2006-01-02 15:04:05"),
-		"exp":         expireTime.Unix(),
+		"openId":     openId,
+		JwtAppId:     appId,
+		JwtSessionId: sessionId,
+		JwtUserId:    userId,
+		"version":    2,
+		"loginTime":  time.Now().Format("2006-01-02 15:04:05"),
+		"exp":        expireTime.Unix(),
 	})
 	tokenString, _ := token.SignedString(MySecret)
 	return tokenString, expireTime
@@ -178,4 +203,55 @@ func GenJwtToken(openId string) string {
 	})
 	tokenString, _ := token.SignedString(MySecret)
 	return tokenString
+}
+
+// ValidateTokenSessionAndTenant 解析并严密校验访问凭证、所属租户匹配性与用户会话有效性
+// 杜绝已登出、已轮换撤销或跨小程序租户的凭据越权访问
+func ValidateTokenSessionAndTenant(tokenStr string, expectedAppID string) (*models.UserSession, *models.User, golangjwt.MapClaims, error) {
+	if tokenStr == "" {
+		return nil, nil, nil, errors.New("缺少身份访问凭证")
+	}
+
+	claims, err := ParseTokenString(tokenStr)
+	if err != nil || claims == nil {
+		return nil, nil, nil, fmt.Errorf("凭证无效或已过期: %w", err)
+	}
+
+	// 1. 强校验多租户隔离: 凭证内嵌入的 appId 必须存在且与当前请求的 expectedAppID 完全一致
+	tokenAppID, _ := claims[JwtAppId].(string)
+	if tokenAppID == "" {
+		return nil, nil, nil, errors.New("凭据格式不合规: 缺少 appId 租户信息，禁止未隔离访问")
+	}
+	if expectedAppID != "" && tokenAppID != expectedAppID {
+		return nil, nil, nil, fmt.Errorf("多租户凭证越权拦截: 凭据签发给 %s，无法访问租户 %s", tokenAppID, expectedAppID)
+	}
+
+	// 2. 强校验会话状态与生命周期 (杜绝已登出、被踢或重放攻击吊销后继续使用)
+	sid, _ := claims[JwtSessionId].(string)
+	if sid == "" {
+		return nil, nil, nil, errors.New("凭据格式不合规: 缺少 sessionId 会话信息，禁止无状态绕过撤销检查")
+	}
+	var session models.UserSession
+	if db.Mysql != nil {
+		if err := db.Mysql.Where("session_id = ?", sid).First(&session).Error; err != nil {
+			return nil, nil, nil, errors.New("会话不存在或已失效")
+		}
+		if session.Revoked {
+			return nil, nil, nil, fmt.Errorf("会话已被注销或吊销 (%s)，请重新登录", session.RevokedReason)
+		}
+		if time.Now().After(session.ExpiresAt) {
+			return nil, nil, nil, errors.New("会话已过期，请重新登录")
+		}
+		if expectedAppID != "" && session.AppID != "" && session.AppID != expectedAppID {
+			return nil, nil, nil, fmt.Errorf("会话租户不匹配: 会话绑定 %s", session.AppID)
+		}
+	}
+
+	// 3. 提取关联用户
+	var user models.User
+	if db.Mysql != nil && session.UserID > 0 {
+		_ = db.Mysql.Where("id = ?", session.UserID).First(&user)
+	}
+
+	return &session, &user, claims, nil
 }

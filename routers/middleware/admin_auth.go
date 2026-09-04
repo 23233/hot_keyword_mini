@@ -62,3 +62,54 @@ func AdminAuthMiddleware(ctx iris.Context) {
 
 	ctx.Next()
 }
+
+// RequireAdminRole 校验管理员是否具备指定的一组权限角色之一 (如 super_admin / editor / viewer)
+func RequireAdminRole(allowedRoles ...string) iris.Handler {
+	return func(ctx iris.Context) {
+		userRole := ctx.Values().GetString("admin_role")
+		if userRole == "" {
+			claims, ok := ctx.Values().Get("admin_claims").(map[string]interface{})
+			if ok {
+				if r, exists := claims["role"].(string); exists {
+					userRole = r
+				}
+			}
+		}
+
+		for _, role := range allowedRoles {
+			if userRole == role {
+				ctx.Next()
+				return
+			}
+		}
+
+		ctx.StatusCode(iris.StatusForbidden)
+		ctx.JSON(iris.Map{
+			"code": 403,
+			"msg":  "权限不足：当前角色无权执行该操作",
+		})
+		ctx.StopExecution()
+	}
+}
+
+// ViewerReadOnlyMiddleware 对只读角色 (viewer) 实施写操作拦截门禁
+func ViewerReadOnlyMiddleware(ctx iris.Context) {
+	method := ctx.Method()
+	if method == "GET" || method == "HEAD" || method == "OPTIONS" {
+		ctx.Next()
+		return
+	}
+
+	userRole := ctx.Values().GetString("admin_role")
+	if userRole == "viewer" {
+		ctx.StatusCode(iris.StatusForbidden)
+		ctx.JSON(iris.Map{
+			"code": 403,
+			"msg":  "只读观察者角色禁止执行修改、删除或发布操作",
+		})
+		ctx.StopExecution()
+		return
+	}
+
+	ctx.Next()
+}

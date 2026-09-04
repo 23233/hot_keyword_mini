@@ -1,9 +1,9 @@
+// request.ts
 import Taro from '@tarojs/taro'
-import { ApiResponse } from '../types/drama'
-import { getAppId, getStoredSession, refreshSession, loginWithWechat, isAccessTokenExpiringSoon } from './auth'
+import { getStoredSession, refreshSession, loginWithWechat, isAccessTokenExpiringSoon } from './auth'
+import { getBaseUrl } from '../config/env'
 
-// 后端 API 基础地址（默认本地后端端口 8080）
-export const BASE_URL = 'http://127.0.0.1:8080'
+export { getBaseUrl }
 
 // 请求参数配置接口
 export interface RequestOptions {
@@ -11,6 +11,8 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   data?: any
   header?: Record<string, string>
+  // 请求超时时间(毫秒)
+  timeout?: number
   // 内部标记：是否为 401 重试请求 (严格限制单次重试防死循环)
   _isRetry?: boolean
 }
@@ -20,36 +22,49 @@ export interface RequestOptions {
  * 支持多租户请求头自动注入、双 Token 无感预刷新、401 并发刷新合并与单次自动重发
  */
 export async function request<T>(options: RequestOptions): Promise<T> {
-  const { url, method = 'GET', data, header = {}, _isRetry = false } = options
-  const appId = getAppId()
+  const { url, method = 'GET', data, header = {}, timeout, _isRetry = false } = options
+  const baseUrl = getBaseUrl()
 
-  // 1. 无感预刷新检查 (非 auth 接口且 Access Token 即将过期时提前静默换新)
-  if (!url.startsWith('/api/v1/auth/')) {
+  // 判断是否为同源受信任地址 (相对路径或与当前 baseUrl 同源)
+  const isRelative = url.startsWith('/') && !url.startsWith('//')
+  const isSameOrigin = url.startsWith(baseUrl)
+
+  // 1. 无感预刷新检查 (仅对同源受信任且非 auth 接口生效)
+  if ((isRelative || isSameOrigin) && !url.startsWith('/api/v1/auth/')) {
     const session = getStoredSession()
     if (session && isAccessTokenExpiringSoon(session)) {
       await refreshSession()
     }
   }
 
-  // 2. 组装多租户与鉴权标准请求头
+  // 2. 组装请求头：严格执行凭证防泄露边界拦截
   const session = getStoredSession()
   const requestHeaders: Record<string, string> = {
     'content-type': 'application/json',
-    'X-App-Id': appId,
     'X-SDUI-Version': '1.1',
+    'X-Client-Capabilities': 'media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,clipboard,video,request_payment',
     ...header
   }
 
-  if (session?.access_token && !requestHeaders['Authorization']) {
-    requestHeaders['Authorization'] = `Bearer ${session.access_token}`
+  // 严密安全门禁: 仅向同源或受信任白名单后端地址发送多租户与用户 Authorization Token，杜绝凭证泄露
+  if (isRelative || isSameOrigin) {
+    if (session?.access_token) {
+      requestHeaders['Authorization'] = `Bearer ${session.access_token}`
+    }
+  } else {
+    // 跨域或非同源第三方外部请求，清除敏感认证 Header
+    delete requestHeaders['X-App-Id']
+    delete requestHeaders['Authorization']
   }
 
   try {
+    const fullUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `${baseUrl}${url}`
     const res = await Taro.request<any>({
-      url: `${BASE_URL}${url}`,
+      url: fullUrl,
       method,
       data,
-      header: requestHeaders
+      header: requestHeaders,
+      timeout: timeout || 15000
     })
 
     // 3. 处理 401 Unauthorized 身份失效拦截

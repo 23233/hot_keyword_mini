@@ -4,17 +4,23 @@ go 1.25.3
 
 require (
 	github.com/23233/ggg/logger v0.0.0-20251109062455-7bfebd03c6a3
+	github.com/23233/ggg/sv v0.0.0-20251109062455-7bfebd03c6a3
+	github.com/23233/ggg/ut v0.0.0-20251109062455-7bfebd03c6a3
+	github.com/go-pay/wechat-sdk v1.1.7
+	github.com/golang-jwt/jwt/v4 v4.5.2
+	github.com/iris-contrib/middleware/csrf v0.0.0-20250207234507-372f6828ef8c
+	github.com/iris-contrib/middleware/jwt v0.0.0-20251225090426-92c6f28facda
 	github.com/kataras/iris/v12 v12.2.11
+	github.com/kataras/realip v0.0.2
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/spf13/viper v1.21.0
+	github.com/wechatpay-apiv3/wechatpay-go v0.2.21
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.1
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/23233/ggg/sv v0.0.0-20251109062455-7bfebd03c6a3 // indirect
-	github.com/23233/ggg/ut v0.0.0-20251109062455-7bfebd03c6a3 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/CloudyKit/fastprinter v0.0.0-20251202014920-1725d2651bd4 // indirect
 	github.com/CloudyKit/jet/v6 v6.3.1 // indirect
@@ -34,7 +40,6 @@ require (
 	github.com/go-pay/bm v0.0.5 // indirect
 	github.com/go-pay/crypto v0.0.1 // indirect
 	github.com/go-pay/util v0.0.4 // indirect
-	github.com/go-pay/wechat-sdk v1.1.7 // indirect
 	github.com/go-pay/xhttp v0.0.3 // indirect
 	github.com/go-pay/xlog v0.0.3 // indirect
 	github.com/go-pay/xtime v0.0.2 // indirect
@@ -43,7 +48,6 @@ require (
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/gomarkdown/markdown v0.0.0-20250810172220-2e2c11897d1a // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -51,9 +55,6 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
-	github.com/iris-contrib/middleware v12.2.11+incompatible // indirect
-	github.com/iris-contrib/middleware/csrf v0.0.0-20250207234507-372f6828ef8c // indirect
-	github.com/iris-contrib/middleware/jwt v0.0.0-20251225090426-92c6f28facda // indirect
 	github.com/iris-contrib/schema v0.0.6 // indirect
 	github.com/itchyny/base58-go v0.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -64,7 +65,6 @@ require (
 	github.com/kataras/blocks v0.0.12 // indirect
 	github.com/kataras/golog v0.1.13 // indirect
 	github.com/kataras/pio v0.0.14 // indirect
-	github.com/kataras/realip v0.0.2 // indirect
 	github.com/kataras/sitemap v0.0.6 // indirect
 	github.com/kataras/tunnel v0.0.4 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
@@ -86,7 +86,6 @@ require (
 	github.com/schollz/closestmatch v2.1.0+incompatible // indirect
 	github.com/shockerli/cvt v0.2.8 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

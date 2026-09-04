@@ -7,6 +7,25 @@
  * 解析受控路径 (如 $entity.is_locked, $query.id, $props.title)
  */
 export function resolveValue(val: any, context: Record<string, any> = {}): any {
+  if (typeof val === 'string') {
+    const trimmed = val.trim()
+    if (trimmed.startsWith('$')) {
+      const segments = trimmed.split('.')
+      let current: any = context
+      if (segments[0] === '$query') current = context.query || {}
+      else if (segments[0] === '$entity') current = context.entity || {}
+      else if (segments[0] === '$item') current = context.item || {}
+      else if (segments[0] === '$state') current = context.state || {}
+      else if (segments[0] === '$page') current = context.page || {}
+      else if (segments[0] === '$session') current = context.session || {}
+      else if (segments[0] === '$tenant') current = context.tenant || {}
+      for (let i = 1; i < segments.length; i++) {
+        if (current === undefined || current === null) return undefined
+        current = current[segments[i]]
+      }
+      return current
+    }
+  }
   if (val && typeof val === 'object' && typeof val.path === 'string') {
     const pathStr: string = val.path.trim()
     const segments = pathStr.split('.')
@@ -76,14 +95,14 @@ export function evaluateCondition(cond: any, context: Record<string, any> = {}):
   if (Array.isArray(cond.eq) && cond.eq.length >= 2) {
     const left = resolveValue(cond.eq[0], context)
     const right = resolveValue(cond.eq[1], context)
-    return left === right
+    return String(left) === String(right)
   }
 
   // 6. 不等比较: neq: [A, B]
   if (Array.isArray(cond.neq) && cond.neq.length >= 2) {
     const left = resolveValue(cond.neq[0], context)
     const right = resolveValue(cond.neq[1], context)
-    return left !== right
+    return String(left) !== String(right)
   }
 
   // 7. 存在性检查: exists: { path: "..." }
@@ -97,7 +116,7 @@ export function evaluateCondition(cond: any, context: Record<string, any> = {}):
     const item = resolveValue(cond.in[0], context)
     const list = resolveValue(cond.in[1], context)
     if (Array.isArray(list)) {
-      return list.includes(item)
+      return list.some((value: any) => String(value) === String(item))
     }
     return false
   }

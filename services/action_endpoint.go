@@ -42,11 +42,11 @@ func NewActionEndpointService() *ActionEndpointService {
 		endpoints: make(map[string]ActionEndpointMeta),
 	}
 
-	// 注册官方内置受控端点: 游戏礼包兑换码核销与发放
+	// 注册官方内置受控端点: 游戏礼包兑换码核销与发放 (强制登录态鉴权，杜绝匿名恶意防刷)
 	s.RegisterEndpoint(ActionEndpointMeta{
 		Name:        "game.redeem",
 		Description: "游戏独家礼包兑换码防超发事务领取",
-		RequireAuth: false, // 允许匿名试玩，但在真实业务可开启
+		RequireAuth: true, // 强制要求用户登录微信授权，杜绝匿名刷单
 		Handler:     s.handleGameRedeem,
 	})
 
@@ -77,13 +77,13 @@ func (s *ActionEndpointService) ExecuteActionEndpoint(appID, openID, endpoint st
 		return nil, fmt.Errorf("非法未登记的受控端点: %s (禁止任意URL代理)", endpoint)
 	}
 
-	// 强制要求登录态时校验 openID
-	if meta.RequireAuth && openID == "" {
-		return nil, errors.New("此业务动作必须登录后方可执行")
-	}
-
-	// 若未传入 openID，生成临时访客标识
-	if openID == "" {
+	// 强制要求登录态时校验 openID，拒绝未授权访问
+	if meta.RequireAuth {
+		if openID == "" || strings.HasPrefix(openID, "guest_") {
+			return nil, errors.New("此业务动作必须在微信授权登录后方可执行")
+		}
+	} else if openID == "" {
+		// 仅对明确允许匿名的端点分配只读访客标识
 		openID = "guest_" + ut.RandomStr(8)
 	}
 

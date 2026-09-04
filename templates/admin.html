@@ -166,7 +166,7 @@
       width: 100%;
     }
 
-    /* 左侧 iPhone 16 Pro 模拟器 */
+    /* 左侧 iPhone 12/13 Pro 模拟器 */
     .simulator-container {
       flex: 0 0 410px;
       display: flex;
@@ -610,7 +610,7 @@
     <div class="simulator-container">
       <div class="simulator-meta">
         <span class="status-dot"></span>
-        <span>iPhone 16 Pro · 实时同构渲染</span>
+        <span>iPhone 12/13 Pro · 390×844 · 实时同构渲染</span>
       </div>
 
       <div class="iphone-shell">
@@ -977,14 +977,11 @@
       <div style="text-align:left; display:flex; flex-direction:column; gap:14px;">
         <div>
           <label class="form-label">管理员登录账号</label>
-          <input type="text" id="loginUsername" class="form-input" placeholder="请输入账号 (默认: admin)" value="admin" />
+          <input type="text" id="loginUsername" class="form-input" placeholder="请输入管理员登录账号" autocomplete="username" />
         </div>
         <div>
           <label class="form-label">登录密码</label>
-          <input type="password" id="loginPassword" class="form-input" placeholder="请输入密码 (默认: admin123456)" value="admin123456" onkeydown="if(event.key==='Enter')executeAdminLogin()" />
-        </div>
-        <div style="font-size:12px; color:rgba(255,255,255,0.4); background:rgba(255,255,255,0.04); padding:8px 12px; border-radius:8px;">
-          💡 初始超管：<code style="color:var(--accent);">admin</code> / <code style="color:var(--accent);">admin123456</code>
+          <input type="password" id="loginPassword" class="form-input" placeholder="请输入密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')executeAdminLogin()" />
         </div>
         <button class="btn-save" onclick="executeAdminLogin()" style="width:100%; margin-top:10px; padding:12px;">
           <span>🚀 安全登录并进入工作台</span>
@@ -1126,12 +1123,24 @@
   <div class="toast-msg" id="toastMsg">已保存</div>
 
   <script>
+    // 全局防 XSS 转义函数 (杜绝存储型与反射型 XSS 漏洞)
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // 全局工作台状态
     let currentAppId = 'wx516563cfe994bbc6';
     let currentPageId = 'home';
     let currentAppList = [];
     let currentPageList = [];
     let currentDynamicPage = null;
+
 
     // 封装管理员 API 请求 (自动附加 Bearer Token 与 401 拦截)
     async function adminFetch(url, options = {}) {
@@ -1260,8 +1269,8 @@
           currentAppList = json.data;
           const select = document.getElementById('appSelect');
           select.innerHTML = currentAppList.map(app => `
-            <option value="${app.app_id}" ${app.app_id === currentAppId ? 'selected' : ''}>
-              ${app.app_name} (${app.app_id})
+            <option value="${escapeHtml(app.app_id)}" ${app.app_id === currentAppId ? 'selected' : ''}>
+              ${escapeHtml(app.app_name)} (${escapeHtml(app.app_id)})
             </option>
           `).join('');
         }
@@ -1288,11 +1297,12 @@
           currentPageList = json.data;
           const select = document.getElementById('pageSelect');
           select.innerHTML = currentPageList.map(p => `
-            <option value="${p.page_id}" ${p.page_id === currentPageId ? 'selected' : ''}>
-              ${p.page_id} (${p.title || '未命名'})
+            <option value="${escapeHtml(p.page_id)}" ${p.page_id === currentPageId ? 'selected' : ''}>
+              ${escapeHtml(p.page_id)} (${escapeHtml(p.title || '未命名')})
             </option>
           `).join('');
         }
+
       } catch (err) {
         console.error('加载页面列表失败:', err);
       }
@@ -1358,10 +1368,11 @@
         <div class="block-card-item">
           <div class="block-card-header">
             <div style="display:flex; align-items:center; gap:8px;">
-              <span class="block-type-badge">${b.type}</span>
-              <span style="font-size:12px; color:rgba(255,255,255,0.4);">#${b.id}</span>
+              <span class="block-type-badge">${escapeHtml(b.type)}</span>
+              <span style="font-size:12px; color:rgba(255,255,255,0.4);">#${escapeHtml(b.id)}</span>
             </div>
             <div class="block-actions-bar">
+
               <button class="btn-ctrl" onclick="moveBlock(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
               <button class="btn-ctrl" onclick="moveBlock(${idx}, 1)" ${idx === blocks.length - 1 ? 'disabled' : ''}>↓</button>
               <button class="btn-ctrl danger" onclick="deleteBlock(${idx})">✕</button>
@@ -1374,7 +1385,18 @@
       `).join('');
     }
 
-    // 根据积木类型输出专属编辑字段
+    // 安全 HTML 属性转义，防止 XSS 攻击与闭合注入
+    function escapeAttr(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    // 根据积木类型输出专属编辑字段 (所有动态 value 属性严格执行 escapeAttr 转义)
     function renderBlockFields(b, idx) {
       const p = b.props || {};
       const act = b.action || {};
@@ -1385,19 +1407,19 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">标题</label>
-              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.title || '')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">宣传副标题</label>
-              <input class="form-input" value="${p.subtitle || ''}" oninput="updateBlockProp(${idx}, 'subtitle', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.subtitle || '')}" oninput="updateBlockProp(${idx}, 'subtitle', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">竖版封面图 URL</label>
-              <input class="form-input" value="${p.cover_url || ''}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">视频地址 (试看播放)</label>
-              <input class="form-input" value="${p.video_url || ''}" oninput="updateBlockProp(${idx}, 'video_url', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.video_url || '')}" oninput="updateBlockProp(${idx}, 'video_url', this.value)" />
             </div>
           </div>
         `;
@@ -1408,15 +1430,15 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">渠道名称</label>
-              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.title || '')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">提取码 / 口令</label>
-              <input class="form-input" value="${p.fetch_code || ''}" oninput="updateBlockProp(${idx}, 'fetch_code', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.fetch_code || '')}" oninput="updateBlockProp(${idx}, 'fetch_code', this.value)" />
             </div>
             <div class="form-group full-width">
               <label class="form-label">复制核心内容 (网盘链接等)</label>
-              <input class="form-input" value="${payload.text || p.content || ''}" oninput="updateBlockActionPayload(${idx}, 'text', this.value)" />
+              <input class="form-input" value="${escapeAttr(payload.text || p.content || '')}" oninput="updateBlockActionPayload(${idx}, 'text', this.value)" />
             </div>
           </div>
         `;
@@ -1427,11 +1449,11 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">主按钮文案</label>
-              <input class="form-input" value="${p.text || ''}" oninput="updateBlockProp(${idx}, 'text', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.text || '')}" oninput="updateBlockProp(${idx}, 'text', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">徽标角标提示</label>
-              <input class="form-input" value="${p.badge || ''}" oninput="updateBlockProp(${idx}, 'badge', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.badge || '')}" oninput="updateBlockProp(${idx}, 'badge', this.value)" />
             </div>
           </div>
         `;
@@ -1441,7 +1463,7 @@
         return `
           <div class="form-group">
             <label class="form-label">通告文案</label>
-            <input class="form-input" value="${p.text || p.content || ''}" oninput="updateBlockProp(${idx}, 'text', this.value)" />
+            <input class="form-input" value="${escapeAttr(p.text || p.content || '')}" oninput="updateBlockProp(${idx}, 'text', this.value)" />
           </div>
         `;
       }
@@ -1451,19 +1473,19 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">游戏名称</label>
-              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.title || '')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">版本标识</label>
-              <input class="form-input" value="${p.version || ''}" oninput="updateBlockProp(${idx}, 'version', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.version || '')}" oninput="updateBlockProp(${idx}, 'version', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">封面图 URL</label>
-              <input class="form-input" value="${p.cover_url || ''}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">独家兑换码</label>
-              <input class="form-input" value="${p.redeem_code || ''}" oninput="updateBlockProp(${idx}, 'redeem_code', this.value); updateBlockActionPayload(${idx}, 'text', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.redeem_code || '')}" oninput="updateBlockProp(${idx}, 'redeem_code', this.value); updateBlockActionPayload(${idx}, 'text', this.value)" />
             </div>
           </div>
         `;
@@ -1474,15 +1496,15 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">表单标题</label>
-              <input class="form-input" value="${p.title || ''}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.title || '')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
             </div>
             <div class="form-group">
               <label class="form-label">按钮文案</label>
-              <input class="form-input" value="${p.btn_text || ''}" oninput="updateBlockProp(${idx}, 'btn_text', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.btn_text || '')}" oninput="updateBlockProp(${idx}, 'btn_text', this.value)" />
             </div>
             <div class="form-group full-width">
               <label class="form-label">输入提示占位符</label>
-              <input class="form-input" value="${p.placeholder || ''}" oninput="updateBlockProp(${idx}, 'placeholder', this.value)" />
+              <input class="form-input" value="${escapeAttr(p.placeholder || '')}" oninput="updateBlockProp(${idx}, 'placeholder', this.value)" />
             </div>
           </div>
         `;
@@ -1610,7 +1632,7 @@
       renderSimulator();
     }
 
-    // 4. iPhone 16 Pro 模拟器实时同构渲染引擎
+    // 4. iPhone 12/13 Pro 模拟器实时同构渲染引擎
     function renderSimulator() {
       if (!currentDynamicPage) return;
 
@@ -1636,15 +1658,15 @@
           return `
             <div style="background:#151518; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
               <div style="height:190px; background:#000; position:relative;">
-                <img src="${p.cover_url || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80'}" style="width:100%; height:100%; object-fit:cover;" />
+                <img src="${escapeHtml(p.cover_url || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80')}" style="width:100%; height:100%; object-fit:cover;" />
                 <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:3px 10px; border-radius:999px; font-size:10px; color:#fff;">🎬 精选热播</div>
               </div>
               <div style="padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                  <div style="font-size:14px; font-weight:700; color:#fff;">${p.title || '精彩短剧'}</div>
-                  <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px;">${p.subtitle || ''}</div>
+                  <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '精彩短剧')}</div>
+                  <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px;">${escapeHtml(p.subtitle || '')}</div>
                 </div>
-                <div style="font-size:15px; font-weight:800; color:#ff9f0a;">★ ${p.rating || '9.8'}</div>
+                <div style="font-size:15px; font-weight:800; color:#ff9f0a;">★ ${escapeHtml(p.rating || '9.8')}</div>
               </div>
             </div>
           `;
@@ -1655,11 +1677,11 @@
             <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px; backdrop-filter:blur(20px);">
               <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
                 <div style="background:linear-gradient(135deg,#ff9f0a,#ff453a); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px;">网盘全集</div>
-                <div style="font-size:13px; font-weight:700; color:#fff;">${p.title || '网盘极速看全集'}</div>
+                <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || '网盘极速看全集')}</div>
               </div>
-              <div style="font-size:11px; color:rgba(255,255,255,0.6); margin-bottom:12px;">${p.desc || '高清未删减版 免费自取'}</div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.6); margin-bottom:12px;">${escapeHtml(p.desc || '高清未删减版 免费自取')}</div>
               <div style="background:rgba(0,0,0,0.3); border-radius:12px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-size:11px; color:#ff9f0a; font-weight:600;">提取码: ${p.fetch_code || '直接访问'}</div>
+                <div style="font-size:11px; color:#ff9f0a; font-weight:600;">提取码: ${escapeHtml(p.fetch_code || '直接访问')}</div>
                 <div style="background:var(--accent-gradient); color:#fff; font-size:11px; font-weight:700; padding:5px 14px; border-radius:999px;">复制</div>
               </div>
             </div>
@@ -1669,8 +1691,8 @@
         if (b.type === 'action_button') {
           return `
             <div style="width:100%; height:46px; border-radius:999px; background:var(--accent-gradient); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; font-weight:700; box-shadow:0 6px 18px rgba(255,159,10,0.4); position:relative;">
-              <span>${p.text || '立即前往'}</span>
-              ${p.badge ? `<span style="position:absolute; top:-6px; right:16px; background:#30d158; color:#fff; font-size:9px; padding:2px 8px; border-radius:999px;">${p.badge}</span>` : ''}
+              <span>${escapeHtml(p.text || '立即前往')}</span>
+              ${p.badge ? `<span style="position:absolute; top:-6px; right:16px; background:#30d158; color:#fff; font-size:9px; padding:2px 8px; border-radius:999px;">${escapeHtml(p.badge)}</span>` : ''}
             </div>
           `;
         }
@@ -1679,7 +1701,7 @@
           return `
             <div style="background:rgba(255,159,10,0.15); border:1px solid rgba(255,159,10,0.3); border-radius:12px; padding:8px 12px; display:flex; align-items:center; gap:8px; font-size:11px; color:#ff9f0a;">
               <span>📢</span>
-              <span>${p.text || p.content || ''}</span>
+              <span>${escapeHtml(p.text || p.content || '')}</span>
             </div>
           `;
         }
@@ -1688,18 +1710,18 @@
           return `
             <div style="background:#14161d; border-radius:18px; overflow:hidden; border:1px solid rgba(48,209,88,0.3); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
               <div style="height:150px; background:#000; position:relative;">
-                <img src="${p.cover_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80'}" style="width:100%; height:100%; object-fit:cover;" />
+                <img src="${escapeHtml(p.cover_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80')}" style="width:100%; height:100%; object-fit:cover;" />
                 <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.65); padding:3px 10px; border-radius:999px; font-size:10px; color:#30d158; font-weight:700;">🎮 官方公测</div>
               </div>
               <div style="padding:12px 14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                  <div style="font-size:14px; font-weight:700; color:#fff;">${p.title || '游戏名称'}</div>
-                  <div style="font-size:10px; color:rgba(255,255,255,0.5);">${p.version || ''}</div>
+                  <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '游戏名称')}</div>
+                  <div style="font-size:10px; color:rgba(255,255,255,0.5);">${escapeHtml(p.version || '')}</div>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); border-radius:10px; padding:8px 12px; border:1px dashed rgba(48,209,88,0.4); display:flex; justify-content:space-between; align-items:center;">
                   <div>
                     <div style="font-size:9px; color:rgba(255,255,255,0.4);">礼包码</div>
-                    <div style="font-size:14px; font-weight:800; color:#30d158; letter-spacing:1px;">${p.redeem_code || 'VIP888'}</div>
+                    <div style="font-size:14px; font-weight:800; color:#30d158; letter-spacing:1px;">${escapeHtml(p.redeem_code || 'VIP888')}</div>
                   </div>
                   <div style="background:linear-gradient(135deg,#30d158,#00c7be); color:#000; font-size:10px; font-weight:700; padding:4px 12px; border-radius:999px;">复制</div>
                 </div>
@@ -1711,19 +1733,58 @@
         if (b.type === 'form') {
           return `
             <div style="background:rgba(26,26,30,0.8); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px;">
-              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:12px;">${p.title || '信息查询'}</div>
+              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:12px;">${escapeHtml(p.title || '信息查询')}</div>
               <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:10px 12px; color:rgba(255,255,255,0.4); font-size:12px; margin-bottom:12px;">
-                ${p.placeholder || '请输入查询内容'}
+                ${escapeHtml(p.placeholder || '请输入查询内容')}
               </div>
               <div style="background:linear-gradient(135deg,#0a84ff,#5e5ce6); height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700;">
-                ${p.btn_text || '立即查询'}
+                ${escapeHtml(p.btn_text || '立即查询')}
               </div>
             </div>
           `;
         }
 
-        return `<div style="padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">积木: ${b.type}</div>`;
+        if (b.type === 'episode_list') {
+          return `
+            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
+              <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '选集列表')} (全 ${escapeHtml(p.total_episodes || 80)} 集)</div>
+              <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;">
+                <span style="background:var(--accent); color:#000; font-weight:700; padding:4px 10px; border-radius:6px; font-size:11px;">1</span>
+                <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">2</span>
+                <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">3</span>
+                <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">...</span>
+              </div>
+            </div>
+          `;
+        }
+
+        if (b.type === 'item_grid') {
+          return `
+            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
+              <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '推荐项目')}</div>
+              <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; font-size:11px; color:#fff;">
+                <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 1</div>
+                <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 2</div>
+                <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 3</div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (b.type === 'timeline') {
+          return `
+            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
+              <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '时间线始末')}</div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.6); padding-left:12px; border-left:2px solid var(--accent);">
+                <div>节点 1: 初始化动态</div>
+              </div>
+            </div>
+          `;
+        }
+
+        return `<div style="padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">积木: ${escapeHtml(b.type)}</div>`;
       }).join('');
+
     }
 
     // 5. 保存并同步到线上
@@ -1789,16 +1850,23 @@
         if (json.code === 0 && json.data) {
           const container = document.getElementById('templateGridContainer');
           container.innerHTML = json.data.map(tpl => `
-            <div class="template-card" onclick="applyTemplate('${tpl.template_id}')">
-              <span class="tpl-tag">${tpl.business_type} · ${tpl.intent}</span>
-              <div class="tpl-name">${tpl.name}</div>
-              <div class="tpl-desc">${tpl.description}</div>
+            <div class="template-card" data-template-id="${escapeHtml(tpl.template_id)}" onclick="handleApplyTemplateClick(this)">
+              <span class="tpl-tag">${escapeHtml(tpl.business_type || '')} · ${escapeHtml(tpl.intent || '')}</span>
+              <div class="tpl-name">${escapeHtml(tpl.name || '')}</div>
+              <div class="tpl-desc">${escapeHtml(tpl.description || '')}</div>
               <div style="font-size:11px; color:var(--accent); font-weight:700; margin-top:4px;">⚡ 点击一键套用</div>
             </div>
           `).join('');
         }
       } catch (e) {
         console.error('加载行业模板失败:', e);
+      }
+    }
+
+    function handleApplyTemplateClick(card) {
+      const templateId = card.getAttribute('data-template-id');
+      if (templateId) {
+        applyTemplate(templateId);
       }
     }
 
@@ -1970,19 +2038,20 @@
                 <div style="background:rgba(255,255,255,0.04); border:1px solid ${isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.1)'}; border-radius:12px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
                   <div>
                     <div style="display:flex; align-items:center; gap:8px;">
-                      <span style="font-weight:700; color:#fff; font-size:14px;">v${rev.revision}</span>
+                      <span style="font-weight:700; color:#fff; font-size:14px;">v${escapeHtml(rev.revision)}</span>
                       ${isCurrent ? '<span style="font-size:10px; background:var(--accent); color:#000; padding:2px 6px; border-radius:999px; font-weight:700;">当前线上激活</span>' : ''}
-                      <span style="font-size:12px; color:var(--text-sub);">${rev.business_type}</span>
+                      <span style="font-size:12px; color:var(--text-sub);">${escapeHtml(rev.business_type)}</span>
                       <span style="font-size:12px; color:rgba(255,255,255,0.4);">共 ${blockCount} 个积木</span>
                     </div>
-                    <div style="font-size:12px; color:rgba(255,255,255,0.5); margin-top:4px;">${rev.title} · ${rev.remark || '发布版本'} · ${timeStr}</div>
+                    <div style="font-size:12px; color:rgba(255,255,255,0.5); margin-top:4px;">${escapeHtml(rev.title)} · ${escapeHtml(rev.remark || '发布版本')} · ${escapeHtml(timeStr)}</div>
                   </div>
                   <div>
-                    ${isCurrent ? '' : `<button class="btn-ctrl" onclick="rollbackToRevision(${rev.revision})" style="background:rgba(255,159,10,0.2); border:1px solid var(--accent); color:var(--accent); font-size:12px;">↩️ 回滚到此版</button>`}
+                    ${isCurrent ? '' : `<button class="btn-ctrl" onclick="rollbackToRevision(${Number(rev.revision)})" style="background:rgba(255,159,10,0.2); border:1px solid var(--accent); color:var(--accent); font-size:12px;">↩️ 回滚到此版</button>`}
                   </div>
                 </div>
               `;
             }).join('');
+
           }
         }
         document.getElementById('revisionsModal').style.display = 'flex';
@@ -2053,12 +2122,12 @@
         const loginTime = u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '从未登录';
         return `
           <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
-            <td style="padding:12px;">${u.id}</td>
-            <td style="padding:12px; font-weight:600; color:#fff;">${u.username}</td>
-            <td style="padding:12px; color:rgba(255,255,255,0.8);">${u.real_name || '-'}</td>
+            <td style="padding:12px;">${escapeHtml(u.id)}</td>
+            <td style="padding:12px; font-weight:600; color:#fff;">${escapeHtml(u.username)}</td>
+            <td style="padding:12px; color:rgba(255,255,255,0.8);">${escapeHtml(u.real_name || '-')}</td>
             <td style="padding:12px;">
               <span style="font-size:11px; padding:3px 8px; border-radius:6px; font-weight:700; background:${isSuper ? 'rgba(255,159,10,0.2)' : 'rgba(10,132,255,0.2)'}; color:${isSuper ? 'var(--accent)' : '#0a84ff'};">
-                ${isSuper ? '超级管理员' : '运营编辑'}
+                ${isSuper ? '超级管理员' : (u.role === 'viewer' ? '只读观察者' : '运营编辑')}
               </span>
             </td>
             <td style="padding:12px;">
@@ -2066,14 +2135,15 @@
                 ${isActive ? '● 正常启用' : '✕ 已禁用'}
               </span>
             </td>
-            <td style="padding:12px; color:var(--text-sub); font-size:12px;">${loginTime}</td>
+            <td style="padding:12px; color:var(--text-sub); font-size:12px;">${escapeHtml(loginTime)}</td>
             <td style="padding:12px; text-align:right;">
-              <button class="btn-ctrl" onclick="openEditAdminModal(${u.id})" style="font-size:12px; margin-right:6px;">✏️ 编辑/改密</button>
-              <button class="btn-ctrl danger" onclick="deleteAdminUser(${u.id}, '${u.username}')" style="font-size:12px;">🗑️ 删除</button>
+              <button class="btn-ctrl" onclick="openEditAdminModal(${Number(u.id)})" style="font-size:12px; margin-right:6px;">✏️ 编辑/改密</button>
+              <button class="btn-ctrl danger" data-id="${Number(u.id)}" data-username="${escapeHtml(u.username)}" onclick="handleDeleteAdminClick(this)" style="font-size:12px;">🗑️ 删除</button>
             </td>
           </tr>
         `;
       }).join('');
+
     }
 
     // 打开新建管理员弹窗
@@ -2184,6 +2254,12 @@
           alert('网络错误: ' + e.message);
         }
       }
+    }
+
+    function handleDeleteAdminClick(btn) {
+      const id = Number(btn.getAttribute('data-id'));
+      const username = btn.getAttribute('data-username') || '';
+      deleteAdminUser(id, username);
     }
 
     // 删除管理员

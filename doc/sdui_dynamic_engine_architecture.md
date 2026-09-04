@@ -17,7 +17,7 @@
 打造一套运行在微信小程序原生环境下的**“动态原子组件编排引擎”**：
 - 小程序端只预置**标准的原生苹果风原子积木库**和**万能动作执行器**；
 - 页面显示什么结构、排版、样式，以及按钮点击做什么事，**100% 由后端 JSON 协议动态下发**；
-- 管理后台提供所见即所得的 iPhone 16 Pro 手机模拟器，支持拼积木、配样式、绑定事件；
+- 管理后台提供所见即所得的微信开发者工具默认 iPhone 12/13 Pro 手机模拟器（390×844，DPR 3），支持拼积木、配样式、绑定事件；
 - **全网发布 0ms 生效**：发现热词 -> 后台改名改模版 -> 瞬间上线承接万级搜索流量！
 
 ---
@@ -27,7 +27,7 @@
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        可视化管理后台 (/admin)                         │
-│  - iPhone 16 Pro 真实同构渲染模拟器 (所见即所得)                      │
+│  - iPhone 12/13 Pro 真实同构渲染模拟器 (390×844，所见即所得)          │
 │  - 多页面站点树状管理 (页面增删、设为首页)                              │
 │  - 苹果 HIG 样式设计标记配置 (圆角/质感/间距/渐变)                     │
 │  - 积木组件拖拽拼装与交互动作绑定                                      │
@@ -88,7 +88,7 @@ SDUI 内核
 定义任意按钮、卡片、图片被点击时的标准原子行为态（含跨小程序矩阵联动跳转）：
 ```json
 {
-  "type": "copy_text | navigate_page | open_channels_activity | open_mini_program | preview_image | open_webview",
+  "type": "copy_text | navigate_page | open_channels_activity | open_mini_program | preview_image | open_webview | request_payment",
   "require_auth": false,
   "payload": {
     "text": "网盘链接或口令",
@@ -99,10 +99,14 @@ SDUI 内核
     "target_app_id": "wx1234567890abcdef",
     "target_path": "pages/index/index?from=matrix_app_a",
     "extra_data": { "channel": "hot_keyword" },
-    "env_version": "release"
+    "env_version": "release",
+    "sku": "product_sku_001",
+    "idempotency_key": "order-request-001"
   }
 }
 ```
+
+`request_payment` 仅提交商品 SKU 和可选幂等键。服务端按当前小程序 AppID 查询商品表金额和普通商户配置，创建 JSAPI 订单并返回 `wx.requestPayment` 参数；客户端支付回调后通过订单查询接口确认最终状态。客户端不得提交或覆盖金额。
 
 ### 3.2 原子积木定义 (`BlockItem`)
 每一个原子组件由 4 个要素构成：
@@ -511,8 +515,8 @@ AI 快速搭建的标准流程：
    - 小程序 A 和小程序 B 各自拥有独立的 `home` 主页、独立的模版配置、互不干扰。
 3. **接口请求头自适应识别**：
    - 小程序前端发起的任何请求，由 `request.ts` 统一在 Header 自动附带：
-     `X-App-Id: wx516563cfe994bbc6`
-   - 后端中间件提取 `X-App-Id`，精准装配并返回属于该小程序的专属页面配置；
+     `Referer: https://servicewechat.com/<appid>/...`
+   - 后端中间件优先提取微信 `X-WX-AppID`，并兼容 `Referer` 中的 `<appid>`，精准装配并返回属于该小程序的专属页面配置；
 4. **管理后台一脑多控切换器**：
    - `/admin` 顶部提供**小程序选择下拉框**：
      `[ 📱 小程序 1: 猴王下山 (wx516...) ▼ ]`
@@ -816,7 +820,7 @@ export const dispatchAction = async (action?: BlockAction) => {
    - 实现 `refresh`、`session`、`logout`、会话撤销、refresh token 轮换和重放检测。
 
 2. **第二阶段：Taro 前端通用动作与登录闭环**
-   - 请求封装自动携带 `X-App-Id` 与 `Authorization: Bearer`；
+   - 请求封装不内置 AppID，仅按微信运行时请求上下文识别租户，并按需携带 `Authorization: Bearer`；
    - 封装 access 过期预刷新、401 单次重试、并发刷新合并和微信登录回退；
    - 封装登录拦截浮层 / 静默登录重发机制；
    - 建立原子积木库与 `pages/dynamic/index` 容器。

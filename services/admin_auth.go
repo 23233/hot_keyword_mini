@@ -8,15 +8,27 @@ import (
 	"fmt"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/23233/ggg/logger"
 	"github.com/23233/ggg/ut"
 	"github.com/golang-jwt/jwt/v4"
 )
 
-// AdminSecretKey 管理员独立签发密钥
-var AdminSecretKey = []byte("SDUI_Admin_Secure_Key_2026_x86")
+// adminUsernameRegexp 管理员用户名格式安全正则（防注入与异常控制字符）
+var adminUsernameRegexp = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,32}$`)
+
+// AdminSecretKey 管理员独立签发密钥 (优先通过环境变量 ADMIN_JWT_SECRET 注入，非生产环境生成一次性随机安全密钥)
+var AdminSecretKey = func() []byte {
+	if s := os.Getenv("ADMIN_JWT_SECRET"); s != "" {
+		return []byte(s)
+	}
+	logger.JM.Warn("【安全提示】环境变量 ADMIN_JWT_SECRET 未配置，已生成运行时一次性随机安全密钥")
+	return []byte("sdui_admin_jwt_" + ut.RandomStr(32))
+}()
 
 // AdminAuthService 管理员认证与账户生命周期管理服务
 type AdminAuthService struct{}
@@ -54,7 +66,7 @@ func (s *AdminAuthService) GenerateAdminToken(user *models.AdminUser) (string, e
 	return token.SignedString(AdminSecretKey)
 }
 
-// ParseAdminToken 解析并验证管理员凭证
+// ParseAdminToken 解析并验证管理员凭证 (同时强制复验数据库账户启用状态与最新角色)
 func (s *AdminAuthService) ParseAdminToken(tokenString string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 		return AdminSecretKey, nil
@@ -63,10 +75,31 @@ func (s *AdminAuthService) ParseAdminToken(tokenString string) (jwt.MapClaims, e
 		return nil, errors.New("无效或已过期的管理员凭证")
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		return claims, nil
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("凭证 Claims 解析失败")
 	}
-	return nil, errors.New("凭证 Claims 解析失败")
+
+	// 实时强校验数据库账户活跃状态与最新角色权限 (杜绝封禁账号继续使用或降权延迟)
+	if db.Mysql != nil {
+		var adminUser models.AdminUser
+		var findErr error
+		if adminID, ok := claims["admin_id"].(float64); ok && adminID > 0 {
+			findErr = db.Mysql.Where("id = ?", int64(adminID)).First(&adminUser).Error
+		} else if username, ok := claims["username"].(string); ok && username != "" {
+			findErr = db.Mysql.Where("username = ?", username).First(&adminUser).Error
+		}
+		if findErr != nil {
+			return nil, errors.New("管理员账户不存在或已被删除")
+		}
+		if adminUser.Status == "disabled" || adminUser.Status != "active" {
+			return nil, errors.New("管理员账户已被冻结禁用，禁止访问")
+		}
+		// 动态同步数据库中的最新角色，杜绝权限降级后旧 Token 越权
+		claims["role"] = adminUser.Role
+	}
+
+	return claims, nil
 }
 
 // AdminLogin 管理员账号密码认证登录
@@ -151,6 +184,10 @@ func (s *AdminAuthService) CreateAdminUser(username, password, realName, role st
 	realName = strings.TrimSpace(realName)
 	if username == "" || password == "" {
 		return nil, errors.New("登录账号和初始密码不能为空")
+	}
+
+	if !adminUsernameRegexp.MatchString(username) {
+		return nil, errors.New("用户名仅支持3-32位字母、数字、下划线和减号")
 	}
 
 	if len(password) < 6 {

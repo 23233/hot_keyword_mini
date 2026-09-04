@@ -9,6 +9,7 @@ import (
 	"hot_keyword/routers/middleware"
 	"hot_keyword/services"
 	"strings"
+	"time"
 
 	"github.com/kataras/iris/v12"
 )
@@ -71,6 +72,33 @@ type AdminUpdateDramaRequest struct {
 	WebUrl string `json:"web_url"`
 }
 
+// SavePageAdminReq 管理后台保存/发布页面请求结构
+type SavePageAdminReq struct {
+	models.DynamicPage
+	// 是否发布到线上 (默认为 false 存为草稿，true 需 release/admin 权限和人工显式确认)
+	Publish bool `json:"publish"`
+	// 人工显式确认标记 (发布时必填 true)
+	Confirmed bool `json:"confirmed"`
+	// 期望版本号 (乐观锁 CAS 比对，若大于 0 必须与当前库内版本一致)
+	ExpectedRevision int `json:"expected_revision"`
+	// 发布审计备注
+	Remark string `json:"remark"`
+}
+
+// PublishPageDraftReq 管理后台显式发布草稿请求入参
+type PublishPageDraftReq struct {
+	// 所属小程序 AppID
+	AppID string `json:"app_id"`
+	// 目标页面 PageID
+	PageID string `json:"page_id"`
+	// 人工显式确认标记 (必填 true)
+	Confirmed bool `json:"confirmed"`
+	// 期望版本号 (乐观锁 CAS 比对)
+	ExpectedRevision int `json:"expected_revision"`
+	// 发布审计备注
+	Remark string `json:"remark"`
+}
+
 // SetCurrentPageReq 设置激活主页请求
 type SetCurrentPageReq struct {
 	// 小程序 AppID
@@ -127,6 +155,8 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	// 挂载管理员认证拦截中间件 (保护所有后续敏感接口，放行 /auth/login)
 	adminParty.Use(middleware.AdminAuthMiddleware)
+	// 挂载只读角色写操作防御门禁 (viewer 角色禁止变更数据)
+	adminParty.Use(middleware.ViewerReadOnlyMiddleware)
 
 	// 挂载管理员登录与账户生命周期 CRUD 路由
 	RegisterAdminUserRoutes(adminParty)
@@ -233,16 +263,60 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	// 5. 多小程序管理: 新增或更新小程序配置
 	adminParty.Post("/apps", func(ctx iris.Context) {
-		var app models.MiniApp
-		if err := ctx.ReadJSON(&app); err != nil || app.AppID == "" {
+		var input struct {
+			AppID              string `json:"app_id"`
+			AppSecret          string `json:"app_secret"`
+			AppName            string `json:"app_name"`
+			CurrentPage        string `json:"current_page"`
+			ReleaseMode        string `json:"release_mode"`
+			FallbackPageID     string `json:"fallback_page_id"`
+			PaymentMchID       string `json:"payment_mch_id"`
+			PaymentMchSerialNo string `json:"payment_mch_serial_no"`
+			PaymentAPIv3Key    string `json:"payment_api_v3_key"`
+			PaymentPrivateKey  string `json:"payment_private_key"`
+		}
+		if err := ctx.ReadJSON(&input); err != nil || input.AppID == "" {
 			ctx.JSON(iris.Map{"code": 400, "msg": "小程序参数不合法"})
 			return
 		}
+		app := models.MiniApp{AppID: input.AppID, AppSecret: input.AppSecret, AppName: input.AppName, CurrentPage: input.CurrentPage, ReleaseMode: input.ReleaseMode, FallbackPageID: input.FallbackPageID, PaymentMchID: input.PaymentMchID, PaymentMchSerialNo: input.PaymentMchSerialNo, PaymentAPIv3Key: input.PaymentAPIv3Key, PaymentPrivateKey: input.PaymentPrivateKey}
 		if err := sduiService.SaveApp(&app); err != nil {
 			ctx.JSON(iris.Map{"code": 500, "msg": "保存小程序失败: " + err.Error()})
 			return
 		}
 		ctx.JSON(iris.Map{"code": 0, "msg": "小程序配置已保存"})
+	})
+
+	// 商品管理：商品和金额只由后台配置，客户端不得传入金额。
+	adminParty.Get("/products", func(ctx iris.Context) {
+		appID := strings.TrimSpace(ctx.URLParam("app_id"))
+		var products []models.Product
+		if err := db.Mysql.Where("app_id = ?", appID).Order("id asc").Find(&products).Error; err != nil {
+			ctx.JSON(iris.Map{"code": 500, "msg": "获取商品失败: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "data": products})
+	})
+	adminParty.Post("/products", func(ctx iris.Context) {
+		var product models.Product
+		if err := ctx.ReadJSON(&product); err != nil || product.AppID == "" || product.SKU == "" || product.Name == "" || product.PriceFen <= 0 {
+			ctx.JSON(iris.Map{"code": 400, "msg": "商品参数不完整或金额无效"})
+			return
+		}
+		if product.Status == "" {
+			product.Status = models.ProductStatusActive
+		}
+		if product.Status != models.ProductStatusActive && product.Status != models.ProductStatusInactive {
+			ctx.JSON(iris.Map{"code": 400, "msg": "商品状态无效"})
+			return
+		}
+		product.CreatedAt = time.Now()
+		product.UpdatedAt = time.Now()
+		if err := db.Mysql.Where("app_id = ? AND sku = ?", product.AppID, product.SKU).Assign(map[string]interface{}{"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": product.UpdatedAt}).FirstOrCreate(&product).Error; err != nil {
+			ctx.JSON(iris.Map{"code": 500, "msg": "保存商品失败: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "data": product})
 	})
 
 	// 6. 动态页面管理: 获取指定小程序的全部页面
@@ -268,21 +342,116 @@ func RegisterAdminRoutes(party iris.Party) {
 		ctx.JSON(iris.Map{"code": 0, "msg": "success", "data": page})
 	})
 
-	// 8. 动态页面管理: 保存并发布动态页面协议 (版本号自增)
+	// 8. 动态页面管理: 获取单个页面草稿箱协议
+	adminParty.Get("/page/draft", func(ctx iris.Context) {
+		appID := ctx.URLParam("app_id")
+		pageID := ctx.URLParam("page_id")
+		draft, err := sduiService.GetRawDraft(appID, pageID)
+		if err != nil {
+			ctx.JSON(iris.Map{"code": 404, "msg": "未找到指定草稿: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "success", "data": draft})
+	})
+
+	// 9. 动态页面管理: 保存草稿协议或执行受控发布 (受角色鉴权与人工确认门禁严格约束)
 	adminParty.Post("/page", func(ctx iris.Context) {
-		var page models.DynamicPage
-		if err := ctx.ReadJSON(&page); err != nil || page.AppID == "" || page.PageID == "" {
+		var req SavePageAdminReq
+		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
 			ctx.JSON(iris.Map{"code": 400, "msg": "页面参数不合法"})
 			return
 		}
-		if err := sduiService.SavePage(&page); err != nil {
-			ctx.JSON(iris.Map{"code": 500, "msg": "保存动态页面失败: " + err.Error()})
+
+		operator := ctx.Values().GetString("admin_username")
+		if operator == "" {
+			operator = "admin"
+		}
+
+		// A. 默认流程: 存为草稿 (无发布风险，普通 editor 可执行)
+		if !req.Publish {
+			draft := models.DynamicPageDraft{
+				AppID:        req.AppID,
+				PageID:       req.PageID,
+				Revision:     req.Revision,
+				Status:       "draft",
+				Title:        req.Title,
+				BusinessType: req.BusinessType,
+				Intent:       req.Intent,
+				Theme:        req.Theme,
+				AccentColor:  req.AccentColor,
+				RequireAuth:  req.RequireAuth,
+				ShareConfig:  req.ShareConfig,
+				Blocks:       req.Blocks,
+				Keyword:      req.Keyword,
+				Source:       req.Source,
+				CampaignID:   req.CampaignID,
+				ExpiresAt:    req.ExpiresAt,
+				UpdatedBy:    operator,
+			}
+			if err := sduiService.SaveDraftWithAudit(&draft, operator, req.ExpectedRevision); err != nil {
+				ctx.JSON(iris.Map{"code": 500, "msg": "保存草稿失败: " + err.Error()})
+				return
+			}
+			ctx.JSON(iris.Map{"code": 0, "msg": "页面协议已成功保存至草稿箱", "data": draft})
 			return
 		}
-		ctx.JSON(iris.Map{"code": 0, "msg": "页面协议已成功发布"})
+
+		// B. 发布流程: 执行双重严格门禁 (角色权限 + 显式人工确认 + 乐观锁 CAS)
+		userRole := ctx.Values().GetString("admin_role")
+		if userRole != "super_admin" && userRole != "admin" {
+			ctx.StatusCode(iris.StatusForbidden)
+			ctx.JSON(iris.Map{"code": 403, "msg": "【权限不足】当前账户角色无 release 权限，禁止直接发布线上页面，请提交管理员审批"})
+			return
+		}
+
+		if !req.Confirmed {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "【发布门禁拦截】必须由人工审核通过并在参数中显式确认 confirmed: true 方可发布上线"})
+			return
+		}
+
+		targetPage := req.DynamicPage
+		targetPage.Status = "published"
+		if err := sduiService.SavePageWithAudit(&targetPage, operator, req.Remark, req.ExpectedRevision); err != nil {
+			ctx.JSON(iris.Map{"code": 500, "msg": "发布动态页面失败: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "页面协议已成功发布上线", "data": targetPage})
 	})
 
-	// 9. 动态页面管理: 设为线上当前激活主页
+	// 10. 动态页面管理: 显式发布草稿箱页面至线上 (受 release 角色权限与 confirmed 门禁保护)
+	adminParty.Post("/page/publish", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		var req PublishPageDraftReq
+		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
+			ctx.JSON(iris.Map{"code": 400, "msg": "请求参数不合法"})
+			return
+		}
+
+		if !req.Confirmed {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "【发布门禁拦截】必须人工确认发布 confirmed: true"})
+			return
+		}
+
+		operator := ctx.Values().GetString("admin_username")
+		if operator == "" {
+			operator = "admin"
+		}
+
+		publishedPage, err := sduiService.PublishDraft(req.AppID, req.PageID, operator, req.Remark)
+		if err != nil {
+			ctx.JSON(iris.Map{"code": 500, "msg": "发布草稿失败: " + err.Error()})
+			return
+		}
+
+		ctx.JSON(iris.Map{
+			"code": 0,
+			"msg":  "草稿已成功发布生效",
+			"data": publishedPage,
+		})
+	})
+
+	// 11. 动态页面管理: 设为线上当前激活主页
 	adminParty.Post("/page/set_current", func(ctx iris.Context) {
 		var req SetCurrentPageReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
@@ -296,7 +465,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		ctx.JSON(iris.Map{"code": 0, "msg": "已成功设为线上主页"})
 	})
 
-	// 10. 行业模板库: 获取可用模板列表
+	// 12. 行业模板库: 获取可用模板列表
 	adminParty.Get("/templates", func(ctx iris.Context) {
 		bType := ctx.URLParam("business_type")
 		templates := services.GetGlobalTemplateRegistry().ListTemplates(bType)
@@ -307,7 +476,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		})
 	})
 
-	// 11. 行业模板库: 一键套用模板至页面草稿
+	// 13. 行业模板库: 一键套用模板至页面草稿箱 (严格仅存草稿，杜绝直接发布线上表)
 	adminParty.Post("/templates/apply", func(ctx iris.Context) {
 		var req ApplyTemplateReq
 		if err := ctx.ReadJSON(&req); err != nil || req.TemplateID == "" || req.AppID == "" || req.PageID == "" {
@@ -321,15 +490,40 @@ func RegisterAdminRoutes(party iris.Party) {
 			return
 		}
 
-		if err := sduiService.SavePage(page); err != nil {
-			ctx.JSON(iris.Map{"code": 500, "msg": "保存派生页面失败: " + err.Error()})
+		operator := ctx.Values().GetString("admin_username")
+		if operator == "" {
+			operator = "admin"
+		}
+
+		// 严格安全合规: 套用模板仅派生保存至草稿箱，绝不直接写线上表
+		draft := models.DynamicPageDraft{
+			AppID:        page.AppID,
+			PageID:       page.PageID,
+			Status:       "draft",
+			Title:        page.Title,
+			BusinessType: page.BusinessType,
+			Intent:       page.Intent,
+			Theme:        page.Theme,
+			AccentColor:  page.AccentColor,
+			RequireAuth:  page.RequireAuth,
+			ShareConfig:  page.ShareConfig,
+			Blocks:       page.Blocks,
+			Keyword:      page.Keyword,
+			Source:       page.Source,
+			CampaignID:   page.CampaignID,
+			ExpiresAt:    page.ExpiresAt,
+			UpdatedBy:    operator,
+		}
+
+		if err := sduiService.SaveDraftWithAudit(&draft, operator, 0); err != nil {
+			ctx.JSON(iris.Map{"code": 500, "msg": "套用模板保存草稿失败: " + err.Error()})
 			return
 		}
 
 		ctx.JSON(iris.Map{
 			"code": 0,
-			"msg":  "模板套用成功，已生成页面协议",
-			"data": page,
+			"msg":  "模板套用成功，已保存至草稿箱，请核验无误后提交发布",
+			"data": draft,
 		})
 	})
 

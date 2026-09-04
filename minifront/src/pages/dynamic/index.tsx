@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react'
+// index.tsx
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
-import { PageResponseEnvelope } from '../../types/sdui'
+import { PageResponseEnvelope, BlockItem } from '../../types/sdui'
 import { request } from '../../utils/request'
 import { dispatchAction } from '../../utils/action'
 import { ensureSession } from '../../utils/auth'
@@ -20,6 +21,19 @@ export default function DynamicPageIndex() {
   const [loading, setLoading] = useState<boolean>(true)
   // 错误提示文案
   const [errorMsg, setErrorMsg] = useState<string>('')
+  // 是否需要登录授权阻断
+  const [authRequired, setAuthRequired] = useState<boolean>(false)
+  // 页面响应式状态空间 ($state.* 真实闭环)
+  const [pageState, setPageState] = useState<Record<string, any>>({})
+  const [blockStates, setBlockStates] = useState<Record<string, string>>({})
+
+  // 状态原子更新方法 (支持 actions.save_as 触发 React 重新渲染)
+  const updateState = useCallback((key: string, value: any) => {
+    setPageState((prev) => ({
+      ...prev,
+      [key]: value
+    }))
+  }, [])
 
   // 获取 URL Query 传参
   const routerParams = Taro.getCurrentInstance().router?.params || {}
@@ -30,6 +44,7 @@ export default function DynamicPageIndex() {
     try {
       setLoading(true)
       setErrorMsg('')
+      setAuthRequired(false)
 
       const queryEntries = Object.entries(routerParams)
         .filter(([k]) => k !== 'page_id')
@@ -41,6 +56,16 @@ export default function DynamicPageIndex() {
         method: 'GET'
       })
 
+      // 若页面要求登录且尚未完成认证，先触发会话校验
+      if (res?.page?.require_auth) {
+        const session = await ensureSession()
+        if (!session) {
+          setAuthRequired(true)
+          setEnvelope(res)
+          return
+        }
+      }
+
       setEnvelope(res)
 
       // 动态设置小程序导航栏标题
@@ -49,14 +74,13 @@ export default function DynamicPageIndex() {
           title: res.page.title
         })
       }
-
-      // 若页面声明全页受保强制鉴权，触发登录闭环
-      if (res?.page?.require_auth) {
-        await ensureSession()
-      }
     } catch (err: any) {
       console.error(`获取 SDUI 动态页面 ${pageId} 失败:`, err)
-      setErrorMsg(err.message || '网络连接异常，未能加载内容')
+      if (err.message && err.message.includes('401')) {
+        setAuthRequired(true)
+      } else {
+        setErrorMsg(err.message || '网络连接异常，未能加载内容')
+      }
     } finally {
       setLoading(false)
     }
@@ -98,16 +122,63 @@ export default function DynamicPageIndex() {
     }
   })
 
-  // 处理积木交互点击
-  const handleBlockAction = (action?: any) => {
+  // 处理积木交互点击 (注入响应式 pageState 与 updateState 回调，透传 item 等局部上下文)
+  const handleBlockAction = (action?: any, extraContext?: Record<string, any>) => {
     dispatchAction(action, {
       refresh: fetchPageProtocol,
-      entity: envelope?.data
+      entity: envelope?.data,
+      page: envelope?.page,
+      query: routerParams,
+      state: pageState,
+      updateState,
+      blockStates,
+      setBlockState: (blockId: string, state: string) => setBlockStates((prev) => ({ ...prev, [blockId]: state })),
+      ...extraContext
     })
+  }
+
+  // 触发登录重试
+  const handleLoginRetry = async () => {
+    const session = await ensureSession()
+    if (session) {
+      setAuthRequired(false)
+      fetchPageProtocol()
+    }
   }
 
   const themeClass = `dynamic-page-container theme-${envelope?.page?.theme || 'dark_glass'}`
   const pageTitle = envelope?.page?.title || '精选剧场'
+
+  // 计算最终渲染的积木列表：优先消费服务端下发的同构 Layout IR 节点，确保与服务端截图 100% 像素级一致
+  const effectiveBlocks = useMemo<BlockItem[]>(() => {
+    if (envelope?.layout_ir?.nodes && envelope.layout_ir.nodes.length > 0) {
+      const nodeToBlock = (node: any): BlockItem => ({
+        id: node.id,
+        type: node.type,
+        props: {
+          ...(node.props || {}),
+          ...(node.children?.length ? { children: node.children.map(nodeToBlock) } : {}),
+          _layout_height: node.bounding_box?.height
+        },
+        action: node.action,
+        events: node.events,
+        loading: node.loading,
+        empty: node.empty,
+        error: node.error,
+        fallback: node.fallback,
+        style: {
+          margin_y: `${node.margin_y || 0}px`,
+          border_radius: `${node.border_radius || 0}px`,
+          padding: `${node.padding || 0}px`,
+          glass_blur: node.glass_blur
+        }
+      })
+      return envelope.layout_ir.nodes
+        .filter((node) => node.visible !== false)
+        .map(nodeToBlock)
+    }
+    return envelope?.page?.blocks || []
+  }, [envelope])
 
   return (
     <View className={themeClass}>
@@ -128,8 +199,20 @@ export default function DynamicPageIndex() {
           </View>
         )}
 
-        {/* 2. 网络错误提示与重试 */}
-        {!loading && errorMsg && (
+        {/* 2. 页面要求登录受保护态 */}
+        {!loading && authRequired && (
+          <View className="sdui-error-panel auth-panel">
+            <Text className="error-emoji">🔒</Text>
+            <Text className="error-title">该内容需微信授权后查看</Text>
+            <Text className="error-desc">请点击下方按钮完成快速微信授权登录</Text>
+            <View className="retry-btn" onClick={handleLoginRetry}>
+              <Text>微信一键快捷授权</Text>
+            </View>
+          </View>
+        )}
+
+        {/* 3. 网络错误提示与重试 */}
+        {!loading && !authRequired && errorMsg && (
           <View className="sdui-error-panel">
             <Text className="error-emoji">⚠️</Text>
             <Text className="error-title">页面加载失败</Text>
@@ -140,22 +223,30 @@ export default function DynamicPageIndex() {
           </View>
         )}
 
-        {/* 3. 积木列表渲染 */}
-        {!loading && !errorMsg && envelope?.page?.blocks && (
+        {/* 4. 积木列表渲染 (优先消费同构 Layout IR 节点，实现两端 100% 一致) */}
+        {!loading && !authRequired && !errorMsg && effectiveBlocks.length > 0 && (
           <View className="blocks-container">
-            {envelope.page.blocks.map((block) => (
+            {effectiveBlocks.map((block) => (
               <BlockRenderer
                 key={block.id}
                 block={block}
                 onAction={handleBlockAction}
-                context={{ entity: envelope?.data, query: router.params }}
+                context={{
+                  entity: envelope?.data,
+                  page: envelope?.page,
+                  query: routerParams,
+                  state: pageState,
+                  updateState,
+                  blockStates,
+                  setBlockState: (blockId: string, state: string) => setBlockStates((prev) => ({ ...prev, [blockId]: state }))
+                }}
               />
             ))}
           </View>
         )}
 
-        {/* 4. 暂无积木空态 */}
-        {!loading && !errorMsg && (!envelope?.page?.blocks || envelope.page.blocks.length === 0) && (
+        {/* 5. 暂无积木空态 */}
+        {!loading && !authRequired && !errorMsg && effectiveBlocks.length === 0 && (
           <View className="sdui-empty-panel">
             <Text className="empty-emoji">📭</Text>
             <Text className="empty-title">页面暂未配置内容</Text>

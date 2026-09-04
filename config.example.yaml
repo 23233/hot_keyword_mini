@@ -1,0 +1,36 @@
+# SDUI 动态组件引擎全局系统配置示例
+# 生产环境 (app_env: production) 严格执行启动安全门禁检查，禁止使用任何默认弱密钥与占位凭据！
+
+# 1. 运行环境配置 (支持环境变量 APP_ENV 覆盖: development / staging / production)
+app_env: "development"
+
+# 服务对外公共根地址。生产环境必须填写当前线上 HTTPS 域名，支付回调会自动拼接 AppID 路径。
+# 也可通过环境变量 PUBLIC_BASE_URL 覆盖，例如 https://jf.a0free.com
+public_base_url: ""
+
+# 2. 数据库连接配置 (生产环境强制要求真实密码，支持环境变量覆盖: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+db_host: "127.0.0.1"
+db_port: "3306"
+db_user: "root"
+db_password: "YOUR_SECURE_DB_PASSWORD"
+db_name: "hot_keyword_db"
+
+# 3. Redis 缓存与持久化会话配置 (生产环境强制要求真实密码，支持环境变量: REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB)
+redis_host: "127.0.0.1"
+redis_port: "6379"
+redis_password: "YOUR_SECURE_REDIS_PASSWORD"
+redis_db: "0"
+redis_enable: true
+
+# ==============================================================================
+# 【生产环境强制环境变量清单 (必须注入且长度不少于 16 位)】
+# - APP_ENV: "production"
+# - PUBLIC_BASE_URL: "当前线上 HTTPS 公共域名，例如 https://jf.a0free.com"
+# - DB_PASSWORD: "真实的高强度MySQL密码"
+# - REDIS_PASSWORD: "真实的高强度Redis密码"
+# - JWT_SECRET: "高强度小程序用户JWT加密密钥 (不可使用默认占位符)"
+# - ADMIN_JWT_SECRET: "高强度管理后台管理员JWT加密密钥 (不可使用默认占位符)"
+# - MCP_AUTH_KEY: "高强度AI MCP模型上下文协议API调用密钥 (不可使用默认占位符)"
+# - WECHAT_MINI_APP_ID / WECHAT_MINI_SECRET: "可选的单租户兼容配置；正式多小程序配置请写入 mini_apps 表"
+# - MCP_ALLOWED_TENANTS: "MCP密钥绑定的租户白名单 (多个用逗号分隔，防越权)"
+# ==============================================================================
