@@ -1,3 +1,4 @@
+// condition.ts
 /**
  * SDUI 受控条件表达式求值引擎 (Safe Condition Evaluator)
  * 严格遵循无 eval、受控语法树执行原则，防止任意代码注入
@@ -10,47 +11,37 @@ export function resolveValue(val: any, context: Record<string, any> = {}): any {
   if (typeof val === 'string') {
     const trimmed = val.trim()
     if (trimmed.startsWith('$')) {
-      const segments = trimmed.split('.')
-      let current: any = context
-      if (segments[0] === '$query') current = context.query || {}
-      else if (segments[0] === '$entity') current = context.entity || {}
-      else if (segments[0] === '$item') current = context.item || {}
-      else if (segments[0] === '$state') current = context.state || {}
-      else if (segments[0] === '$page') current = context.page || {}
-      else if (segments[0] === '$session') current = context.session || {}
-      else if (segments[0] === '$tenant') current = context.tenant || {}
-      for (let i = 1; i < segments.length; i++) {
-        if (current === undefined || current === null) return undefined
-        current = current[segments[i]]
-      }
-      return current
+      return resolveScopedPath(trimmed, context)
     }
   }
   if (val && typeof val === 'object' && typeof val.path === 'string') {
-    const pathStr: string = val.path.trim()
-    const segments = pathStr.split('.')
-    const rootKey = segments[0] // 如 $entity, $query, $session, $props
-
-    let current: any
-    if (rootKey === '$query') {
-      current = context.query || {}
-    } else if (rootKey === '$entity') {
-      current = context.entity || {}
-    } else if (rootKey === '$session') {
-      current = context.session || {}
-    } else if (rootKey === '$props') {
-      current = context.props || {}
-    } else {
-      current = context
-    }
-
-    for (let i = 1; i < segments.length; i++) {
-      if (current === undefined || current === null) return undefined
-      current = current[segments[i]]
-    }
-    return current
+    return resolveScopedPath(val.path.trim(), context)
   }
   return val
+}
+
+/** 统一解析所有受控作用域，保证字符串和 {path} 两种协议写法语义一致。 */
+function resolveScopedPath(path: string, context: Record<string, any>): any {
+  const segments = path.split('.')
+  const scopes: Record<string, any> = {
+    '$query': context.query,
+    '$entity': context.entity,
+    '$item': context.item,
+    '$state': context.state,
+    '$page': context.page,
+    '$session': context.session,
+    '$tenant': context.tenant,
+    '$props': context.props,
+    '$result': context.result
+  }
+  if (!Object.prototype.hasOwnProperty.call(scopes, segments[0])) return undefined
+
+  let current = scopes[segments[0]]
+  for (let i = 1; i < segments.length; i++) {
+    if (current === undefined || current === null) return undefined
+    current = current[segments[i]]
+  }
+  return current
 }
 
 /**

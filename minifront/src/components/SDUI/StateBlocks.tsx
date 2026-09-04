@@ -72,7 +72,8 @@ export const EmptyBlock: React.FC<StateBlockProps> = ({ block, onAction }) => {
   */
 export const SkeletonBlock: React.FC<{ block: BlockItem }> = ({ block }) => {
   const props = block.props || {}
-  const rowCount = Number(props.rows) || 3
+  const configuredRows = Number(props.rows)
+  const rowCount = Number.isFinite(configuredRows) ? Math.min(20, Math.max(0, Math.floor(configuredRows))) : 3
   const showHero = props.hero !== false
   const rows = Array.from({ length: rowCount })
 

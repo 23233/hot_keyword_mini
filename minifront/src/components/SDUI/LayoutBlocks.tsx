@@ -1,5 +1,5 @@
 // LayoutBlocks.tsx
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { View, Text, Swiper, SwiperItem } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
 
@@ -47,7 +47,8 @@ export const ContainerBlock: React.FC<LayoutBlockProps> = ({ block, context, ren
   */
 export const GridBlock: React.FC<LayoutBlockProps> = ({ block, context, renderBlock }) => {
   const props = block.props || {}
-  const columns = Number(props.columns) || 2
+  const configuredColumns = Number(props.columns)
+  const columns = Number.isFinite(configuredColumns) ? Math.min(4, Math.max(1, Math.floor(configuredColumns))) : 2
   const gap = props.gap || '16rpx'
   const children = (props.children || props.items || props.blocks) as BlockItem[]
 
@@ -76,15 +77,22 @@ export const GridBlock: React.FC<LayoutBlockProps> = ({ block, context, renderBl
 export const TabsBlock: React.FC<LayoutBlockProps> = ({ block, context, renderBlock }) => {
   const props = block.props || {}
   const tabs = (props.tabs || props.items) as Array<{ key: string; title: string; blocks?: BlockItem[]; child?: BlockItem }>
-  const [activeKey, setActiveKey] = useState<string>(() => {
-    return props.default_active_key || (Array.isArray(tabs) && tabs[0]?.key) || '0'
-  })
+  const defaultKey = props.default_active_key != null
+    ? String(props.default_active_key)
+    : (Array.isArray(tabs) && tabs[0]?.key != null ? String(tabs[0].key) : '0')
+  const tabSignature = Array.isArray(tabs) ? tabs.map((tab, idx) => String(tab.key || idx)).join('|') : ''
+  const [activeKey, setActiveKey] = useState<string>(defaultKey)
+
+  useEffect(() => {
+    const availableKeys = Array.isArray(tabs) ? tabs.map((tab, idx) => String(tab.key || idx)) : []
+    setActiveKey(availableKeys.includes(defaultKey) ? defaultKey : (availableKeys[0] || '0'))
+  }, [defaultKey, tabSignature])
 
   if (!Array.isArray(tabs) || tabs.length === 0) {
     return null
   }
 
-  const activeTab = tabs.find((t, idx) => (t.key || String(idx)) === activeKey) || tabs[0]
+  const activeTab = tabs.find((t, idx) => String(t.key || idx) === activeKey) || tabs[0]
   const activeChildren = activeTab?.blocks || (activeTab?.child ? [activeTab.child] : [])
 
   return (
@@ -92,7 +100,7 @@ export const TabsBlock: React.FC<LayoutBlockProps> = ({ block, context, renderBl
       {/* 顶部苹果磨砂分段胶囊选择器 */}
       <View className="tabs-header-bar">
         {tabs.map((tab, idx) => {
-          const key = tab.key || String(idx)
+          const key = String(tab.key || idx)
           const isActive = key === activeKey
           return (
             <View
@@ -126,8 +134,10 @@ export const CarouselBlock: React.FC<LayoutBlockProps> = ({ block, context, rend
   const props = block.props || {}
   const items = (props.items || props.children || props.blocks) as BlockItem[]
   const autoplay = props.autoplay !== false
-  const interval = Number(props.interval) || 3500
-  const duration = Number(props.duration) || 500
+  const configuredInterval = Number(props.interval)
+  const configuredDuration = Number(props.duration)
+  const interval = Number.isFinite(configuredInterval) ? Math.max(100, configuredInterval) : 3500
+  const duration = Number.isFinite(configuredDuration) ? Math.max(0, configuredDuration) : 500
   const indicatorDots = props.indicator !== false
   const height = props.height || '360rpx'
 

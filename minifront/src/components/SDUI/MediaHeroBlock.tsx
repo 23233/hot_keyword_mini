@@ -1,3 +1,4 @@
+// MediaHeroBlock.tsx
 import React from 'react'
 import { View, Text, Image, Video } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
@@ -20,7 +21,7 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
   const badge = props.badge || '🎬 精选热播'
 
   const handleClick = () => {
-    if (block.action && onAction) {
+    if ((block.action || block.events?.tap) && onAction) {
       onAction(block.action)
     }
   }

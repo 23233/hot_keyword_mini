@@ -168,7 +168,7 @@ export default function Index() {
       type: node.type,
       props: {
         ...(node.props || {}),
-        ...(node.children?.length ? { children: node.children.map(toBlock) } : {}),
+        ...(node.children?.length ? { children: node.children.filter((child: any) => child.visible !== false).map(toBlock) } : {}),
         _layout_height: node.bounding_box?.height
       },
       action: node.action,
@@ -181,7 +181,8 @@ export default function Index() {
         margin_y: `${node.margin_y || 0}px`,
         border_radius: `${node.border_radius || 0}px`,
         padding: `${node.padding || 0}px`,
-        glass_blur: node.glass_blur
+        glass_blur: node.glass_blur,
+        accent_color: node.accent_color || undefined
       }
     })
     return nodes.filter((node) => node.visible !== false).map(toBlock)

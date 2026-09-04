@@ -8,7 +8,7 @@ export { getBaseUrl }
 // 请求参数配置接口
 export interface RequestOptions {
   url: string
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   data?: any
   header?: Record<string, string>
   // 请求超时时间(毫秒)

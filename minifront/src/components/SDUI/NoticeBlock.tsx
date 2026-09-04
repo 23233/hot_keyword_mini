@@ -1,3 +1,4 @@
+// NoticeBlock.tsx
 import React from 'react'
 import { View, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
@@ -16,7 +17,7 @@ export const NoticeBlock: React.FC<NoticeBlockProps> = ({ block, onAction }) => 
   const icon = props.icon || '📢'
 
   const handleClick = () => {
-    if (block.action && onAction) {
+    if ((block.action || block.events?.tap) && onAction) {
       onAction(block.action)
     }
   }

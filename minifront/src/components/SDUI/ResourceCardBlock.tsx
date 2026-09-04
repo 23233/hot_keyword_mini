@@ -1,3 +1,4 @@
+// ResourceCardBlock.tsx
 import React from 'react'
 import { View, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
@@ -19,7 +20,7 @@ export const ResourceCardBlock: React.FC<ResourceCardBlockProps> = ({ block, onA
   const fetchCode = props.fetch_code || ''
 
   const handleAction = () => {
-    if (block.action && onAction) {
+    if ((block.action || block.events?.tap) && onAction) {
       onAction(block.action)
     }
   }

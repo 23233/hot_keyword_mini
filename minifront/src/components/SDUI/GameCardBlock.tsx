@@ -1,3 +1,4 @@
+// GameCardBlock.tsx
 import React from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
@@ -19,7 +20,7 @@ export const GameCardBlock: React.FC<GameCardBlockProps> = ({ block, onAction })
   const redeemCode = props.redeem_code || 'VIP888'
 
   const handleCopy = () => {
-    if (block.action && onAction) {
+    if ((block.action || block.events?.tap) && onAction) {
       onAction(block.action)
     }
   }

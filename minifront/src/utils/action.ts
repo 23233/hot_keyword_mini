@@ -27,6 +27,7 @@ export interface ActionContext {
   // 上一步执行结果
   result?: any
   // 页面与租户公开上下文
+  props?: Record<string, any>
   page?: any
   session?: any
   tenant?: any
@@ -36,7 +37,8 @@ export interface ActionContext {
  * 安全深度读取对象属性
  */
 function getByPath(obj: any, path: string): any {
-  if (!obj || !path) return undefined
+  if (obj === undefined || obj === null) return undefined
+  if (!path) return obj
   const parts = path.split('.')
   let curr = obj
   for (const p of parts) {
@@ -73,31 +75,20 @@ export function resolveBindingValue(val: any, context?: ActionContext): any {
 }
 
 function resolvePathString(path: string, context?: ActionContext): any {
-  if (path.startsWith('$entity.') && context?.entity) {
-    return getByPath(context.entity, path.slice('$entity.'.length))
+  const scopes: Record<string, any> = {
+    '$entity': context?.entity,
+    '$query': context?.query,
+    '$item': context?.item,
+    '$state': context?.state,
+    '$result': context?.result,
+    '$page': context?.page,
+    '$session': context?.session,
+    '$tenant': context?.tenant,
+    '$props': (context as any)?.props
   }
-  if (path.startsWith('$query.') && context?.query) {
-    return getByPath(context.query, path.slice('$query.'.length))
-  }
-  if (path.startsWith('$item.') && context?.item) {
-    return getByPath(context.item, path.slice('$item.'.length))
-  }
-  if (path.startsWith('$state.') && context?.state) {
-    return getByPath(context.state, path.slice('$state.'.length))
-  }
-  if (path.startsWith('$result.') && (context as any)?.result) {
-    return getByPath((context as any).result, path.slice('$result.'.length))
-  }
-  if (path.startsWith('$page.') && context?.page) {
-    return getByPath(context.page, path.slice('$page.'.length))
-  }
-  if (path.startsWith('$session.') && context?.session) {
-    return getByPath(context.session, path.slice('$session.'.length))
-  }
-  if (path.startsWith('$tenant.') && context?.tenant) {
-    return getByPath(context.tenant, path.slice('$tenant.'.length))
-  }
-  return path
+  const root = path.split('.')[0]
+  if (!Object.prototype.hasOwnProperty.call(scopes, root)) return undefined
+  return getByPath(scopes[root], path.slice(root.length + 1))
 }
 
 /**
@@ -130,6 +121,17 @@ export function resolveObjectBindings(target: any, context?: ActionContext): any
   return target
 }
 
+/** 解析当前动作载荷，保留级联动作到实际执行时再按最新结果求值。 */
+function resolveActionPayload(payload: Record<string, any>, context?: ActionContext): Record<string, any> {
+  const resolved: Record<string, any> = {}
+  Object.keys(payload || {}).forEach((key) => {
+    resolved[key] = key === 'on_success' || key === 'on_error'
+      ? payload[key]
+      : resolveObjectBindings(payload[key], context)
+  })
+  return resolved
+}
+
 /**
  * 解析 block 属性但保留嵌套子 block，避免父容器提前消费子项的 $item/$state 绑定。
  */
@@ -138,7 +140,7 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context?: 
     if (value == null) return value
     if (Array.isArray(value)) return value.map(resolve)
     if (typeof value === 'object') {
-      if (typeof value.type === 'string' && typeof value.id === 'string') return value
+      if (typeof value.type === 'string') return value
       const result: Record<string, any> = {}
       Object.keys(value).forEach((key) => {
         result[key] = resolve(value[key])
@@ -176,13 +178,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
 
   // 1. 动作执行前置受控条件求值 (若配置了 condition 且条件不满足则中断)
   if (action.condition) {
-    const isMet = evaluateCondition(action.condition, {
-      entity: context?.entity,
-      query: context?.query,
-      state: context?.state,
-      item: context?.item,
-      result: context?.result
-    })
+    const isMet = evaluateCondition(action.condition, context || {})
     if (!isMet) {
       return
     }
@@ -222,7 +218,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     console.log('[SDUI Action Track]', action.track.event_name || action.track.event_id, action.track.params)
   }
 
-  const payload = action.payload || {}
+  const payload = resolveActionPayload(action.payload || {}, context)
   let actionSuccess = true
   let actionResult: any = undefined
 
@@ -231,7 +227,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     switch (action.type) {
       // 强制触发登录授权
       case 'require_auth': {
-        await ensureSession()
+        if (!(await ensureSession())) throw new Error('微信登录授权未完成')
         break
       }
 
@@ -251,7 +247,8 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
 
       if (!textToCopy) {
         Taro.showToast({ title: '暂无可复制内容', icon: 'none' })
-        return
+        actionSuccess = false
+        break
       }
 
       Taro.setClipboardData({
@@ -324,7 +321,8 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
 
       if (!feedId || !finderUserName) {
         Taro.showToast({ title: '视频号参数未配置完整', icon: 'none' })
-        return
+        actionSuccess = false
+        break
       }
 
       const isWeapp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP
@@ -351,7 +349,8 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
       const targetAppId = payload.target_app_id || payload.app_id || payload.appId
       if (!targetAppId) {
         Taro.showToast({ title: '目标小程序 AppID 未指定', icon: 'none' })
-        return
+        actionSuccess = false
+        break
       }
 
       const isWeapp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP
@@ -380,7 +379,8 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
       let targetUrl = payload.url || payload.web_url || ''
       if (!targetUrl) {
         Taro.showToast({ title: '链接地址为空', icon: 'none' })
-        return
+        actionSuccess = false
+        break
       }
 
       // 需要登录的 WebView 不直接暴露用户标识，先换取一次性短期票据地址。
@@ -406,7 +406,10 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     case 'preview_image': {
       const current = payload.current || payload.url || ''
       const urls: string[] = Array.isArray(payload.urls) ? payload.urls : (current ? [current] : [])
-      if (urls.length === 0) return
+      if (urls.length === 0) {
+        actionSuccess = false
+        break
+      }
 
       Taro.previewImage({
         current,
@@ -419,7 +422,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     case 'request_data': {
       const endpoint = payload.endpoint || ''
       let targetUrl = payload.url || '/api/v1/action/execute'
-      const method = (payload.method || 'POST').toUpperCase()
+      const method = endpoint ? 'POST' : (payload.method || 'POST').toUpperCase()
       const idempotencyKey = payload.idempotency_key || `idem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const timeoutMs = Number(payload.timeout_ms || payload.timeout || 15000)
       const stateTarget = typeof payload.target === 'string' ? payload.target : ''
@@ -433,7 +436,9 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         if (!isRelative) {
           console.error(`[安全拦截] request_data 拒绝外部非同源地址: ${targetUrl}`)
           Taro.showToast({ title: '非法请求端点被拦截', icon: 'none' })
-          return
+          if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'error')
+          actionSuccess = false
+          break
         }
       }
 
@@ -460,7 +465,9 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         const session = await ensureSession()
         if (!session) {
           Taro.showToast({ title: '请先完成微信授权登录', icon: 'none' })
-          return
+          if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'error')
+          actionSuccess = false
+          break
         }
       }
 
@@ -496,14 +503,14 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
           if (payload.response.save_as) {
             const saveKey = payload.response.save_as
             if (context) {
-              if (!context.state) context.state = {}
-              context.state[saveKey] = extractedData
+              context.state = { ...(context.state || {}), [saveKey]: extractedData }
               if (context.updateState) {
                 context.updateState(saveKey, extractedData)
               }
             }
           }
         }
+        actionResult = extractedData
 
         // 7. 执行级联成功动作链 (on_success)
         const nextContext: ActionContext = {
@@ -511,11 +518,12 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
           result: extractedData
         }
 
-        if (Array.isArray(payload.on_success) && payload.on_success.length > 0) {
+        const hasTopLevelSuccess = Array.isArray(action.on_success) && action.on_success.length > 0
+        if (!hasTopLevelSuccess && Array.isArray(payload.on_success) && payload.on_success.length > 0) {
           for (const subAction of payload.on_success) {
             await dispatchAction(subAction, nextContext)
           }
-        } else {
+        } else if (!hasTopLevelSuccess) {
           // 默认成功反馈
           if (extractedData && extractedData.code) {
             Taro.setClipboardData({
@@ -537,6 +545,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
           }
         }
       } catch (err: any) {
+        actionSuccess = false
         Taro.hideLoading()
         if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'error')
         // 8. 异常动作链调度 (on_error)
@@ -544,8 +553,9 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
           ...context,
           error: err
         } as any
-        if (Array.isArray(payload.on_error) && payload.on_error.length > 0) {
-          for (const errAction of payload.on_error) {
+        const errorActions = Array.isArray(action.on_error) && action.on_error.length > 0 ? action.on_error : payload.on_error
+        if (Array.isArray(errorActions) && errorActions.length > 0) {
+          for (const errAction of errorActions) {
             await dispatchAction(errAction, errorContext)
           }
         } else {
@@ -562,15 +572,18 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     case 'request_payment': {
       if (!(await ensureSession())) {
         Taro.showToast({ title: '请先完成微信授权登录', icon: 'none' })
-        return
+        actionSuccess = false
+        break
       }
       const sku = String(payload.sku || payload.product_sku || '')
       if (!sku) {
         Taro.showToast({ title: '商品 SKU 不能为空', icon: 'none' })
-        return
+        actionSuccess = false
+        break
       }
       const idem = String(payload.idempotency_key || `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
       const result = await request<any>({ url: '/api/v1/payment/orders', method: 'POST', data: { sku, idempotency_key: idem } })
+      actionResult = result
       const payment = result?.payment || result
       await Taro.requestPayment({
         timeStamp: String(payment.timeStamp),
@@ -638,6 +651,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
 
       if (tmplIds.length === 0) {
         console.warn('subscribe_message 缺少模板 ID (template_id / tmpl_ids)')
+        actionSuccess = false
         break
       }
 
@@ -651,23 +665,26 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
             ...context,
             result: res
           }
-          if (Array.isArray(payload.on_success) && payload.on_success.length > 0) {
+          const hasTopLevelSuccess = Array.isArray(action.on_success) && action.on_success.length > 0
+          if (!hasTopLevelSuccess && Array.isArray(payload.on_success) && payload.on_success.length > 0) {
             for (const nextAction of payload.on_success) {
               await dispatchAction(nextAction, subContext)
             }
-          } else {
+          } else if (!hasTopLevelSuccess) {
             Taro.showToast({
               title: payload.toast || '订阅完成',
               icon: 'success'
             })
           }
         } catch (err: any) {
+          actionSuccess = false
           const errContext: ActionContext = {
             ...context,
             error: err
           } as any
-          if (Array.isArray(payload.on_error) && payload.on_error.length > 0) {
-            for (const failAction of payload.on_error) {
+          const errorActions = Array.isArray(action.on_error) && action.on_error.length > 0 ? action.on_error : payload.on_error
+          if (Array.isArray(errorActions) && errorActions.length > 0) {
+            for (const failAction of errorActions) {
               await dispatchAction(failAction, errContext)
             }
           } else {
@@ -688,6 +705,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     }
 
     default:
+      actionSuccess = false
       console.warn(`未识别或暂不支持的 SDUI 动作类型: ${action.type}`)
       break
     }

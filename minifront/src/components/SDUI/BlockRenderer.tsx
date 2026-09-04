@@ -33,9 +33,14 @@ interface BlockRendererProps {
 export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, context }) => {
   if (!block || !block.type) return null
 
+  // 当前积木独立作用域，供 visible_when、动作参数和子积木绑定使用。
+  const rawBlockContext = { ...context, props: block.props || {} }
+  const resolvedProps = resolveBlockPropsBindings(block.props || {}, rawBlockContext)
+  const blockContext = { ...rawBlockContext, props: resolvedProps }
+
   // 1. 检查受控条件可见性 (visible_when 多运算符受控求值)
   if (block.visible_when !== undefined) {
-    const isVisible = evaluateCondition(block.visible_when, context)
+    const isVisible = evaluateCondition(block.visible_when, blockContext)
     if (!isVisible) {
       return null
     }
@@ -44,13 +49,13 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   // 1.1 检查块级局部状态多态 (loading, empty, error)
   const blockState = context?.blockStates?.[block.id] || (block.props as any)?._state
   if (blockState === 'loading' && block.loading) {
-    return <BlockRenderer block={block.loading} onAction={onAction} context={context} />
+    return <BlockRenderer block={block.loading} onAction={onAction} context={blockContext} />
   }
   if (blockState === 'empty' && block.empty) {
-    return <BlockRenderer block={block.empty} onAction={onAction} context={context} />
+    return <BlockRenderer block={block.empty} onAction={onAction} context={blockContext} />
   }
   if ((blockState === 'error' || blockState === 'offline' || blockState === 'out_of_stock') && block.error) {
-    return <BlockRenderer block={block.error} onAction={onAction} context={context} />
+    return <BlockRenderer block={block.error} onAction={onAction} context={blockContext} />
   }
 
   // 2. 支持 repeat 数组循环展开渲染
@@ -59,7 +64,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
     if (Array.isArray(block.repeat.items)) {
       repeatList = block.repeat.items
     } else if (block.repeat.path) {
-      const resolved = resolveBindingValue({ path: block.repeat.path }, context)
+      const resolved = resolveBindingValue({ path: block.repeat.path }, blockContext)
       if (Array.isArray(resolved)) {
         repeatList = resolved
       }
@@ -69,7 +74,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       return (
         <View className="sdui-repeat-container">
           {repeatList.map((itemData, idx) => {
-            const childContext = { ...context, item: itemData, index: idx }
+            const childContext = { ...blockContext, item: itemData, index: idx }
             const clonedBlock = { ...block, id: `${block.id}_${idx}`, repeat: undefined }
             return (
               <BlockRenderer
@@ -87,9 +92,18 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
 
   // 3. 事件动作拦截器 (优先执行 events 序列，其次回退 action，支持透传 item 子上下文)
   const handleWrappedAction = (act?: BlockAction, extraContext?: Record<string, any>) => {
-    const mergedContext = extraContext ? { ...context, ...extraContext } : context
+    const mergedContext = extraContext ? { ...blockContext, ...extraContext } : blockContext
     if (block.events && block.events.tap) {
-      dispatchEvents(block.events, 'tap', mergedContext)
+      const tapActions = Array.isArray(block.events.tap) ? block.events.tap : [block.events.tap]
+      const enrichedActions = tapActions.map((eventAction) => ({
+        ...eventAction,
+        payload: {
+          ...(eventAction.payload || {}),
+          ...((mergedContext as any)?.actionPayload || {}),
+          ...((act && act.payload) || {})
+        }
+      }))
+      dispatchEvents({ ...block.events, tap: enrichedActions }, 'tap', mergedContext)
     } else if (act) {
       onAction?.(act, mergedContext)
     } else if (block.action) {
@@ -103,12 +117,15 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   const wrapperStyle: any = {
     marginTop: style.margin_y || undefined,
     marginBottom: style.margin_y || '24rpx',
+    marginLeft: style.margin_x || undefined,
+    marginRight: style.margin_x || undefined,
     padding: style.padding || undefined,
+    borderRadius: style.border_radius || undefined,
+    background: style.background || undefined,
     minHeight: block.props?._layout_height ? `${block.props._layout_height}px` : undefined
   }
 
   // 5. 递归求值解析积木 props 中的全部受控数据绑定表达式 ($entity.*, $query.*, $item.*, $state.*)
-  const resolvedProps = resolveBlockPropsBindings(block.props || {}, context)
   const resolvedBlock: BlockItem = {
     ...block,
     props: resolvedProps
@@ -116,7 +133,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
 
   // 递归渲染子积木辅助函数
   const renderChildBlock = (child: BlockItem, childCtx?: Record<string, any>) => {
-    return <BlockRenderer block={child} onAction={onAction} context={childCtx || context} />
+    return <BlockRenderer block={child} onAction={onAction} context={childCtx || blockContext} />
   }
 
   // 6. 按照全套积木注册表匹配对应积木组件
@@ -138,17 +155,17 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       // 布局块
       case 'container':
       case 'stack':
-        return <ContainerBlock block={resolvedBlock} onAction={handleWrappedAction} context={context} renderBlock={renderChildBlock} />
+        return <ContainerBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} renderBlock={renderChildBlock} />
       case 'grid':
-        return <GridBlock block={resolvedBlock} onAction={handleWrappedAction} context={context} renderBlock={renderChildBlock} />
+        return <GridBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} renderBlock={renderChildBlock} />
       case 'tabs':
-        return <TabsBlock block={resolvedBlock} onAction={handleWrappedAction} context={context} renderBlock={renderChildBlock} />
+        return <TabsBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} renderBlock={renderChildBlock} />
       case 'carousel':
-        return <CarouselBlock block={resolvedBlock} onAction={handleWrappedAction} context={context} renderBlock={renderChildBlock} />
+        return <CarouselBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} renderBlock={renderChildBlock} />
       case 'spacer':
         return <SpacerBlock block={resolvedBlock} />
       case 'list':
-        return <ContainerBlock block={resolvedBlock} onAction={handleWrappedAction} context={context} renderBlock={renderChildBlock} />
+        return <ContainerBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} renderBlock={renderChildBlock} />
 
       // 经典业务块
       case 'media_hero':
@@ -168,7 +185,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       case 'item_grid':
         return <ItemGridBlock block={resolvedBlock} onAction={handleWrappedAction} />
       case 'timeline':
-        return <TimelineBlock block={resolvedBlock} />
+        return <TimelineBlock block={resolvedBlock} onAction={handleWrappedAction} />
 
       // 已纳入协议的业务扩展块使用通用渲染器，确保不会出现空白页
       case 'score_panel':
@@ -190,7 +207,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       default:
         // 7. 未知积木组件降级策略 (优先 fallback，无则优雅占位，杜绝整页白屏崩溃)
         if (block.fallback) {
-          return <BlockRenderer block={block.fallback} onAction={onAction} context={context} />
+          return <BlockRenderer block={block.fallback} onAction={onAction} context={blockContext} />
         }
         return (
           <View className="sdui-fallback-block">

@@ -1,10 +1,11 @@
+// FormBlock.tsx
 import React, { useState } from 'react'
 import { View, Text, Input } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface FormBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
 }
 
 /**
@@ -19,14 +20,17 @@ export const FormBlock: React.FC<FormBlockProps> = ({ block, onAction }) => {
   const [inputVal, setInputVal] = useState<string>('')
 
   const handleSubmit = () => {
-    if (block.action && onAction) {
+    if (!onAction) return
+    if (block.action) {
       onAction({
         ...block.action,
         payload: {
-          ...block.action.payload,
+          ...(block.action.payload || {}),
           query_value: inputVal
         }
       })
+    } else if (block.events?.tap) {
+      onAction(undefined, { actionPayload: { query_value: inputVal } })
     }
   }
 

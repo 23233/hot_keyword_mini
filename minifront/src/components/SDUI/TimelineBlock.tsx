@@ -20,7 +20,7 @@ interface TimelineNode {
  * 苹果 HIG 规范时间线流转积木 (TimelineBlock)
  * 支持热点吃瓜始末、剧情脉络、剧集更新历史、活动里程碑
  */
-export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block }) => {
+export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
   const title = props.title || '剧情始末'
   const rawNodes = props.nodes || props.items || []
@@ -29,6 +29,9 @@ export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block }) => {
   return (
     <View
       className="sdui-timeline-block"
+      onClick={() => {
+        if ((block.action || block.events?.tap) && onAction) onAction(block.action)
+      }}
       style={{
         borderRadius: block.style?.border_radius || '28rpx',
         padding: '28rpx',

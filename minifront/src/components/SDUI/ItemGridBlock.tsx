@@ -24,7 +24,8 @@ interface GridItem {
 export const ItemGridBlock: React.FC<ItemGridBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
   const title = props.title || ''
-  const columns = Number(props.columns || 3)
+  const configuredColumns = Number(props.columns || 3)
+  const columns = Number.isFinite(configuredColumns) ? Math.min(4, Math.max(1, Math.floor(configuredColumns))) : 3
   const rawItems = props.items || []
   const items: GridItem[] = Array.isArray(rawItems) ? rawItems : []
 

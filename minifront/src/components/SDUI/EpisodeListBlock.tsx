@@ -1,11 +1,11 @@
 // EpisodeListBlock.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface EpisodeListBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
   context?: any
 }
 
@@ -16,22 +16,32 @@ interface EpisodeListBlockProps {
 export const EpisodeListBlock: React.FC<EpisodeListBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
   const title = props.title || '选集列表'
-  const total = Number(props.total_episodes || props.total || 80)
+  const configuredTotal = Number(props.total_episodes || props.total || 80)
+  const total = Number.isFinite(configuredTotal) ? Math.min(1000, Math.max(0, Math.floor(configuredTotal))) : 80
   const currentEp = Number(props.current_episode || 1)
   const [selected, setSelected] = useState<number>(currentEp)
+
+  useEffect(() => {
+    const next = Number.isFinite(currentEp) ? Math.floor(currentEp) : 1
+    setSelected(total > 0 ? Math.min(total, Math.max(1, next)) : 0)
+  }, [currentEp, total])
 
   const episodes = Array.from({ length: total }, (_, i) => i + 1)
 
   const handleSelect = (num: number) => {
+    if (total <= 0) return
     setSelected(num)
-    if (block.action && onAction) {
+    if (!onAction) return
+    if (block.action) {
       onAction({
         ...block.action,
         payload: {
-          ...block.action.payload,
+          ...(block.action.payload || {}),
           episode_num: num
         }
       })
+    } else if (block.events?.tap) {
+      onAction(undefined, { actionPayload: { episode_num: num } })
     }
   }
 
