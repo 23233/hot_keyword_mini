@@ -7,10 +7,14 @@ import (
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"hot_keyword/routers/middleware"
+	"hot_keyword/sdk"
 	"hot_keyword/services"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kataras/iris/v12"
 )
 
@@ -149,6 +153,24 @@ type PatchPageReq struct {
 	Ops []services.PatchOp `json:"ops"`
 }
 
+// AdminPresignedUploadReq 管理后台图片直传 COS 请求参数。
+type AdminPresignedUploadReq struct {
+	// 所属小程序 AppID
+	AppID string `json:"appId"`
+	// 兼容使用下划线命名的调用方
+	LegacyAppID string `json:"app_id"`
+	// 原始文件名
+	FileName string `json:"fileName"`
+	// 文件大小（字节）
+	FileSize int64 `json:"fileSize"`
+	// 图片 MIME 类型
+	ContentType string `json:"contentType"`
+	// 资源分类
+	OwnerType string `json:"ownerType"`
+	// 资源所属业务 ID（预留，当前对象键使用随机 UUID）
+	OwnerID int64 `json:"ownerId"`
+}
+
 // RegisterAdminRoutes 注册管理后台相关路由
 func RegisterAdminRoutes(party iris.Party) {
 	adminParty := party.Party("/api/v1/admin")
@@ -163,6 +185,80 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	dramaService := services.NewDramaService()
 	sduiService := services.NewSDUIService()
+
+	// 管理后台图片统一通过预签名 PUT 直传 COS，业务数据只保存 CDN 地址。
+	adminParty.Post("/files/presigned-upload-url", func(ctx iris.Context) {
+		var req AdminPresignedUploadReq
+		if err := ctx.ReadJSON(&req); err != nil {
+			ctx.JSON(iris.Map{"code": 400, "msg": "图片上传参数不完整"})
+			return
+		}
+		if strings.TrimSpace(req.AppID) == "" {
+			req.AppID = req.LegacyAppID
+		}
+		if strings.TrimSpace(req.AppID) == "" || strings.TrimSpace(req.FileName) == "" {
+			ctx.JSON(iris.Map{"code": 400, "msg": "图片上传参数不完整"})
+			return
+		}
+		if sdk.CosService == nil {
+			ctx.JSON(iris.Map{"code": 503, "msg": "COS 服务未配置"})
+			return
+		}
+
+		allowedTypes := map[string]string{
+			"image/jpeg": ".jpg",
+			"image/png":  ".png",
+			"image/webp": ".webp",
+			"image/gif":  ".gif",
+		}
+		extension, ok := allowedTypes[strings.ToLower(strings.TrimSpace(req.ContentType))]
+		if !ok {
+			ctx.JSON(iris.Map{"code": 400, "msg": "仅支持 JPG、PNG、WebP 或 GIF 图片"})
+			return
+		}
+		if req.FileSize > 10*1024*1024 {
+			ctx.JSON(iris.Map{"code": 400, "msg": "图片大小不能超过 10MB"})
+			return
+		}
+		if originalExt := strings.ToLower(path.Ext(req.FileName)); originalExt == ".jpeg" || originalExt == extension {
+			extension = originalExt
+		}
+
+		var app models.MiniApp
+		if err := db.Mysql.Where("app_id = ?", req.AppID).First(&app).Error; err != nil {
+			ctx.JSON(iris.Map{"code": 404, "msg": "小程序不存在"})
+			return
+		}
+		ownerType := strings.ToLower(strings.TrimSpace(req.OwnerType))
+		switch ownerType {
+		case "drama", "sdui", "share":
+		default:
+			ownerType = "resources"
+		}
+		fileKey := fmt.Sprintf("miniapps/%s/%s/%s/%s%s", app.AppID, ownerType, time.Now().Format("2006/01"), uuid.NewString(), extension)
+		presignedURL, err := sdk.CosService.GeneratePresignedUploadURL(ctx.Request().Context(), fileKey, "PUT", req.ContentType, 10)
+		if err != nil {
+			ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
+			return
+		}
+		fileURL, err := sdk.CosService.FileURL(fileKey, app.CosCdnUrl)
+		if err != nil {
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+
+		ctx.JSON(iris.Map{
+			"code": 0,
+			"msg":  "success",
+			"data": iris.Map{
+				"presignedUrl":       presignedURL,
+				"finalCosFileUrl":    fileURL,
+				"presigned_url":      presignedURL,
+				"final_cos_file_url": fileURL,
+				"fileKey":            fileKey,
+			},
+		})
+	})
 
 	// 1. 获取当前管理后台完整数据
 	adminParty.Get("/config", func(ctx iris.Context) {
@@ -270,6 +366,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			CurrentPage        string `json:"current_page"`
 			ReleaseMode        string `json:"release_mode"`
 			FallbackPageID     string `json:"fallback_page_id"`
+			CosCdnUrl          string `json:"cos_cdn_url"`
 			PaymentMchID       string `json:"payment_mch_id"`
 			PaymentMchSerialNo string `json:"payment_mch_serial_no"`
 			PaymentAPIv3Key    string `json:"payment_api_v3_key"`
@@ -279,7 +376,15 @@ func RegisterAdminRoutes(party iris.Party) {
 			ctx.JSON(iris.Map{"code": 400, "msg": "小程序参数不合法"})
 			return
 		}
-		app := models.MiniApp{AppID: input.AppID, AppSecret: input.AppSecret, AppName: input.AppName, CurrentPage: input.CurrentPage, ReleaseMode: input.ReleaseMode, FallbackPageID: input.FallbackPageID, PaymentMchID: input.PaymentMchID, PaymentMchSerialNo: input.PaymentMchSerialNo, PaymentAPIv3Key: input.PaymentAPIv3Key, PaymentPrivateKey: input.PaymentPrivateKey}
+		if input.CosCdnUrl != "" {
+			cdnURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(input.CosCdnUrl), "/"))
+			if err != nil || cdnURL.Scheme != "https" || cdnURL.Host == "" || cdnURL.RawQuery != "" || cdnURL.Fragment != "" {
+				ctx.JSON(iris.Map{"code": 400, "msg": "图片 CDN 必须是无查询参数的 HTTPS 根地址"})
+				return
+			}
+			input.CosCdnUrl = strings.TrimRight(strings.TrimSpace(input.CosCdnUrl), "/")
+		}
+		app := models.MiniApp{AppID: input.AppID, AppSecret: input.AppSecret, AppName: input.AppName, CurrentPage: input.CurrentPage, ReleaseMode: input.ReleaseMode, FallbackPageID: input.FallbackPageID, CosCdnUrl: input.CosCdnUrl, PaymentMchID: input.PaymentMchID, PaymentMchSerialNo: input.PaymentMchSerialNo, PaymentAPIv3Key: input.PaymentAPIv3Key, PaymentPrivateKey: input.PaymentPrivateKey}
 		if err := sduiService.SaveApp(&app); err != nil {
 			ctx.JSON(iris.Map{"code": 500, "msg": "保存小程序失败: " + err.Error()})
 			return

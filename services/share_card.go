@@ -3,14 +3,17 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"hot_keyword/sdk"
 	"image"
 	"image/color"
 	"image/draw"
@@ -160,6 +163,35 @@ func (s *ShareCardService) AutoUpdatePageShareConfig(appID, pageID, host string)
 
 	appMessageImg := fmt.Sprintf("%s/api/v1/share/card?app_id=%s&page_id=%s&type=app_message", host, appID, pageID)
 	timelineImg := fmt.Sprintf("%s/api/v1/share/card?app_id=%s&page_id=%s&type=timeline", host, appID, pageID)
+	// COS 已配置时，分享图片也必须落到 COS，微信端只使用当前小程序 CDN 地址。
+	if sdk.CosService != nil && sdk.CosService.IsConfigured() {
+		var app models.MiniApp
+		if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+			return err
+		}
+		for _, item := range []struct {
+			name   string
+			image  *string
+			typeID string
+		}{
+			{name: "app_message", image: &appMessageImg, typeID: "app_message"},
+			{name: "timeline", image: &timelineImg, typeID: "timeline"},
+		} {
+			pngBytes, renderErr := s.RenderShareCard(appID, pageID, item.typeID)
+			if renderErr != nil {
+				return renderErr
+			}
+			fileKey := fmt.Sprintf("miniapps/%s/share/%s-%s.png", appID, uuid.NewString(), item.name)
+			if uploadErr := sdk.CosService.UploadObject(context.Background(), fileKey, bytes.NewReader(pngBytes), int64(len(pngBytes)), "image/png"); uploadErr != nil {
+				return uploadErr
+			}
+			cdnURL, urlErr := sdk.CosService.FileURL(fileKey, app.CosCdnUrl)
+			if urlErr != nil {
+				return urlErr
+			}
+			*item.image = cdnURL
+		}
+	}
 
 	var shareConfig models.PageShareConfig
 	if page.ShareConfig != "" {
@@ -186,6 +218,9 @@ func (s *ShareCardService) AutoUpdatePageShareConfig(appID, pageID, host string)
 		}
 	} else {
 		shareConfig.Timeline.ImageUrl = timelineImg
+	}
+	if appMessageImg != "" {
+		shareConfig.DefaultImageUrl = appMessageImg
 	}
 
 	shareJSON, _ := json.Marshal(shareConfig)

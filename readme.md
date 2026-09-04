@@ -164,3 +164,16 @@ pnpm run build:weapp
 在管理后台为对应 AppID 填写 `payment_mch_id`、`payment_mch_serial_no`、`payment_api_v3_key`、`payment_private_key`。支付回调地址由后端根据 `public_base_url` 和 AppID 自动生成，不再在后台手工填写。其中 `payment_private_key` 是商户 API 私钥 `apiclient_key.pem` 的完整 PEM 内容，不是商户证书文件；`payment_mch_serial_no` 是商户 API 证书 `apiclient_cert.pem` 的证书序列号，平台证书由 SDK 使用 API v3 Key 自动下载和轮换。还必须在微信支付商户平台完成该小程序 AppID 与商户号绑定并开通 JSAPI/小程序支付权限。
 
 商品通过商品表维护，前端动作只提交 SKU，金额始终由后端读取 `price_fen`。支付通知地址必须使用路径携带 AppID，例如 `https://实际域名/api/v1/payment/notify/wx2e8feeb13a20fb1b`；支付成功后客户端通过 `GET /api/v1/payment/orders/{out_trade_no}` 查询最终状态。
+
+### 5. COS 图片存储与小程序 CDN 配置
+
+图片统一存储在腾讯云 COS，管理后台通过短时 PUT 预签名地址直传，页面协议和业务表只保存 CDN 访问地址。COS 凭据与存储桶是服务级配置，建议通过环境变量注入：
+
+```text
+COS_SECRET_ID
+COS_SECRET_KEY
+COS_BUCKET_URL=https://<bucket-appid>.cos.<region>.myqcloud.com
+COS_CDN_URL=https://默认CDN域名（可选）
+```
+
+管理后台新增或编辑小程序时，在“图片 CDN 根地址”填写该小程序已加入微信合法域名白名单的 HTTPS 地址。每次上传会按 `miniapps/{app_id}/...` 生成独立对象路径，并返回当前小程序 CDN 地址；COS 存储桶需要允许后台来源的 PUT CORS 请求。未配置 COS 时开发环境仍可启动，但图片上传接口会返回“COS 服务未配置”，生产环境会在启动阶段阻断缺失的 COS 凭据。

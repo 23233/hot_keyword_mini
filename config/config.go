@@ -45,6 +45,15 @@ type Config struct {
 	GoogleClientID     string `yaml:"google_client_id" mapstructure:"google_client_id"`
 	GoogleClientSecret string `yaml:"google_client_secret" mapstructure:"google_client_secret"`
 	GoogleRedirectURL  string `yaml:"google_redirect_url" mapstructure:"google_redirect_url"`
+
+	// 腾讯云 COS SecretId，生产环境建议通过 COS_SECRET_ID 注入
+	CosSecretId string `yaml:"cos_secret_id" mapstructure:"cos_secret_id"`
+	// 腾讯云 COS SecretKey，生产环境建议通过 COS_SECRET_KEY 注入
+	CosSecretKey string `yaml:"cos_secret_key" mapstructure:"cos_secret_key"`
+	// 腾讯云 COS 存储桶地址
+	CosBucketUrl string `yaml:"cos_bucket_url" mapstructure:"cos_bucket_url"`
+	// 默认 CDN 地址；小程序未单独配置时使用
+	CosCdnUrl string `yaml:"cos_cdn_url" mapstructure:"cos_cdn_url"`
 }
 
 func (c *Config) GetDefaultLang() string {
@@ -71,6 +80,29 @@ func (c *Config) PaymentNotifyURL(appID string) (string, error) {
 		return "", errors.New("公共服务地址必须是 HTTPS 且不能包含查询参数")
 	}
 	return fmt.Sprintf("%s/api/v1/payment/notify/%s", base, url.PathEscape(appID)), nil
+}
+
+// ValidateCOS 检查 COS 上传必需配置及默认 CDN 地址格式。
+func (c *Config) ValidateCOS() error {
+	if c == nil || strings.TrimSpace(c.CosSecretId) == "" || strings.TrimSpace(c.CosSecretKey) == "" || strings.TrimSpace(c.CosBucketUrl) == "" {
+		return errors.New("COS_SECRET_ID、COS_SECRET_KEY 与 COS_BUCKET_URL 必须完整配置")
+	}
+	if isWeakOrPlaceholderCredential(c.CosSecretId) || isWeakOrPlaceholderCredential(c.CosSecretKey) {
+		return errors.New("COS_SECRET_ID 与 COS_SECRET_KEY 禁止使用占位或弱凭据")
+	}
+	for name, value := range map[string]string{
+		"COS_BUCKET_URL": c.CosBucketUrl,
+		"COS_CDN_URL":    c.CosCdnUrl,
+	} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		parsed, err := url.Parse(strings.TrimSpace(value))
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("%s 必须是无查询参数的 HTTPS 根地址", name)
+		}
+	}
+	return nil
 }
 
 var Cfg *Config
@@ -122,6 +154,9 @@ func CheckSecurityCredentials() error {
 		// 生产环境若开启 Redis，强制校验 Redis 密码
 		if Cfg.RedisEnable && isWeakOrPlaceholderCredential(Cfg.RedisPassword) {
 			return errors.New("【生产环境致命安全错误】Redis 密码 REDIS_PASSWORD 必须配置真实生产密码，禁止使用 CHANGEME 或占位默认值")
+		}
+		if err := Cfg.ValidateCOS(); err != nil {
+			return fmt.Errorf("【生产环境致命配置错误】COS 图片存储配置无效: %w", err)
 		}
 	}
 	return nil
@@ -177,6 +212,18 @@ func LoadConfig() error {
 	}
 	if envRedisPass := os.Getenv("REDIS_PASSWORD"); envRedisPass != "" {
 		Cfg.RedisPassword = envRedisPass
+	}
+	if envCosSecretID := os.Getenv("COS_SECRET_ID"); envCosSecretID != "" {
+		Cfg.CosSecretId = envCosSecretID
+	}
+	if envCosSecretKey := os.Getenv("COS_SECRET_KEY"); envCosSecretKey != "" {
+		Cfg.CosSecretKey = envCosSecretKey
+	}
+	if envCosBucketURL := os.Getenv("COS_BUCKET_URL"); envCosBucketURL != "" {
+		Cfg.CosBucketUrl = envCosBucketURL
+	}
+	if envCosCDNURL := os.Getenv("COS_CDN_URL"); envCosCDNURL != "" {
+		Cfg.CosCdnUrl = envCosCDNURL
 	}
 
 	// 生产环境凭据合规门禁检查

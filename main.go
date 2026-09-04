@@ -15,6 +15,7 @@ import (
 
 	"hot_keyword/config"
 	"hot_keyword/db"
+	"hot_keyword/sdk"
 	"hot_keyword/system"
 	"os"
 )
@@ -31,6 +32,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	// 初始化腾讯云 COS，未配置时仅禁用图片上传能力。
+	sdk.InitCos()
 	// 启动db
 	err = db.InitDB(config.Cfg)
 	if err != nil {

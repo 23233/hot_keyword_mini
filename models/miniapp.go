@@ -19,6 +19,8 @@ type MiniApp struct {
 	ReleaseMode string `gorm:"column:release_mode;size:16;default:'normal';comment:发布模式" json:"release_mode"`
 	// 故障或过期时的兜底页面ID (默认 home)
 	FallbackPageID string `gorm:"column:fallback_page_id;size:64;default:'home';comment:兜底页面ID" json:"fallback_page_id"`
+	// 小程序图片访问 CDN 根地址；需加入微信 downloadFile 合法域名
+	CosCdnUrl string `gorm:"column:cos_cdn_url;size:255;comment:小程序COS CDN访问根地址" json:"cos_cdn_url"`
 	// 创建时间
 	CreatedAt time.Time `gorm:"column:created_at;comment:创建时间" json:"created_at"`
 	// 更新时间

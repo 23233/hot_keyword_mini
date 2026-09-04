@@ -368,6 +368,7 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 		"app_name":     app.AppName,
 		"current_page": app.CurrentPage,
 		"release_mode": app.ReleaseMode,
+		"cos_cdn_url":  app.CosCdnUrl,
 		"updated_at":   time.Now(),
 	}
 	if app.AppSecret != "" {

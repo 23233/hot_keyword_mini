@@ -588,6 +588,8 @@
       <select id="appSelect" class="tenant-select" onchange="onAppChanged()">
         <option value="wx516563cfe994bbc6">猴王下山短剧 (wx516563cfe994bbc6)</option>
       </select>
+      <input id="appCdnUrl" class="form-input" style="width:220px; padding:7px 10px;" placeholder="图片 CDN 根地址" />
+      <button class="btn-ctrl" onclick="saveCurrentAppCdn()">保存 CDN</button>
       <button class="btn-add-app" onclick="openAddAppModal()">+ 新建小程序</button>
     </div>
 
@@ -816,7 +818,12 @@
           </div>
           <div class="form-group">
             <label class="form-label">竖版封面海报</label>
-            <input type="text" id="inpCoverUrl" class="form-input" value="https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80" />
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="inpCoverUrl" class="form-input" value="https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80" style="flex:1;" />
+              <label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传到 COS
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadLegacyImage(this, 'inpCoverUrl', 'drama')" />
+              </label>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">总集数与评分</label>
@@ -1083,6 +1090,10 @@
         <label class="form-label">小程序名称 / 热词关键词</label>
         <input type="text" id="newAppName" class="form-input" placeholder="如 绝世神豪 / 考试成绩查询" />
       </div>
+      <div class="form-group">
+        <label class="form-label">图片 CDN 根地址（需加入小程序合法域名）</label>
+        <input type="url" id="newAppCosCdnUrl" class="form-input" placeholder="https://cdn.example.com" />
+      </div>
       <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
         <button class="btn-ctrl" onclick="closeAddAppModal()">取消</button>
         <button class="btn-save" onclick="submitAddApp()">确定添加</button>
@@ -1156,6 +1167,64 @@
         throw new Error('未授权或凭证已过期');
       }
       return res;
+    }
+
+    // uploadCosFile 获取 COS 预签名地址并将图片原始内容直传到 COS。
+    async function uploadCosFile(file, ownerType) {
+      const contentType = file.type || 'image/jpeg';
+      const signRes = await adminFetch('/api/v1/admin/files/presigned-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appId: currentAppId,
+          fileName: file.name || 'image.jpg',
+          fileSize: file.size || 0,
+          contentType,
+          ownerType: ownerType || 'resources'
+        })
+      });
+      const signJSON = await signRes.json();
+      if (signJSON.code !== 0 || !signJSON.data || !signJSON.data.presignedUrl) {
+        throw new Error(signJSON.msg || '获取 COS 上传地址失败');
+      }
+      const putRes = await fetch(signJSON.data.presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType },
+        body: file
+      });
+      if (!putRes.ok) throw new Error('图片上传 COS 失败');
+      return signJSON.data.finalCosFileUrl;
+    }
+
+    // uploadBlockImage 将动态积木图片字段更新为小程序专属 CDN 地址。
+    async function uploadBlockImage(input, index, field, ownerType) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        const url = await uploadCosFile(file, ownerType);
+        updateBlockProp(index, field, url);
+        renderSimulator();
+        showToast('图片已上传到 COS');
+      } catch (err) {
+        alert(err.message || '图片上传失败');
+      } finally {
+        input.value = '';
+      }
+    }
+
+    // uploadLegacyImage 将旧版短剧配置图片更新为 COS CDN 地址。
+    async function uploadLegacyImage(input, targetID, ownerType) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        const url = await uploadCosFile(file, ownerType);
+        document.getElementById(targetID).value = url;
+        showToast('图片已上传到 COS');
+      } catch (err) {
+        alert(err.message || '图片上传失败');
+      } finally {
+        input.value = '';
+      }
     }
 
     // 页面初始化与身份认证守卫
@@ -1273,6 +1342,9 @@
               ${escapeHtml(app.app_name)} (${escapeHtml(app.app_id)})
             </option>
           `).join('');
+          const currentApp = currentAppList.find(app => app.app_id === currentAppId);
+          const cdnInput = document.getElementById('appCdnUrl');
+          if (cdnInput) cdnInput.value = currentApp?.cos_cdn_url || '';
         }
       } catch (err) {
         console.error('加载小程序列表失败:', err);
@@ -1286,6 +1358,23 @@
       await loadPages();
       await loadPageDetail();
       showToast(`已切换至小程序: ${currentAppId}`);
+    }
+
+    // 保存当前小程序的图片 CDN 配置。
+    async function saveCurrentAppCdn() {
+      const cdnURL = document.getElementById('appCdnUrl').value.trim();
+      try {
+        const res = await adminFetch('/api/v1/admin/apps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: currentAppId, app_name: (currentAppList.find(app => app.app_id === currentAppId) || {}).app_name || currentAppId, cos_cdn_url: cdnURL })
+        });
+        const json = await res.json();
+        if (json.code === 0) showToast('图片 CDN 配置已保存');
+        else alert(json.msg || '保存 CDN 配置失败');
+      } catch (err) {
+        alert(err.message || '保存 CDN 配置失败');
+      }
     }
 
     // 2. 加载指定小程序的动态页面列表
@@ -1402,6 +1491,15 @@
       const act = b.action || {};
       const payload = act.payload || {};
 
+      if (b.type === 'image') {
+        return `
+          <div class="form-group">
+            <label class="form-label">图片 URL</label>
+            <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.image_url || '')}" oninput="updateBlockProp(${idx}, 'image_url', this.value)" /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'image_url', 'sdui')" /></label></div>
+          </div>
+        `;
+      }
+
       if (b.type === 'media_hero') {
         return `
           <div class="form-grid">
@@ -1415,7 +1513,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">竖版封面图 URL</label>
-              <input class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
+              <div style="display:flex; gap:8px;"><input id="cosImage-${idx}-cover" class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'cover_url', 'sdui')" /></label></div>
             </div>
             <div class="form-group">
               <label class="form-label">视频地址 (试看播放)</label>
@@ -1481,7 +1579,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">封面图 URL</label>
-              <input class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" />
+              <div style="display:flex; gap:8px;"><input id="cosImage-${idx}-cover" class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'cover_url', 'sdui')" /></label></div>
             </div>
             <div class="form-group">
               <label class="form-label">独家兑换码</label>
@@ -1912,6 +2010,7 @@
       const appId = document.getElementById('newAppId').value.trim();
       const appSecret = document.getElementById('newAppSecret').value.trim();
       const appName = document.getElementById('newAppName').value.trim();
+      const cosCdnUrl = document.getElementById('newAppCosCdnUrl').value.trim();
       if (!appId || !appName) {
         alert('请完整填写 AppID 与小程序名称');
         return;
@@ -1921,7 +2020,7 @@
         const res = await adminFetch('/api/v1/admin/apps', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ app_id: appId, app_secret: appSecret, app_name: appName })
+          body: JSON.stringify({ app_id: appId, app_secret: appSecret, app_name: appName, cos_cdn_url: cosCdnUrl })
         });
         const json = await res.json();
         if (json.code === 0) {

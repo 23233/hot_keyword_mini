@@ -8,6 +8,13 @@ db_name: "hot_keyword"
 app_env: "development"
 public_base_url: ""
 
+# 腾讯云 COS 图片存储配置（生产环境建议使用 COS_SECRET_ID/COS_SECRET_KEY 等环境变量）
+cos_secret_id: ""
+cos_secret_key: ""
+cos_bucket_url: "https://miniapp-1255882394.cos.ap-guangzhou.myqcloud.com"
+# 小程序未单独填写 cos_cdn_url 时使用此默认 CDN
+cos_cdn_url: "https://minicdn.a0free.com"
+
 redis_host: "192.168.0.104"
 redis_port: "6380"
 redis_password: "CHANGEME_REDIS_PASSWORD"
