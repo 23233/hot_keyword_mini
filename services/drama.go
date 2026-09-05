@@ -53,15 +53,13 @@ func NewDramaService() *DramaService {
 	return &DramaService{}
 }
 
-// GetDefaultDrama 获取默认《猴王下山》短剧信息并确保种子数据已初始化
+// GetDefaultDrama 获取默认《猴王下山》短剧信息；数据不存在时只返回错误，不在查询路径写入种子数据。
 func (s *DramaService) GetDefaultDrama() (*models.Drama, error) {
 	var drama models.Drama
 	err := db.Mysql.Where("title = ?", "猴王下山").First(&drama).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 数据库为空时自动初始化种子数据
-			logger.JM.Infof("未检测到《猴王下山》数据，开始执行种子数据自举初始化...")
-			return s.seedDefaultDramaData()
+			return nil, fmt.Errorf("短剧不存在: 猴王下山")
 		}
 		return nil, err
 	}

@@ -4,6 +4,7 @@ package system
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/23233/ggg/ut"
+	"gorm.io/gorm"
 )
 
 // Migrate 数据库迁移
@@ -41,6 +43,71 @@ func Migrate() error {
 	}
 
 	return nil
+}
+
+// EnsureInitialAdmin 仅负责确保管理员账户存在，不初始化任何业务种子数据。
+func EnsureInitialAdmin() error {
+	if db.Mysql == nil {
+		return nil
+	}
+
+	var adminUser models.AdminUser
+	errAdmin := db.Mysql.Where("username = ?", "admin").First(&adminUser).Error
+	if errAdmin == nil && adminUser.ID != 0 {
+		oldHasher := sha256.New()
+		oldHasher.Write([]byte("admin123456" + adminUser.Salt))
+		isWeakDefault := hex.EncodeToString(oldHasher.Sum(nil)) == adminUser.PasswordHash
+		if !isWeakDefault && os.Getenv("RESET_ADMIN_PASSWORD") != "true" {
+			return nil
+		}
+
+		newPwd := os.Getenv("ADMIN_INITIAL_PASSWORD")
+		if newPwd == "" {
+			newPwd = ut.RandomStr(16)
+		}
+		newSalt := "sdui_salt_" + ut.RandomStr(16)
+		newHasher := sha256.New()
+		newHasher.Write([]byte(newPwd + newSalt))
+		if err := db.Mysql.Model(&adminUser).Updates(map[string]interface{}{
+			"password_hash": hex.EncodeToString(newHasher.Sum(nil)),
+			"salt":          newSalt,
+			"status":        "active",
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+			return err
+		}
+		log.Printf("管理员 admin 密码已重置，请妥善保存新密码: %s", newPwd)
+		return nil
+	}
+	if errAdmin != nil && !errors.Is(errAdmin, gorm.ErrRecordNotFound) {
+		return errAdmin
+	}
+
+	initialPwd := os.Getenv("ADMIN_INITIAL_PASSWORD")
+	if initialPwd == "" {
+		initialPwd = ut.RandomStr(16)
+		log.Printf("==================================================================")
+		log.Printf("【安全提醒】已自动生成初始管理员随机密码:")
+		log.Printf("用户名: admin")
+		log.Printf("密码:   %s", initialPwd)
+		log.Printf("请务必保存并在首次登录后立即修改！")
+		log.Printf("==================================================================")
+	}
+
+	salt := "sdui_salt_" + ut.RandomStr(16)
+	hasher := sha256.New()
+	hasher.Write([]byte(initialPwd + salt))
+	superAdmin := models.AdminUser{
+		Username:     "admin",
+		PasswordHash: hex.EncodeToString(hasher.Sum(nil)),
+		Salt:         salt,
+		RealName:     "系统超级管理员",
+		Role:         "super_admin",
+		Status:       "active",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	return db.Mysql.Create(&superAdmin).Error
 }
 
 // SeedMultiTenantAndSDUIData 自举初始化多租户小程序与默认 SDUI 页面
@@ -200,70 +267,6 @@ func SeedMultiTenantAndSDUIData() error {
 			UpdatedAt:      time.Now(),
 		}
 		_ = db.Mysql.Create(&defaultPkg).Error
-	}
-
-	// 4. 初始化与校正超级管理员账户 (消除历史默认弱密码风险)
-	var adminUser models.AdminUser
-	errAdmin := db.Mysql.Where("username = ?", "admin").First(&adminUser).Error
-	if errAdmin != nil || adminUser.ID == 0 {
-		initialPwd := os.Getenv("ADMIN_INITIAL_PASSWORD")
-		if initialPwd == "" {
-			initialPwd = ut.RandomStr(16)
-			log.Printf("==================================================================")
-			log.Printf("【安全提醒】已自动生成初始管理员随机密码:")
-			log.Printf("用户名: admin")
-			log.Printf("密码:   %s", initialPwd)
-			log.Printf("请务必保存并在首次登录后立即修改！")
-			log.Printf("==================================================================")
-		}
-
-		salt := "sdui_salt_" + ut.RandomStr(16)
-		hasher := sha256.New()
-		hasher.Write([]byte(initialPwd + salt))
-		pwdHash := hex.EncodeToString(hasher.Sum(nil))
-
-		superAdmin := models.AdminUser{
-			Username:     "admin",
-			PasswordHash: pwdHash,
-			Salt:         salt,
-			RealName:     "系统超级管理员",
-			Role:         "super_admin",
-			Status:       "active",
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
-		}
-		_ = db.Mysql.Create(&superAdmin).Error
-	} else {
-		// 已存在账号，检测是否为历史默认弱密码 admin123456
-		hasherOld := sha256.New()
-		hasherOld.Write([]byte("admin123456" + adminUser.Salt))
-		isWeakDefault := hex.EncodeToString(hasherOld.Sum(nil)) == adminUser.PasswordHash
-
-		// 若指定了环境变量重置，或者仍处于默认弱密码态，立即强制轮换
-		if isWeakDefault || os.Getenv("RESET_ADMIN_PASSWORD") == "true" {
-			newPwd := os.Getenv("ADMIN_INITIAL_PASSWORD")
-			if newPwd == "" {
-				newPwd = ut.RandomStr(16)
-			}
-			newSalt := "sdui_salt_" + ut.RandomStr(16)
-			hasherNew := sha256.New()
-			hasherNew.Write([]byte(newPwd + newSalt))
-			newHash := hex.EncodeToString(hasherNew.Sum(nil))
-
-			db.Mysql.Model(&adminUser).Updates(map[string]interface{}{
-				"password_hash": newHash,
-				"salt":          newSalt,
-				"status":        "active",
-				"updated_at":    time.Now(),
-			})
-
-			log.Printf("==================================================================")
-			log.Printf("【安全拦截】检测到管理员使用历史默认弱密码，已强制安全重置:")
-			log.Printf("用户名: admin")
-			log.Printf("新密码: %s", newPwd)
-			log.Printf("请务必妥善保存并登录！")
-			log.Printf("==================================================================")
-		}
 	}
 
 	return nil

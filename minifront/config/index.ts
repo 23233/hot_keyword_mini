@@ -27,7 +27,7 @@ if (!resolvedApiBaseUrl) {
 }
 
 if (process.env.NODE_ENV !== 'development' && !resolvedApiBaseUrl) {
-  throw new Error('生产/体验构建必须注入 TARO_APP_API_BASE_URL（实际 jf.a0free.com 子域名）')
+  throw new Error('生产/体验构建必须注入 TARO_APP_API_BASE_URL')
 }
 
 export default defineConfig(async (merge) => {

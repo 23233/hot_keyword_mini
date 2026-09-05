@@ -49,6 +49,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	// 仅初始化管理员账户；业务数据必须由管理后台显式创建，查询接口不得隐式写入种子数据。
+	if err = system.EnsureInitialAdmin(); err != nil {
+		panic(err)
+	}
 
 	app := iris.New()
 	app.Use(iris.Compression)

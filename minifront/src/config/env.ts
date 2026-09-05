@@ -51,10 +51,10 @@ export function getBaseUrl(): string {
 
   const env = getMiniProgramEnv()
 
-  // 2. 正式发布包: 只使用构建时注入的 jf 子域名，避免误连旧服务
+  // 2. 正式发布包只使用构建时注入的线上域名
   if (env === 'release') {
     if (!PRODUCTION_API_URL) {
-      throw new Error('未配置生产 API 域名，请注入实际部署的 jf.a0free.com 子域名')
+      throw new Error('未配置生产 API 域名，请注入 TARO_APP_API_BASE_URL')
     }
     return PRODUCTION_API_URL
   }
@@ -62,7 +62,7 @@ export function getBaseUrl(): string {
   // 3. 体验版: 使用构建时注入的 HTTPS 域名
   if (env === 'trial') {
     if (!TRIAL_API_URL) {
-      throw new Error('未配置体验版 API 域名，请注入实际部署的 jf.a0free.com 子域名')
+      throw new Error('未配置体验版 API 域名，请注入 TARO_APP_API_BASE_URL')
     }
     return TRIAL_API_URL
   }

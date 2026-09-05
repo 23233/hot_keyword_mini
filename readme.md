@@ -83,7 +83,7 @@
 │   ├── template.go             # 行业模板包注册中心 (TemplateRegistry) 与页面派生
 │   ├── share_card.go           # 微信分享卡片纯 Go 图层渲染与自动配图服务
 │   ├── auth.go                 # 微信登录、双 Token 轮换状态机与重放攻击拦截
-│   ├── drama.go                # 短剧业务聚合与种子数据自举
+│   ├── drama.go                # 短剧业务聚合与显式数据读取
 │   └── *_test.go               # 全套后端业务自动化单元测试
 ├── routers/                    # 路由与控制器层
 │   ├── middleware/             # 租户拦截中间件 (TenantMiddleware)
@@ -96,7 +96,7 @@
 ├── templates/
 │   └── admin.html              # 可视化管理工作台 (多租户操盘 + 模板库 + iPhone 12/13 Pro 手机模拟器)
 ├── system/
-│   └── migrate.go              # 数据库自动迁移与多租户/SDUI 种子自举注入
+│   └── migrate.go              # 数据库自动迁移与管理员账户初始化
 ├── minifront/                  # 微信小程序前端工程 (Taro 4 + React + TypeScript)
 │   ├── src/
 │   │   ├── components/SDUI/    # 苹果 HIG 原子积木库
