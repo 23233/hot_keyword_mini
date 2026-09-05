@@ -7,14 +7,11 @@ import (
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"hot_keyword/routers/middleware"
-	"hot_keyword/sdk"
 	"hot_keyword/services"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/kataras/iris/v12"
 )
 
@@ -182,6 +179,7 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	// 挂载管理员登录与账户生命周期 CRUD 路由
 	RegisterAdminUserRoutes(adminParty)
+	RegisterMCPTokenRoutes(adminParty)
 
 	dramaService := services.NewDramaService()
 	sduiService := services.NewSDUIService()
@@ -200,48 +198,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			ctx.JSON(iris.Map{"code": 400, "msg": "图片上传参数不完整"})
 			return
 		}
-		if sdk.CosService == nil {
-			ctx.JSON(iris.Map{"code": 503, "msg": "COS 服务未配置"})
-			return
-		}
-
-		allowedTypes := map[string]string{
-			"image/jpeg": ".jpg",
-			"image/png":  ".png",
-			"image/webp": ".webp",
-			"image/gif":  ".gif",
-		}
-		extension, ok := allowedTypes[strings.ToLower(strings.TrimSpace(req.ContentType))]
-		if !ok {
-			ctx.JSON(iris.Map{"code": 400, "msg": "仅支持 JPG、PNG、WebP 或 GIF 图片"})
-			return
-		}
-		if req.FileSize > 10*1024*1024 {
-			ctx.JSON(iris.Map{"code": 400, "msg": "图片大小不能超过 10MB"})
-			return
-		}
-		if originalExt := strings.ToLower(path.Ext(req.FileName)); originalExt == ".jpeg" || originalExt == extension {
-			extension = originalExt
-		}
-
-		var app models.MiniApp
-		if err := db.Mysql.Where("app_id = ?", req.AppID).First(&app).Error; err != nil {
-			ctx.JSON(iris.Map{"code": 404, "msg": "小程序不存在"})
-			return
-		}
-		ownerType := strings.ToLower(strings.TrimSpace(req.OwnerType))
-		switch ownerType {
-		case "drama", "sdui", "share":
-		default:
-			ownerType = "resources"
-		}
-		fileKey := fmt.Sprintf("miniapps/%s/%s/%s/%s%s", app.AppID, ownerType, time.Now().Format("2006/01"), uuid.NewString(), extension)
-		presignedURL, err := sdk.CosService.GeneratePresignedUploadURL(ctx.Request().Context(), fileKey, "PUT", req.ContentType, 10)
-		if err != nil {
-			ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
-			return
-		}
-		fileURL, err := sdk.CosService.FileURL(fileKey, app.CosCdnUrl)
+		result, err := services.PrepareCOSUpload(ctx.Request().Context(), services.COSUploadRequest{AppID: req.AppID, FileName: req.FileName, FileSize: req.FileSize, ContentType: req.ContentType, OwnerType: req.OwnerType})
 		if err != nil {
 			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
 			return
@@ -251,11 +208,14 @@ func RegisterAdminRoutes(party iris.Party) {
 			"code": 0,
 			"msg":  "success",
 			"data": iris.Map{
-				"presignedUrl":       presignedURL,
-				"finalCosFileUrl":    fileURL,
-				"presigned_url":      presignedURL,
-				"final_cos_file_url": fileURL,
-				"fileKey":            fileKey,
+				"presignedUrl":       result.PresignedURL,
+				"finalCosFileUrl":    result.FinalCosFileURL,
+				"presigned_url":      result.PresignedURL,
+				"final_cos_file_url": result.FinalCosFileURL,
+				"fileKey":            result.FileKey,
+				"contentType":        result.ContentType,
+				"uploadHeaders":      result.UploadHeaders,
+				"expiresIn":          result.ExpiresIn,
 			},
 		})
 	})

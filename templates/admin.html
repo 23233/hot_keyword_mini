@@ -716,7 +716,10 @@
         <div style="margin-top:20px; padding:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
             <span style="font-size:13px; font-weight:700; color:#fff;">🖼️ 微信视觉分享卡片 (AppMessage 5:4)</span>
-            <button class="btn-ctrl" onclick="generateShareCard()" style="background:var(--accent-gradient); color:#fff; font-weight:700;">⚡ 自动生成微信 5:4 分享卡片</button>
+            <div style="display:flex; gap:8px;">
+              <label class="btn-ctrl" style="cursor:pointer;">上传分享图<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadPageShareImage(this)" /></label>
+              <button class="btn-ctrl" onclick="generateShareCard()" style="background:var(--accent-gradient); color:#fff; font-weight:700;">⚡ 自动生成微信 5:4 分享卡片</button>
+            </div>
           </div>
           <div style="display:flex; gap:16px; align-items:center;">
             <div style="width:200px; height:160px; background:#000; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.15); flex-shrink:0;">
@@ -819,7 +822,7 @@
           <div class="form-group">
             <label class="form-label">竖版封面海报</label>
             <div style="display:flex; gap:8px;">
-              <input type="text" id="inpCoverUrl" class="form-input" value="https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80" style="flex:1;" />
+              <input type="text" id="inpCoverUrl" class="form-input" value="" readonly style="flex:1;" />
               <label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传到 COS
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadLegacyImage(this, 'inpCoverUrl', 'drama')" />
               </label>
@@ -872,21 +875,63 @@
         <div class="card-head">
           <div>
             <div class="title">🤖 AI MCP 智能编排中心 (Model Context Protocol)</div>
-            <div class="desc">遵循标准 JSON-RPC 2.0 协议，展示 7 大受控工具与在线测试试运行器</div>
+            <div class="desc">遵循标准 JSON-RPC 2.0 协议，提供全局 Token、协议资源和 15 个受控工具</div>
           </div>
           <div>
             <span style="font-size:12px; background:rgba(48,209,88,0.2); color:#30d158; border:1px solid rgba(48,209,88,0.3); padding:4px 10px; border-radius:999px; font-weight:700;">● MCP 服务正常运行中</span>
           </div>
         </div>
 
-        <!-- 7个受控工具卡片矩阵 -->
+        <div style="margin-top:16px; padding:16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+            <div>
+              <div style="font-size:14px; font-weight:700;">MCP 访问令牌</div>
+              <div style="font-size:12px; color:var(--text-sub); margin-top:4px;">全局令牌，可由 AI 通过 app_id 操作任意已注册小程序，明文仅显示一次</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input id="mcpTokenName" class="form-input" style="width:160px;" placeholder="令牌名称" />
+              <select id="mcpTokenScope" class="form-select" style="width:170px;">
+                <option value="read">只读</option>
+                <option value="draft">读写草稿</option>
+                <option value="release">完整发布权限</option>
+              </select>
+              <button class="btn-ctrl" onclick="createMcpToken()" style="background:var(--accent); color:#000; font-weight:700;">创建 Token</button>
+            </div>
+          </div>
+          <div id="mcpCreatedTokenBox" style="display:none; margin-top:12px;">
+            <label class="form-label">新 Token（请立即复制保存）</label>
+            <div style="display:flex; gap:8px;">
+              <input id="mcpCreatedToken" class="form-input" readonly />
+              <button class="btn-ctrl" onclick="copyMcpToken()">复制</button>
+            </div>
+          </div>
+          <div id="mcpTokenList" style="display:flex; flex-direction:column; gap:8px; margin-top:14px;"></div>
+        </div>
+
+        <!-- 15个受控工具卡片矩阵 -->
         <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; margin-top:16px;">
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.app.list</span>
+              <span style="font-size:10px; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">只读查询</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">查询全部已注册小程序，供 AI 选择目标 AppID</div>
+          </div>
+
           <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <span style="font-weight:700; color:var(--accent);">sdui.template.list</span>
               <span style="font-size:10px; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">只读查询</span>
             </div>
             <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">查询短剧、游戏、查询、下载四大行业模板包与所需实体</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:700; color:var(--accent);">sdui.file.prepare_upload</span>
+              <span style="font-size:10px; background:rgba(10,132,255,0.2); color:#0a84ff; padding:2px 6px; border-radius:4px;">COS 预签名</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px;">申请 miniapps 前缀上传地址，调用方直传图片后回填 CDN URL</div>
           </div>
 
           <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
@@ -945,7 +990,9 @@
             <div class="form-group">
               <label class="form-label">选择调用工具</label>
               <select id="mcpToolSelect" class="form-select" onchange="onMcpToolSelectChanged()">
+                <option value="sdui.app.list">sdui.app.list (查询小程序)</option>
                 <option value="sdui.template.list">sdui.template.list (查询行业模板)</option>
+                <option value="sdui.file.prepare_upload">sdui.file.prepare_upload (申请 COS 上传)</option>
                 <option value="sdui.page.validate">sdui.page.validate (强校验当前页面)</option>
                 <option value="sdui.page.preview">sdui.page.preview (装配预览当前页面)</option>
                 <option value="sdui.page.screenshot">sdui.page.screenshot (后端截图卡片)</option>
@@ -1227,6 +1274,30 @@
       }
     }
 
+    // uploadPageShareImage 复用统一 COS 链路更新页面全部分享图配置。
+    async function uploadPageShareImage(input) {
+      const file = input.files && input.files[0];
+      if (!file || !currentDynamicPage) return;
+      try {
+        const url = await uploadCosFile(file, 'share');
+        let config = currentDynamicPage.share_config || {};
+        if (typeof config === 'string') {
+          try { config = JSON.parse(config || '{}'); } catch (e) { config = {}; }
+        }
+        config.default_image_url = url;
+        config.friend = { ...(config.friend || {}), image_url: url };
+        config.timeline = { ...(config.timeline || {}), image_url: url };
+        currentDynamicPage.share_config = config;
+        document.getElementById('shareCardImgPreview').src = url;
+        document.getElementById('shareCardUrlLabel').innerText = url;
+        showToast('分享图已上传到 COS，请保存页面');
+      } catch (err) {
+        alert(err.message || '分享图上传失败');
+      } finally {
+        input.value = '';
+      }
+    }
+
     // 页面初始化与身份认证守卫
     window.addEventListener('DOMContentLoaded', async () => {
       await checkAdminAuth();
@@ -1327,6 +1398,9 @@
       if (tab === 'users') {
         loadAdminUsers();
       }
+      if (tab === 'mcp') {
+        loadMcpTokens();
+      }
     }
 
     // 1. 加载小程序列表
@@ -1337,11 +1411,15 @@
         if (json.code === 0 && json.data) {
           currentAppList = json.data;
           const select = document.getElementById('appSelect');
+          if (!currentAppList.some(app => app.app_id === currentAppId)) {
+            currentAppId = currentAppList[0]?.app_id || '';
+          }
           select.innerHTML = currentAppList.map(app => `
             <option value="${escapeHtml(app.app_id)}" ${app.app_id === currentAppId ? 'selected' : ''}>
               ${escapeHtml(app.app_name)} (${escapeHtml(app.app_id)})
             </option>
           `).join('');
+          select.value = currentAppId;
           const currentApp = currentAppList.find(app => app.app_id === currentAppId);
           const cdnInput = document.getElementById('appCdnUrl');
           if (cdnInput) cdnInput.value = currentApp?.cos_cdn_url || '';
@@ -1354,7 +1432,7 @@
     // 小程序切换回调
     async function onAppChanged() {
       currentAppId = document.getElementById('appSelect').value;
-      currentPageId = 'home';
+      currentPageId = '';
       await loadPages();
       await loadPageDetail();
       showToast(`已切换至小程序: ${currentAppId}`);
@@ -1385,6 +1463,14 @@
         if (json.code === 0 && json.data) {
           currentPageList = json.data;
           const select = document.getElementById('pageSelect');
+          if (!currentPageList.some(page => page.page_id === currentPageId)) {
+            currentPageId = currentPageList[0]?.page_id || '';
+          }
+          if (currentPageList.length === 0) {
+            select.innerHTML = '<option value="">暂无页面，请先新建</option>';
+            showNoPageState();
+            return;
+          }
           select.innerHTML = currentPageList.map(p => `
             <option value="${escapeHtml(p.page_id)}" ${p.page_id === currentPageId ? 'selected' : ''}>
               ${escapeHtml(p.page_id)} (${escapeHtml(p.title || '未命名')})
@@ -1406,6 +1492,10 @@
 
     // 3. 读取单个页面的完整 SDUI 协议
     async function loadPageDetail() {
+      if (!currentAppId || !currentPageId) {
+        showNoPageState();
+        return;
+      }
       try {
         const res = await adminFetch(`/api/v1/admin/page?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
         const json = await res.json();
@@ -1422,10 +1512,26 @@
           renderEditorFromProtocol();
           renderSimulator();
           updateShareCardPreview();
+        } else {
+          showNoPageState();
         }
       } catch (err) {
         console.error('加载页面详情失败:', err);
+        showNoPageState();
       }
+    }
+
+    function showNoPageState() {
+      currentDynamicPage = null;
+      document.getElementById('pageTitleInput').value = '';
+      document.getElementById('pageRevisionDisplay').value = '';
+      document.getElementById('blockCountLabel').innerText = '共 0 个组件';
+      document.getElementById('blockListContainer').innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-sub); font-size:13px;">当前小程序尚未创建页面，请点击“新建页面”开始配置</div>';
+      document.getElementById('simNavTitle').innerText = '尚未创建页面';
+      document.getElementById('simNavPill').innerText = currentAppId || '未选择小程序';
+      document.getElementById('simContentBody').innerHTML = '<div style="padding:80px 24px; text-align:center; color:rgba(255,255,255,0.45);">当前小程序暂无页面</div>';
+      document.getElementById('shareCardImgPreview').removeAttribute('src');
+      document.getElementById('shareCardUrlLabel').innerText = '创建页面后可生成分享图';
     }
 
     // 将协议数据填入编辑器表单
@@ -1495,7 +1601,7 @@
         return `
           <div class="form-group">
             <label class="form-label">图片 URL</label>
-            <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.image_url || '')}" oninput="updateBlockProp(${idx}, 'image_url', this.value)" /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'image_url', 'sdui')" /></label></div>
+            <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.image_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'image_url', 'sdui')" /></label></div>
           </div>
         `;
       }
@@ -1513,7 +1619,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">竖版封面图 URL</label>
-              <div style="display:flex; gap:8px;"><input id="cosImage-${idx}-cover" class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'cover_url', 'sdui')" /></label></div>
+              <div style="display:flex; gap:8px;"><input id="cosImage-${idx}-cover" class="form-input" value="${escapeAttr(p.cover_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'cover_url', 'sdui')" /></label></div>
             </div>
             <div class="form-group">
               <label class="form-label">视频地址 (试看播放)</label>
@@ -1579,7 +1685,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">封面图 URL</label>
-              <div style="display:flex; gap:8px;"><input id="cosImage-${idx}-cover" class="form-input" value="${escapeAttr(p.cover_url || '')}" oninput="updateBlockProp(${idx}, 'cover_url', this.value)" /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'cover_url', 'sdui')" /></label></div>
+              <div style="display:flex; gap:8px;"><input id="cosImage-${idx}-cover" class="form-input" value="${escapeAttr(p.cover_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'cover_url', 'sdui')" /></label></div>
             </div>
             <div class="form-group">
               <label class="form-label">独家兑换码</label>
@@ -1606,6 +1712,21 @@
             </div>
           </div>
         `;
+      }
+
+      const genericImageFields = ['image_url', 'cover_url', 'poster', 'src'].filter(field => Object.prototype.hasOwnProperty.call(p, field));
+      if (genericImageFields.length > 0) {
+        return genericImageFields.map(field => `
+          <div class="form-group">
+            <label class="form-label">${escapeHtml(field)}</label>
+            <div style="display:flex; gap:8px;">
+              <input class="form-input" value="${escapeAttr(p[field] || '')}" readonly />
+              <label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, '${field}', 'sdui')" />
+              </label>
+            </div>
+          </div>
+        `).join('');
       }
 
       return `<div style="font-size:12px; color:var(--text-sub);">通用组件属性</div>`;
@@ -1670,7 +1791,7 @@
         newBlock.props = {
           title: '精彩短剧',
           subtitle: '高清全集 · 爆款首播',
-          cover_url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80',
+          cover_url: '',
           rating: 9.8
         };
       } else if (type === 'resource_card') {
@@ -1692,7 +1813,7 @@
         newBlock.props = {
           title: '绝地天王：觉醒',
           subtitle: '硬核 3D 动作手游',
-          cover_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80',
+          cover_url: '',
           version: '公测版',
           redeem_code: 'VIP888GOLD'
         };
@@ -1756,7 +1877,7 @@
           return `
             <div style="background:#151518; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
               <div style="height:190px; background:#000; position:relative;">
-                <img src="${escapeHtml(p.cover_url || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80')}" style="width:100%; height:100%; object-fit:cover;" />
+                ${p.cover_url ? `<img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35);">等待上传 COS 图片</div>'}
                 <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:3px 10px; border-radius:999px; font-size:10px; color:#fff;">🎬 精选热播</div>
               </div>
               <div style="padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
@@ -1808,7 +1929,7 @@
           return `
             <div style="background:#14161d; border-radius:18px; overflow:hidden; border:1px solid rgba(48,209,88,0.3); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
               <div style="height:150px; background:#000; position:relative;">
-                <img src="${escapeHtml(p.cover_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80')}" style="width:100%; height:100%; object-fit:cover;" />
+                ${p.cover_url ? `<img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35);">等待上传 COS 图片</div>'}
                 <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.65); padding:3px 10px; border-radius:999px; font-size:10px; color:#30d158; font-weight:700;">🎮 官方公测</div>
               </div>
               <div style="padding:12px 14px;">
@@ -1887,7 +2008,10 @@
 
     // 5. 保存并同步到线上
     async function saveCurrentWork() {
-      if (!currentDynamicPage) return;
+      if (!currentDynamicPage) {
+        showToast('请先新建页面');
+        return;
+      }
 
       const payload = {
         app_id: currentAppId,
@@ -1922,6 +2046,10 @@
 
     // 设为当前线上主页
     async function setCurrentAsHomePage() {
+      if (!currentPageId) {
+        showToast('请先新建页面');
+        return;
+      }
       try {
         const res = await adminFetch('/api/v1/admin/page/set_current', {
           method: 'POST',
@@ -2088,6 +2216,10 @@
 
     // 生成微信分享卡片并回写
     async function generateShareCard() {
+      if (!currentPageId) {
+        showToast('请先新建页面');
+        return;
+      }
       try {
         const res = await adminFetch('/api/v1/admin/page/generate_share_card', {
           method: 'POST',
@@ -2120,6 +2252,10 @@
 
     // 打开历史版本弹窗
     async function openRevisionsModal() {
+      if (!currentPageId) {
+        showToast('请先新建页面');
+        return;
+      }
       try {
         const res = await adminFetch(`/api/v1/admin/page/revisions?app_id=${encodeURIComponent(currentAppId)}&page_id=${encodeURIComponent(currentPageId)}`);
         const json = await res.json();
@@ -2386,6 +2522,10 @@
       const inp = document.getElementById('mcpArgsInput');
       if (tool === 'sdui.template.list') {
         inp.value = JSON.stringify({ business_type: 'game' }, null, 2);
+      } else if (tool === 'sdui.app.list') {
+        inp.value = '{}';
+      } else if (tool === 'sdui.file.prepare_upload') {
+        inp.value = JSON.stringify({ app_id: currentAppId, file_name: 'cover.png', file_size: 1024, content_type: 'image/png', owner_type: 'sdui' }, null, 2);
       } else if (tool === 'sdui.page.validate') {
         inp.value = JSON.stringify({ app_id: currentAppId, page_id: currentPageId }, null, 2);
       } else if (tool === 'sdui.page.preview') {
@@ -2423,7 +2563,7 @@
           }
         };
 
-        const res = await fetch('/api/v1/mcp', {
+        const res = await adminFetch('/api/v1/mcp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(reqBody)
@@ -2438,6 +2578,68 @@
         statusEl.style.color = '#ff453a';
         outEl.innerText = '// 执行异常: ' + err.message;
       }
+    }
+
+    async function loadMcpTokens() {
+      const container = document.getElementById('mcpTokenList');
+      try {
+        const res = await adminFetch('/api/v1/admin/mcp-tokens');
+        const json = await res.json();
+        const list = Array.isArray(json.data) ? json.data : [];
+        container.innerHTML = list.length ? list.map(item => `
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; background:rgba(0,0,0,0.25); border-radius:10px;">
+            <div>
+              <div style="font-size:13px; color:#fff; font-weight:600;">${escapeHtml(item.name)}</div>
+              <div style="font-size:11px; color:var(--text-sub); margin-top:3px;">${escapeHtml(item.token_prefix)}... · ${escapeHtml(item.scopes)}${item.last_used_at ? ' · 最近使用 ' + escapeHtml(new Date(item.last_used_at).toLocaleString()) : ''}</div>
+            </div>
+            <button class="btn-ctrl danger" onclick="deleteMcpToken(${Number(item.id)})">删除</button>
+          </div>
+        `).join('') : '<div style="color:var(--text-sub); font-size:12px;">当前暂无全局 MCP Token</div>';
+      } catch (err) {
+        container.innerHTML = `<div style="color:#ff453a; font-size:12px;">加载失败: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function createMcpToken() {
+      const name = document.getElementById('mcpTokenName').value.trim();
+      const level = document.getElementById('mcpTokenScope').value;
+      if (!name) {
+        alert('请填写令牌名称');
+        return;
+      }
+      const scopes = level === 'release' ? ['read', 'write:draft', 'release'] : level === 'draft' ? ['read', 'write:draft'] : ['read'];
+      const res = await adminFetch('/api/v1/admin/mcp-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, scopes })
+      });
+      const json = await res.json();
+      if (json.code !== 0 || !json.data?.token) {
+        alert(json.msg || '创建 MCP Token 失败');
+        return;
+      }
+      document.getElementById('mcpCreatedToken').value = json.data.token;
+      document.getElementById('mcpCreatedTokenBox').style.display = 'block';
+      document.getElementById('mcpTokenName').value = '';
+      await loadMcpTokens();
+    }
+
+    async function copyMcpToken() {
+      const token = document.getElementById('mcpCreatedToken').value;
+      if (token) await navigator.clipboard.writeText(token);
+      showToast('MCP Token 已复制');
+    }
+
+    async function deleteMcpToken(id) {
+      if (!confirm('确定删除该 MCP Token 吗？删除后调用方会立即失效。')) return;
+      const res = await adminFetch(`/api/v1/admin/mcp-tokens/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.code !== 0) {
+        alert(json.msg || '删除 MCP Token 失败');
+        return;
+      }
+      await loadMcpTokens();
+      showToast('MCP Token 已删除');
     }
 
     function showToast(msg) {

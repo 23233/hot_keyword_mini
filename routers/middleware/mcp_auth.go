@@ -68,7 +68,14 @@ func MCPAuthMiddleware(ctx iris.Context) {
 		} else {
 			scopes = allowedScopes
 		}
-	} else if bearerToken != "" {
+	} else if mcpKey != "" {
+		if tokenRecord, err := services.AuthenticateMCPAccessToken(mcpKey); err == nil {
+			authenticated = true
+			actorID = "mcp_token_" + tokenRecord.Name
+			scopes = services.ParseMCPTokenScopes(tokenRecord.Scopes)
+		}
+	}
+	if !authenticated && bearerToken != "" {
 		// 尝试通过管理员 JWT 校验
 		adminAuth := services.NewAdminAuthService()
 		claims, err := adminAuth.ParseAdminToken(bearerToken)
@@ -121,7 +128,6 @@ func MCPAuthMiddleware(ctx iris.Context) {
 		requestedAppID = strings.TrimSpace(ctx.URLParam("app_id"))
 	}
 
-	effectiveTenantID := ""
 	if requestedAppID != "" {
 		isAllowed := len(allowedTenants) == 0
 		for _, allowed := range allowedTenants {
@@ -143,13 +149,9 @@ func MCPAuthMiddleware(ctx iris.Context) {
 			ctx.StopExecution()
 			return
 		}
-		effectiveTenantID = requestedAppID
-	} else {
-		if len(allowedTenants) > 0 {
-			effectiveTenantID = allowedTenants[0]
-		}
 	}
 
-	ctx.Values().Set("mcp_tenant_id", effectiveTenantID)
+	// 全局 MCP Token 不绑定 Header 中的小程序；具体目标由工具 arguments.app_id 决定。
+	ctx.Values().Set("mcp_tenant_id", "")
 	ctx.Next()
 }

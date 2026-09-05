@@ -15,7 +15,7 @@ export const GameCardBlock: React.FC<GameCardBlockProps> = ({ block, onAction })
   const props = block.props || {}
   const title = props.title || '热门游戏'
   const subtitle = props.subtitle || ''
-  const coverUrl = props.cover_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80'
+  const coverUrl = props.cover_url || ''
   const version = props.version || '最新公测'
   const redeemCode = props.redeem_code || 'VIP888'
 
@@ -33,7 +33,7 @@ export const GameCardBlock: React.FC<GameCardBlockProps> = ({ block, onAction })
       }}
     >
       <View className="game-banner">
-        <Image src={coverUrl} mode="aspectFill" className="banner-img" />
+        {coverUrl ? <Image src={coverUrl} mode="aspectFill" className="banner-img" /> : null}
         <View className="game-badge">
           <Text>🎮 官方公测</Text>
         </View>

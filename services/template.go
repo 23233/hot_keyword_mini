@@ -123,7 +123,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			Props: map[string]interface{}{
 				"title":     "猴王下山",
 				"subtitle":  "第 1 集试看 · 爆火全网都市神话",
-				"cover_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+				"cover_url": "",
 				"video_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4",
 				"rating":    9.9,
 				"badge":     "🎬 高清试看",
@@ -211,7 +211,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			Props: map[string]interface{}{
 				"title":        "绝地天王：觉醒",
 				"subtitle":     "年度硬核魔幻 3D 手游",
-				"cover_url":    "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
+				"cover_url":    "",
 				"version":      "v2.5.0 全新公测",
 				"package_id":   "pkg_game_novice_888",
 				"claim_status": "unclaimed",
@@ -347,7 +347,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			Props: map[string]interface{}{
 				"title":     "极速应用安装包",
 				"subtitle":  "官方绿色完整版 · 纯净无广告 · 45.8 MB",
-				"cover_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80",
+				"cover_url": "",
 				"badge":     "⚡ 正版高速",
 			},
 			Style: &models.BlockStyle{

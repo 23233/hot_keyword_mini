@@ -31,6 +31,7 @@ func Migrate() error {
 		&models.GameRedeemPackage{},
 		&models.GameRedeemRecord{},
 		&models.AdminUser{},
+		&models.MCPAccessToken{},
 		&models.WebViewTicket{},
 		&models.Product{},
 		&models.PaymentOrder{},
@@ -145,7 +146,7 @@ func SeedMultiTenantAndSDUIData() error {
 				"props": {
 					"title": "猴王下山",
 					"subtitle": "第 1 集试看 · 全网爆火",
-					"cover_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+					"cover_url": "",
 					"video_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4",
 					"rating": 9.8,
 					"hot_score": 998000
@@ -211,18 +212,18 @@ func SeedMultiTenantAndSDUIData() error {
 		]`
 
 		shareJSON := `{
-			"default_image_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+			"default_image_url": "",
 			"friend": {
 				"enabled": true,
 				"title": "猴王下山全集免费看 - 爆款都市短剧",
 				"path": "/pages/index/index?page_id=home",
-				"image_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80"
+				"image_url": ""
 			},
 			"timeline": {
 				"enabled": true,
 				"title": "猴王下山全集免费看 - 爆款都市短剧",
 				"query": "page_id=home&from=timeline",
-				"image_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80"
+				"image_url": ""
 			}
 		}`
 

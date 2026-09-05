@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/23233/ggg/ut"
+	"github.com/23233/ggg/logger"
 	"github.com/kataras/iris/v12"
 )
 
@@ -54,7 +54,8 @@ func GetDynamicPageHandler(ctx iris.Context) {
 	srv := services.NewSDUIService()
 	envelope, err := srv.GetPublishedDynamicPageEnvelope(appID, pageID, queryParams, isAuthenticated)
 	if err != nil {
-		ut.IrisErrLog(ctx, err, "获取动态页面协议失败")
+		logger.JM.Warnf("获取动态页面协议失败: %v", err)
+		ctx.StatusCode(http.StatusNotFound)
 		_ = ctx.JSON(iris.Map{
 			"code": 404,
 			"msg":  "获取动态页面失败: " + err.Error(),

@@ -47,11 +47,7 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
             autoplay={false}
           />
         ) : (
-          <Image
-            src={coverUrl || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80'}
-            mode="aspectFill"
-            className="hero-cover"
-          />
+          coverUrl ? <Image src={coverUrl} mode="aspectFill" className="hero-cover" /> : null
         )}
         <View className="play-badge-overlay">
           <Text className="badge-text">{badge}</Text>

@@ -245,7 +245,7 @@ func (s *SDUIService) seedDefaultPage(appID string) error {
 			"props": {
 				"title": "猴王下山",
 				"subtitle": "第 1 集试看 · 爆火全网",
-				"cover_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+				"cover_url": "",
 				"video_url": "https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4",
 				"rating": 9.8,
 				"hot_score": 998000
@@ -291,18 +291,18 @@ func (s *SDUIService) seedDefaultPage(appID string) error {
 	]`
 
 	shareJSON := `{
-		"default_image_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80",
+		"default_image_url": "",
 		"friend": {
 			"enabled": true,
 			"title": "猴王下山全集免费看",
 			"path": "/pages/index/index?page_id=home",
-			"image_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80"
+			"image_url": ""
 		},
 		"timeline": {
 			"enabled": true,
 			"title": "猴王下山全集免费看",
 			"query": "page_id=home&from=timeline",
-			"image_url": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80"
+			"image_url": ""
 		}
 	}`
 
@@ -598,6 +598,24 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 	}
 
 	return nil, err
+}
+
+// FindRawDraft 只读取已有草稿，不会因读取请求创建或派生草稿。
+func (s *SDUIService) FindRawDraft(appID, pageID string) (*models.DynamicPageDraft, error) {
+	if appID == "" {
+		return nil, errors.New("AppID 不能为空")
+	}
+	if pageID == "" {
+		pageID = "home"
+	}
+	if db.Mysql == nil {
+		return nil, errors.New("数据库未初始化")
+	}
+	var draft models.DynamicPageDraft
+	if err := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).First(&draft).Error; err != nil {
+		return nil, err
+	}
+	return &draft, nil
 }
 
 // SaveDraft 保存草稿协议 (严格只更新 dynamic_page_drafts，默认以 draft.Revision 作为 CAS 乐观锁期望版本)

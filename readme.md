@@ -53,8 +53,11 @@
   - 公开端点：`GET /api/v1/share/card?app_id=...&page_id=...&type=app_message` 以 `image/png` 直接输出；
   - 管理后台一键“⚡ 自动生成微信 5:4 分享卡片”，自动回写并持久化至页面分享配置，转发时微信客户端自动展现高清卡片。
 
-### 5. AI Model Context Protocol (MCP) 编排服务与 7 大受控工具
+### 5. AI Model Context Protocol (MCP) 编排服务与受控工具
 遵循 Model Context Protocol (JSON-RPC 2.0) 规范，支持外部 AI Agent 自主完成受控编排闭环：
+- **`sdui.app.list`**：查询全部已注册小程序，供 AI 选择目标 AppID；
+- **`sdui.page.list` / `sdui.page.get`**：读取页面矩阵、线上协议和已有草稿，避免 AI 重复创建或覆盖错误页面；
+- **`sdui.file.prepare_upload`**：申请 `miniapps/{app_id}/` 前缀的 COS 预签名 PUT 地址，调用方直传后把 CDN URL 写入页面；
 - **`sdui.template.list`**：查询短剧/游戏/查询/下载四大行业可用模板；
 - **`sdui.page.create`**：从模板派生创建草稿页面 (`status: draft`)；
 - **`sdui.page.patch`**：受控局部 JSON Patch 补丁原子打补丁；
@@ -62,6 +65,10 @@
 - **`sdui.page.preview`**：模拟装配并输出响应信封；
 - **`sdui.page.screenshot`**：规范化图层合成，输出卡片 URL 与 SHA-256 图像哈希；
 - **`sdui.page.publish`**：通过强校验后显式确认发布，沉淀不可篡改版本快照；
+- **`sdui.page.revisions` / `sdui.page.rollback`**：读取历史版本并在人工确认后原子回滚；
+- **`sdui.page.set_current`**：将已发布页面切换为小程序当前主页；
+- **`sdui.page.share_card`**：生成并持久化好友/朋友圈分享图；
+- **标准资源**：通过 `resources/list`、`resources/read` 提供 `sdui://api` 与 `sdui://rules`，AI 可直接读取完整接口和 SDUI 规则；
 - **双通道接入**：支持 HTTP 端点 `POST /api/v1/mcp` 与独立 Stdio 命令行服务 `go run ./cmd/mcp-server`。
 
 ---
@@ -181,5 +188,17 @@ COS_CDN_URL=https://默认CDN域名（可选）
 管理后台新增或编辑小程序时，在“图片 CDN 根地址”填写该小程序已加入微信合法域名白名单的 HTTPS 地址。每次上传会按 `miniapps/{app_id}/...` 生成独立对象路径，并返回当前小程序 CDN 地址；COS 存储桶需要允许后台来源的 PUT CORS 请求。未配置 COS 时开发环境仍可启动，但图片上传接口会返回“COS 服务未配置”，生产环境会在启动阶段阻断缺失的 COS 凭据。
 
 管理后台上传接口为 `POST /api/v1/admin/files/presigned-upload-url`，请求字段为 `appId`、`fileName`、`fileSize`、`contentType`、`ownerType`，返回 `presignedUrl`、`finalCosFileUrl` 和 `fileKey`。接口需要管理员 Bearer Token，仅允许 JPG、PNG、WebP、GIF，单张图片不超过 10 MB。分享卡片由服务端生成后也写入 `miniapps/{app_id}/share/`。
+
+管理后台中的 SDUI 图片、短剧封面和自定义分享图统一调用同一个预签名上传接口，上传成功后自动回填当前小程序的 CDN 地址。行业模板和新增积木不再写入外部示例图片，避免小程序依赖未配置的第三方图片域名。
+
+### 6. MCP Token 管理
+
+登录管理后台后进入“AI MCP 智能编排”，填写令牌名称和权限即可创建全局 MCP Token。令牌不绑定单个小程序，明文仅在创建成功时显示一次，数据库只保存 SHA-256 哈希。调用 `/api/v1/mcp` 时通过 `X-MCP-Key` 提交令牌；页面工具必须在 arguments 中显式传入已注册的 `app_id`，部署环境仍可用 `MCP_ALLOWED_TENANTS` 设置总白名单。
+
+AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。推荐按“`sdui.app.list` -> `sdui.page.list/get` -> `sdui.template.list` -> `sdui.file.prepare_upload`（需要图片时） -> `sdui.page.create` -> `sdui.page.patch` -> `sdui.page.validate` -> `sdui.page.preview` -> `sdui.page.screenshot` -> `sdui.page.share_card`（需要分享图时） -> `sdui.page.publish` -> `sdui.page.set_current`”执行；故障恢复使用 `sdui.page.revisions` 和 `sdui.page.rollback`。默认只写草稿，发布、回滚、切换主页和生成分享图必须同时具备 `release` 权限并传入 `confirmed: true`，由人完成最终核对。
+
+MCP 的覆盖边界：它完整覆盖 SDUI 页面和资源的 AI 编排闭环，但不开放管理员账号、微信 AppSecret、支付私钥、商品金额、数据库迁移、任意 HTTP 代理或任意脚本执行。这些行为必须继续通过管理后台或专用服务完成。
+
+图片上传使用 `sdui.file.prepare_upload`：MCP 不接收二进制文件，只返回 10 分钟有效的预签名 PUT 地址、`uploadHeaders` 和最终 CDN 地址。AI 调用方必须按返回的 `uploadHeaders` 直接 PUT 图片到 `presignedUrl`，成功后使用 `finalCosFileUrl` 更新页面图片字段。对象统一使用 `miniapps/{app_id}/` 前缀，ACL 由 COS 控制台的 `miniapps/*` 规则管理。
 
 验证状态（2026-09-04）：预签名上传、COS 签名读取以及关闭证书校验后的 CDN 读取均已通过，测试对象已清理；本机使用默认 TLS 校验访问 `minicdn.a0free.com` 仍返回 `SEC_E_CERT_EXPIRED`，需以 CDN 实际边缘节点证书状态为准。Go 项目已通过 `go test ./...` 与 `go build ./...`。
