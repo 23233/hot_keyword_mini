@@ -28,10 +28,16 @@ export const EpisodeListBlock: React.FC<EpisodeListBlockProps> = ({ block, onAct
 
   const episodes = Array.from({ length: total }, (_, i) => i + 1)
 
-  const handleSelect = (num: number) => {
+  const handleSelect = (num: number, e?: any) => {
+    e?.stopPropagation?.()
     if (total <= 0) return
     setSelected(num)
     if (!onAction) return
+    const episodeContext = {
+      item: { episode_num: num },
+      actionPayload: { episode_num: num },
+      episode_num: num
+    }
     if (block.action) {
       onAction({
         ...block.action,
@@ -39,9 +45,9 @@ export const EpisodeListBlock: React.FC<EpisodeListBlockProps> = ({ block, onAct
           ...(block.action.payload || {}),
           episode_num: num
         }
-      })
+      }, episodeContext)
     } else if (block.events?.tap) {
-      onAction(undefined, { actionPayload: { episode_num: num } })
+      onAction(undefined, episodeContext)
     }
   }
 
@@ -68,7 +74,7 @@ export const EpisodeListBlock: React.FC<EpisodeListBlockProps> = ({ block, onAct
             return (
               <View
                 key={num}
-                onClick={() => handleSelect(num)}
+                onClick={(e) => handleSelect(num, e)}
                 style={{
                   minWidth: '88rpx',
                   height: '88rpx',

@@ -37,7 +37,10 @@ func PaymentOrderStatusHandler(ctx iris.Context) {
 		_ = ctx.JSON(iris.Map{"code": 401, "msg": "登录态无效，请重新授权"})
 		return
 	}
-	tradeNo := strings.TrimSpace(ctx.URLParam("out_trade_no"))
+	tradeNo := strings.TrimSpace(ctx.Params().Get("out_trade_no"))
+	if tradeNo == "" {
+		tradeNo = strings.TrimSpace(ctx.URLParam("out_trade_no"))
+	}
 	if tradeNo == "" {
 		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": "订单号不能为空"})
@@ -94,10 +97,18 @@ func CreatePaymentOrderHandler(ctx iris.Context) {
 // PaymentNotifyHandler 接收微信支付通知并执行验签、解密和幂等更新。
 func PaymentNotifyHandler(ctx iris.Context) {
 	// 微信支付通知不携带自定义租户头，必须通过通知 URL 路径识别 AppID。
-	appID := strings.TrimSpace(ctx.URLParam("app_id"))
+	appID := strings.TrimSpace(ctx.Params().Get("app_id"))
+	if appID == "" {
+		appID = strings.TrimSpace(ctx.URLParam("app_id"))
+	}
 	if appID == "" {
 		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": "FAIL", "message": "支付通知地址缺少 app_id"})
+		return
+	}
+	if db.Mysql == nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		_ = ctx.JSON(iris.Map{"code": "FAIL", "message": "数据库服务未就绪"})
 		return
 	}
 	var app models.MiniApp

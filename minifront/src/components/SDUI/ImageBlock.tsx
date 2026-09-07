@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import { View, Image, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { resolveRemoteUrl } from '../../config/env'
 
 interface ImageBlockProps {
   block: BlockItem
@@ -15,8 +16,8 @@ interface ImageBlockProps {
   */
 export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
-  const imageUrl = props.image_url || props.src || props.url || ''
-  const fallbackUrl = props.fallback_url || props.placeholder || ''
+  const imageUrl = resolveRemoteUrl(props.image_url || props.src || props.url)
+  const fallbackUrl = resolveRemoteUrl(props.fallback_url || props.placeholder)
   const mode = (props.mode as any) || 'aspectFill'
   const aspectRatio = props.aspect_ratio || ''
   const enablePreview = props.preview === true
@@ -25,10 +26,12 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onAction }) => {
   const [fallbackError, setFallbackError] = useState(false)
 
   // 处理点击事件
-  const handleClick = () => {
+  const handleClick = (e: any) => {
     if (block.action || block.events?.tap) {
+      e.stopPropagation?.()
       onAction?.(block.action)
     } else if (enablePreview && imageUrl) {
+      e.stopPropagation?.()
       Taro.previewImage({
         current: imageUrl,
         urls: [imageUrl]

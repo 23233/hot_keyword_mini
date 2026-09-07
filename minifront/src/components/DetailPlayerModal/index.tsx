@@ -1,3 +1,4 @@
+// minifront/src/components/DetailPlayerModal/index.tsx
 import React, { useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import Taro from '@tarojs/taro'

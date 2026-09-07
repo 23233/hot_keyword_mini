@@ -1,7 +1,7 @@
-// index.tsx
+// minifront/src/pages/dynamic/index.tsx
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
-import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
+import Taro, { useShareAppMessage, useShareTimeline, usePullDownRefresh, useReachBottom } from '@tarojs/taro'
 import { PageResponseEnvelope, BlockItem } from '../../types/sdui'
 import { request } from '../../utils/request'
 import { dispatchAction } from '../../utils/action'
@@ -95,13 +95,13 @@ export default function DynamicPageIndex() {
     const friendConfig = envelope?.page?.share_config?.friend
     if (friendConfig && friendConfig.enabled) {
       return {
-        title: friendConfig.title || envelope?.page?.title || '精彩短剧推荐',
+        title: friendConfig.title || envelope?.page?.title || '精选推荐',
         path: friendConfig.path || `/pages/dynamic/index?page_id=${pageId}`,
         imageUrl: friendConfig.image_url || envelope?.page?.share_config?.default_image_url
       }
     }
     return {
-      title: envelope?.page?.title || '猴王下山 - 精选剧场',
+      title: envelope?.page?.title || '精选推荐',
       path: `/pages/dynamic/index?page_id=${pageId}`
     }
   })
@@ -111,14 +111,33 @@ export default function DynamicPageIndex() {
     const timelineConfig = envelope?.page?.share_config?.timeline
     if (timelineConfig && timelineConfig.enabled) {
       return {
-        title: timelineConfig.title || envelope?.page?.title || '精彩短剧推荐',
+        title: timelineConfig.title || envelope?.page?.title || '精选推荐',
         query: timelineConfig.query || `page_id=${pageId}&from=timeline`,
         imageUrl: timelineConfig.image_url || envelope?.page?.share_config?.default_image_url
       }
     }
     return {
-      title: envelope?.page?.title || '猴王下山 - 精选剧场',
+      title: envelope?.page?.title || '精选推荐',
       query: `page_id=${pageId}&from=timeline`
+    }
+  })
+
+  // 支持微信小程序原生下拉刷新
+  usePullDownRefresh(async () => {
+    try {
+      await fetchPageProtocol()
+    } finally {
+      Taro.stopPullDownRefresh()
+    }
+  })
+
+  // 支持微信小程序原生触底加载
+  useReachBottom(() => {
+    const pageEvents = (envelope?.page as any)?.events
+    if (pageEvents?.reach_bottom) {
+      handleBlockAction(pageEvents.reach_bottom, { __event: 'reach_bottom' })
+    } else if (pageEvents?.load_more) {
+      handleBlockAction(pageEvents.load_more, { __event: 'load_more' })
     }
   })
 
@@ -147,38 +166,76 @@ export default function DynamicPageIndex() {
   }
 
   const themeClass = `dynamic-page-container theme-${envelope?.page?.theme || 'dark_glass'}`
-  const pageTitle = envelope?.page?.title || '精选剧场'
+  const pageTitle = envelope?.page?.title || '精选推荐'
 
   // 计算最终渲染的积木列表：优先消费服务端下发的同构 Layout IR 节点，确保与服务端截图 100% 像素级一致
   const effectiveBlocks = useMemo<BlockItem[]>(() => {
+    const rawBlocks = envelope?.page?.blocks || []
     if (envelope?.layout_ir?.nodes && envelope.layout_ir.nodes.length > 0) {
-      const nodeToBlock = (node: any): BlockItem => ({
-        id: node.id,
-        type: node.type,
-        props: {
-          ...(node.props || {}),
-          ...(node.children?.length ? { children: node.children.filter((child: any) => child.visible !== false).map(nodeToBlock) } : {}),
-          _layout_height: node.bounding_box?.height
-        },
-        action: node.action,
-        events: node.events,
-        loading: node.loading,
-        empty: node.empty,
-        error: node.error,
-        fallback: node.fallback,
-        style: {
-          margin_y: `${node.margin_y || 0}px`,
-          border_radius: `${node.border_radius || 0}px`,
-          padding: `${node.padding || 0}px`,
-          glass_blur: node.glass_blur,
-          accent_color: node.accent_color || undefined
+      const blockMap = new Map<string, BlockItem>()
+      const registerBlock = (b: BlockItem) => {
+        if (!b || !b.id) return
+        blockMap.set(b.id, b)
+        const children = (b.props?.children || b.props?.items || b.props?.blocks) as BlockItem[]
+        if (Array.isArray(children)) {
+          children.forEach(registerBlock)
         }
-      })
-      return envelope.layout_ir.nodes
-        .filter((node) => node.visible !== false)
-        .map(nodeToBlock)
+        if (Array.isArray(b.props?.tabs)) {
+          b.props.tabs.forEach((tab: any) => {
+            const tabChildren = (tab.blocks || tab.children || (tab.child ? [tab.child] : [])) as BlockItem[]
+            if (Array.isArray(tabChildren)) {
+              tabChildren.forEach(registerBlock)
+            }
+          })
+        }
+      }
+      rawBlocks.forEach(registerBlock)
+
+      const nodeToBlock = (node: any, isChild = false): BlockItem => {
+        const orig = blockMap.get(node.id) || blockMap.get(node.id.replace(/_\d+$/, ''))
+        const childrenList = node.children?.length ? node.children.map((c: any) => nodeToBlock(c, true)) : undefined
+        const mergedProps: Record<string, any> = {
+          ...(node.props || {}),
+          // 保留原始绑定表达式，避免初始 IR 的已解析值覆盖 $state/$result 后续响应式更新。
+          ...(orig?.props || {}),
+          _layout_height: node.bounding_box?.height
+        }
+        if (node.type === 'tabs') {
+          // 关键防护：保留 tabs 结构配置，防止被扁平 children 替换导致标签丢失
+          if (orig?.props?.tabs) {
+            mergedProps.tabs = orig.props.tabs
+          }
+        } else if (childrenList && childrenList.length > 0) {
+          mergedProps.children = childrenList
+        }
+
+        return {
+          id: node.id,
+          type: node.type,
+          props: mergedProps,
+          visible_when: node.visible_when !== undefined ? node.visible_when : (orig?.visible_when !== undefined ? orig.visible_when : (node.visible === false ? false : undefined)),
+          repeat: node.repeat,
+          action: node.action || orig?.action,
+          events: node.events || orig?.events,
+          loading: node.loading || orig?.loading,
+          empty: node.empty || orig?.empty,
+          error: node.error || orig?.error,
+          fallback: node.fallback || orig?.fallback,
+          style: {
+            ...(orig?.style || {}),
+            margin_y: isChild
+              ? orig?.style?.margin_y
+              : (node.margin_y ? `${node.margin_y}px` : (orig?.style?.margin_y || '24rpx')),
+            border_radius: node.border_radius ? `${node.border_radius}px` : orig?.style?.border_radius,
+            padding: node.padding ? `${node.padding}px` : orig?.style?.padding,
+            glass_blur: node.glass_blur !== undefined ? node.glass_blur : orig?.style?.glass_blur,
+            accent_color: node.accent_color || orig?.style?.accent_color
+          }
+        }
+      }
+      return envelope.layout_ir.nodes.map((n: any) => nodeToBlock(n, false))
     }
-    return envelope?.page?.blocks || []
+    return rawBlocks
   }, [envelope])
 
   return (

@@ -1,3 +1,4 @@
+// minifront/src/types/drama.ts
 // 播放模式类型 (通用底层播放规则)
 export type PlayMode = 'direct_video' | 'channels_embedded' | 'channels_video' | 'web_view' | 'none'
 

@@ -1,6 +1,8 @@
+// minifront/src/utils/auth.ts
 import Taro from '@tarojs/taro'
 import { UserSessionState } from '../types/sdui'
 import { getBaseUrl } from '../config/env'
+import { getCurrentAppId } from './request'
 
 // 本地存储会话键名
 const SESSION_STORAGE_KEY = 'hot_mini_user_session'
@@ -81,6 +83,15 @@ export async function loginWithWechat(): Promise<UserSessionState | null> {
         throw new Error('获取微信登录凭证 code 失败')
       }
 
+      const currentAppId = getCurrentAppId()
+      const loginHeaders: Record<string, string> = {
+        'content-type': 'application/json',
+        'X-SDUI-Version': '1.1'
+      }
+      if (currentAppId) {
+        loginHeaders['X-WX-AppID'] = currentAppId
+      }
+
       const res = await Taro.request<{ code: number; msg?: string; data: UserSessionState }>({
         url: `${getBaseUrl()}/api/v1/auth/wechat-login`,
         method: 'POST',
@@ -88,10 +99,7 @@ export async function loginWithWechat(): Promise<UserSessionState | null> {
         data: {
           code: loginRes.code
         },
-        header: {
-          'content-type': 'application/json',
-          'X-SDUI-Version': '1.1'
-        }
+        header: loginHeaders
       })
 
       if (res.statusCode === 200 && res.data && res.data.code === 0 && res.data.data) {
@@ -133,6 +141,15 @@ export async function refreshSession(): Promise<UserSessionState | null> {
         return null
       }
 
+      const currentAppId = getCurrentAppId()
+      const refreshHeaders: Record<string, string> = {
+        'content-type': 'application/json',
+        'X-SDUI-Version': '1.1'
+      }
+      if (currentAppId) {
+        refreshHeaders['X-WX-AppID'] = currentAppId
+      }
+
       const res = await Taro.request<{ code: number; msg?: string; data: UserSessionState }>({
         url: `${getBaseUrl()}/api/v1/auth/refresh`,
         method: 'POST',
@@ -140,10 +157,7 @@ export async function refreshSession(): Promise<UserSessionState | null> {
         data: {
           refresh_token: session.refresh_token
         },
-        header: {
-          'content-type': 'application/json',
-          'X-SDUI-Version': '1.1'
-        }
+        header: refreshHeaders
       })
 
       if (res.statusCode === 200 && res.data && res.data.code === 0 && res.data.data) {

@@ -5,7 +5,7 @@ import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface MediaHeroBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
 }
 
 /**
@@ -20,9 +20,18 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
   const rating = props.rating || 9.8
   const badge = props.badge || '🎬 精选热播'
 
-  const handleClick = () => {
+  const handleClick = (e: any) => {
+    e?.stopPropagation?.()
     if ((block.action || block.events?.tap) && onAction) {
-      onAction(block.action)
+      onAction(block.action, { item: props, actionPayload: props, title, cover_url: coverUrl, video_url: videoUrl })
+    }
+  }
+
+  const handleVideoEnded = () => {
+    if (props.on_ended_action && onAction) {
+      onAction(props.on_ended_action, { title, video_url: videoUrl })
+    } else if (block.events?.ended && onAction) {
+      onAction(undefined, { __event: 'ended', title, video_url: videoUrl })
     }
   }
 
@@ -35,7 +44,15 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
         backgroundColor: block.style?.background || '#151518'
       }}
     >
-      <View className="media-player-box">
+      <View
+        className="media-player-box"
+        onClick={(e) => {
+          // 若正在展示原生视频播放器，阻止播放控件交互向外冒泡触发卡片跳转
+          if (videoUrl) {
+            e.stopPropagation?.()
+          }
+        }}
+      >
         {videoUrl ? (
           <Video
             src={videoUrl}
@@ -45,6 +62,7 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
             showFullscreenBtn
             showPlayBtn
             autoplay={false}
+            onEnded={handleVideoEnded}
           />
         ) : (
           coverUrl ? <Image src={coverUrl} mode="aspectFill" className="hero-cover" /> : null

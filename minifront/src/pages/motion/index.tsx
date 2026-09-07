@@ -1,3 +1,4 @@
+// minifront/src/pages/motion/index.tsx
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { AppleNavbar } from '../../components/AppleNavbar'

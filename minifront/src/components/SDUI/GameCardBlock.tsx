@@ -5,11 +5,12 @@ import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface GameCardBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
 }
 
 /**
  * 游戏礼包与兑换码积木组件 (GameCardBlock)
+ * 支持卡片主体交互跳转（如启动游戏/查看详情）与独家兑换码一键复制解耦
  */
 export const GameCardBlock: React.FC<GameCardBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
@@ -19,15 +20,41 @@ export const GameCardBlock: React.FC<GameCardBlockProps> = ({ block, onAction })
   const version = props.version || '最新公测'
   const redeemCode = props.redeem_code || 'VIP888'
 
-  const handleCopy = () => {
-    if ((block.action || block.events?.tap) && onAction) {
-      onAction(block.action)
+  // 卡片主体动作 (如跳转游戏详情或跨小程序启动游戏)
+  const cardAction = props.card_action || block.action
+  const handleCardClick = (e: any) => {
+    e?.stopPropagation?.()
+    const ctx = { item: props, actionPayload: props, title, version, redeem_code: redeemCode, code: redeemCode }
+    if (cardAction && onAction) {
+      onAction(cardAction, ctx)
+    } else if (block.events?.tap && onAction) {
+      onAction(undefined, ctx)
+    }
+  }
+
+  // 兑换码一键复制动作
+  const handleCopy = (e: any) => {
+    e.stopPropagation?.()
+    if (onAction) {
+      const copyAction = props.copy_action || props.redeem_action
+      if (copyAction) {
+        onAction(copyAction, { redeem_code: redeemCode, title })
+      } else {
+        onAction({
+          type: 'copy_text',
+          payload: {
+            text: redeemCode,
+            toast: `✅ 兑换码 ${redeemCode} 已复制到剪贴板！`
+          }
+        }, { redeem_code: redeemCode, title })
+      }
     }
   }
 
   return (
     <View
       className="sdui-game-card"
+      onClick={handleCardClick}
       style={{
         borderRadius: block.style?.border_radius || '28rpx'
       }}

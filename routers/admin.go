@@ -120,6 +120,13 @@ type ApplyTemplateReq struct {
 	Title string `json:"title"`
 }
 
+// SaveTemplateReq 管理后台保存用户 SDUI 模板请求入参。
+type SaveTemplateReq struct {
+	services.SDUITemplate
+	// 期望模板修订版本；新建传 0，更新必须传当前版本
+	ExpectedRevision int `json:"expected_revision"`
+}
+
 // GenerateShareCardReq 一键生成分享卡片请求入参
 type GenerateShareCardReq struct {
 	// 所属小程序 AppID
@@ -183,11 +190,13 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	dramaService := services.NewDramaService()
 	sduiService := services.NewSDUIService()
+	templateService := services.NewTemplateService()
 
 	// 管理后台图片统一通过预签名 PUT 直传 COS，业务数据只保存 CDN 地址。
 	adminParty.Post("/files/presigned-upload-url", func(ctx iris.Context) {
 		var req AdminPresignedUploadReq
 		if err := ctx.ReadJSON(&req); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "图片上传参数不完整"})
 			return
 		}
@@ -195,11 +204,13 @@ func RegisterAdminRoutes(party iris.Party) {
 			req.AppID = req.LegacyAppID
 		}
 		if strings.TrimSpace(req.AppID) == "" || strings.TrimSpace(req.FileName) == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "图片上传参数不完整"})
 			return
 		}
 		result, err := services.PrepareCOSUpload(ctx.Request().Context(), services.COSUploadRequest{AppID: req.AppID, FileName: req.FileName, FileSize: req.FileSize, ContentType: req.ContentType, OwnerType: req.OwnerType})
 		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
 			return
 		}
@@ -213,17 +224,22 @@ func RegisterAdminRoutes(party iris.Party) {
 				"presigned_url":      result.PresignedURL,
 				"final_cos_file_url": result.FinalCosFileURL,
 				"fileKey":            result.FileKey,
+				"file_key":           result.FileKey,
 				"contentType":        result.ContentType,
+				"content_type":       result.ContentType,
 				"uploadHeaders":      result.UploadHeaders,
+				"upload_headers":     result.UploadHeaders,
 				"expiresIn":          result.ExpiresIn,
+				"expires_in":         result.ExpiresIn,
 			},
 		})
 	})
 
-	// 1. 获取当前管理后台完整数据
+	// 1. 获取当前全局页面与渠道配置 (管理后台完整数据)
 	adminParty.Get("/config", func(ctx iris.Context) {
 		homeData, err := dramaService.GetHomeData("")
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
 			return
 		}
@@ -238,12 +254,14 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/config", func(ctx iris.Context) {
 		var req AdminUpdateConfigRequest
 		if err := ctx.ReadJSON(&req); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请求参数无效: " + err.Error()})
 			return
 		}
 
 		drama, err := dramaService.GetDefaultDrama()
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "获取短剧数据失败: " + err.Error()})
 			return
 		}
@@ -262,10 +280,16 @@ func RegisterAdminRoutes(party iris.Party) {
 			"action_channels": string(channelsJSON),
 		}
 
+		if req.FloatingButton != nil {
+			fbJSON, _ := json.Marshal(req.FloatingButton)
+			updateMap["floating_button"] = string(fbJSON)
+		}
+
 		err = db.Mysql.Model(&models.PageConfig{}).
 			Where("drama_id = ?", drama.ID).
 			Updates(updateMap).Error
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "更新配置失败: " + err.Error()})
 			return
 		}
@@ -277,6 +301,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/drama", func(ctx iris.Context) {
 		var req AdminUpdateDramaRequest
 		if err := ctx.ReadJSON(&req); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "参数格式错误: " + err.Error()})
 			return
 		}
@@ -300,6 +325,7 @@ func RegisterAdminRoutes(party iris.Party) {
 
 		err := db.Mysql.Model(&models.Drama{}).Where("id = ?", req.ID).Updates(updateData).Error
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "更新短剧信息失败: " + err.Error()})
 			return
 		}
@@ -311,6 +337,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Get("/apps", func(ctx iris.Context) {
 		apps, err := sduiService.ListApps()
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "获取小程序列表失败: " + err.Error()})
 			return
 		}
@@ -333,12 +360,14 @@ func RegisterAdminRoutes(party iris.Party) {
 			PaymentPrivateKey  string `json:"payment_private_key"`
 		}
 		if err := ctx.ReadJSON(&input); err != nil || input.AppID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "小程序参数不合法"})
 			return
 		}
 		if input.CosCdnUrl != "" {
 			cdnURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(input.CosCdnUrl), "/"))
 			if err != nil || cdnURL.Scheme != "https" || cdnURL.Host == "" || cdnURL.RawQuery != "" || cdnURL.Fragment != "" {
+				ctx.StatusCode(iris.StatusBadRequest)
 				ctx.JSON(iris.Map{"code": 400, "msg": "图片 CDN 必须是无查询参数的 HTTPS 根地址"})
 				return
 			}
@@ -346,6 +375,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		}
 		app := models.MiniApp{AppID: input.AppID, AppSecret: input.AppSecret, AppName: input.AppName, CurrentPage: input.CurrentPage, ReleaseMode: input.ReleaseMode, FallbackPageID: input.FallbackPageID, CosCdnUrl: input.CosCdnUrl, PaymentMchID: input.PaymentMchID, PaymentMchSerialNo: input.PaymentMchSerialNo, PaymentAPIv3Key: input.PaymentAPIv3Key, PaymentPrivateKey: input.PaymentPrivateKey}
 		if err := sduiService.SaveApp(&app); err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "保存小程序失败: " + err.Error()})
 			return
 		}
@@ -357,6 +387,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		var products []models.Product
 		if err := db.Mysql.Where("app_id = ?", appID).Order("id asc").Find(&products).Error; err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "获取商品失败: " + err.Error()})
 			return
 		}
@@ -365,6 +396,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/products", func(ctx iris.Context) {
 		var product models.Product
 		if err := ctx.ReadJSON(&product); err != nil || product.AppID == "" || product.SKU == "" || product.Name == "" || product.PriceFen <= 0 {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "商品参数不完整或金额无效"})
 			return
 		}
@@ -372,12 +404,14 @@ func RegisterAdminRoutes(party iris.Party) {
 			product.Status = models.ProductStatusActive
 		}
 		if product.Status != models.ProductStatusActive && product.Status != models.ProductStatusInactive {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "商品状态无效"})
 			return
 		}
 		product.CreatedAt = time.Now()
 		product.UpdatedAt = time.Now()
 		if err := db.Mysql.Where("app_id = ? AND sku = ?", product.AppID, product.SKU).Assign(map[string]interface{}{"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": product.UpdatedAt}).FirstOrCreate(&product).Error; err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "保存商品失败: " + err.Error()})
 			return
 		}
@@ -389,6 +423,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		appID := ctx.URLParam("app_id")
 		pages, err := sduiService.ListPages(appID)
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "获取页面列表失败: " + err.Error()})
 			return
 		}
@@ -401,6 +436,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		pageID := ctx.URLParam("page_id")
 		page, err := sduiService.GetRawPage(appID, pageID)
 		if err != nil {
+			ctx.StatusCode(iris.StatusNotFound)
 			ctx.JSON(iris.Map{"code": 404, "msg": "未找到指定页面: " + err.Error()})
 			return
 		}
@@ -413,6 +449,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		pageID := ctx.URLParam("page_id")
 		draft, err := sduiService.GetRawDraft(appID, pageID)
 		if err != nil {
+			ctx.StatusCode(iris.StatusNotFound)
 			ctx.JSON(iris.Map{"code": 404, "msg": "未找到指定草稿: " + err.Error()})
 			return
 		}
@@ -423,6 +460,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page", func(ctx iris.Context) {
 		var req SavePageAdminReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "页面参数不合法"})
 			return
 		}
@@ -454,6 +492,7 @@ func RegisterAdminRoutes(party iris.Party) {
 				UpdatedBy:    operator,
 			}
 			if err := sduiService.SaveDraftWithAudit(&draft, operator, req.ExpectedRevision); err != nil {
+				ctx.StatusCode(iris.StatusInternalServerError)
 				ctx.JSON(iris.Map{"code": 500, "msg": "保存草稿失败: " + err.Error()})
 				return
 			}
@@ -478,6 +517,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		targetPage := req.DynamicPage
 		targetPage.Status = "published"
 		if err := sduiService.SavePageWithAudit(&targetPage, operator, req.Remark, req.ExpectedRevision); err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "发布动态页面失败: " + err.Error()})
 			return
 		}
@@ -488,6 +528,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page/publish", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
 		var req PublishPageDraftReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请求参数不合法"})
 			return
 		}
@@ -505,6 +546,7 @@ func RegisterAdminRoutes(party iris.Party) {
 
 		publishedPage, err := sduiService.PublishDraft(req.AppID, req.PageID, operator, req.Remark)
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "发布草稿失败: " + err.Error()})
 			return
 		}
@@ -520,10 +562,12 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page/set_current", func(ctx iris.Context) {
 		var req SetCurrentPageReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请求参数不完整"})
 			return
 		}
 		if err := sduiService.SetCurrentPage(req.AppID, req.PageID); err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "设置主页失败: " + err.Error()})
 			return
 		}
@@ -532,8 +576,14 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	// 12. 行业模板库: 获取可用模板列表
 	adminParty.Get("/templates", func(ctx iris.Context) {
+		appID := ctx.URLParam("app_id")
 		bType := ctx.URLParam("business_type")
-		templates := services.GetGlobalTemplateRegistry().ListTemplates(bType)
+		templates, err := templateService.ListTemplates(appID, bType)
+		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
+			ctx.JSON(iris.Map{"code": 500, "msg": "获取模板列表失败: " + err.Error()})
+			return
+		}
 		ctx.JSON(iris.Map{
 			"code": 0,
 			"msg":  "success",
@@ -541,16 +591,63 @@ func RegisterAdminRoutes(party iris.Party) {
 		})
 	})
 
+	// 12.1 行业模板库: 读取内置模板或指定小程序内的用户模板。
+	adminParty.Get("/templates/{template_id:string}", func(ctx iris.Context) {
+		template, err := templateService.GetTemplate(ctx.URLParam("app_id"), ctx.Params().Get("template_id"))
+		if err != nil {
+			ctx.StatusCode(iris.StatusNotFound)
+			ctx.JSON(iris.Map{"code": 404, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "success", "data": template})
+	})
+
+	// 12.2 行业模板库: 新建或更新当前小程序的用户模板。
+	adminParty.Post("/templates", func(ctx iris.Context) {
+		var req SaveTemplateReq
+		if err := ctx.ReadJSON(&req); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "模板参数无效: " + err.Error()})
+			return
+		}
+		operator := ctx.Values().GetString("admin_username")
+		template, err := templateService.SaveCustomTemplate(&req.SDUITemplate, operator, req.ExpectedRevision)
+		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "保存模板失败: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "模板已保存", "data": template})
+	})
+
+	// 12.3 行业模板库: 按版本删除用户模板，内置模板不可删除。
+	adminParty.Delete("/templates/{template_id:string}", func(ctx iris.Context) {
+		expectedRevision, err := ctx.URLParamInt("expected_revision")
+		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "expected_revision 必须为正整数"})
+			return
+		}
+		if err := templateService.DeleteCustomTemplate(ctx.URLParam("app_id"), ctx.Params().Get("template_id"), expectedRevision); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "删除模板失败: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "模板已删除"})
+	})
+
 	// 13. 行业模板库: 一键套用模板至页面草稿箱 (严格仅存草稿，杜绝直接发布线上表)
 	adminParty.Post("/templates/apply", func(ctx iris.Context) {
 		var req ApplyTemplateReq
 		if err := ctx.ReadJSON(&req); err != nil || req.TemplateID == "" || req.AppID == "" || req.PageID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请完整提供 template_id, app_id 与 page_id"})
 			return
 		}
 
-		page, err := services.GetGlobalTemplateRegistry().ApplyTemplateToPage(req.TemplateID, req.AppID, req.PageID, req.Title)
+		page, err := templateService.ApplyTemplateToPage(req.TemplateID, req.AppID, req.PageID, req.Title)
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "套用模板失败: " + err.Error()})
 			return
 		}
@@ -581,6 +678,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		}
 
 		if err := sduiService.SaveDraftWithAudit(&draft, operator, 0); err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "套用模板保存草稿失败: " + err.Error()})
 			return
 		}
@@ -596,6 +694,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page/generate_share_card", func(ctx iris.Context) {
 		var req GenerateShareCardReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请求参数不完整"})
 			return
 		}
@@ -614,6 +713,7 @@ func RegisterAdminRoutes(party iris.Party) {
 
 		shareCardService := services.NewShareCardService()
 		if err := shareCardService.AutoUpdatePageShareConfig(req.AppID, req.PageID, host); err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "生成分享卡片失败: " + err.Error()})
 			return
 		}
@@ -634,6 +734,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		pageID := ctx.URLParam("page_id")
 		revs, err := sduiService.ListPageRevisions(appID, pageID)
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "获取版本快照列表失败: " + err.Error()})
 			return
 		}
@@ -648,12 +749,14 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page/rollback", func(ctx iris.Context) {
 		var req RollbackPageReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" || req.TargetRevision <= 0 {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请求参数不完整"})
 			return
 		}
 
 		newPage, err := sduiService.RollbackPageRevision(req.AppID, req.PageID, req.TargetRevision)
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "回滚失败: " + err.Error()})
 			return
 		}
@@ -669,6 +772,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page/validate", func(ctx iris.Context) {
 		var page models.DynamicPage
 		if err := ctx.ReadJSON(&page); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "协议反序列化失败: " + err.Error()})
 			return
 		}
@@ -685,12 +789,14 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Post("/page/patch", func(ctx iris.Context) {
 		var req PatchPageReq
 		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.PageID == "" || len(req.Ops) == 0 {
+			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "请求入参不合法"})
 			return
 		}
 
 		patchedPage, err := services.PatchDynamicPage(req.AppID, req.PageID, req.Ops)
 		if err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "应用补丁失败: " + err.Error()})
 			return
 		}

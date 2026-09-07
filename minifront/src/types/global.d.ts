@@ -1,3 +1,4 @@
+// minifront/src/types/global.d.ts
 /**
  * 全局微信小程序运行时 wx 对象类型声明
  */

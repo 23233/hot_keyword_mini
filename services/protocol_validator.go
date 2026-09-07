@@ -66,6 +66,10 @@ var allowedBlockTypes = map[string]bool{
 	"event_card":       true,
 	"poll":             true,
 	"feed_list":        true,
+
+	// 4. 通用自由编排/自定义卡片积木
+	"custom":       true,
+	"custom_block": true,
 }
 
 // 合法原子动作类型白名单 (严格与 doc/sdui_dynamic_engine_architecture.md 和 schema 对齐)
@@ -75,6 +79,7 @@ var allowedActionTypes = map[string]bool{
 	"open_channels_activity": true,
 	"open_mini_program":      true,
 	"request_data":           true,
+	"request":                true, // 兼容架构设计文档 3.2.2 与 request_data 等价
 	"request_payment":        true,
 	"open_webview":           true,
 	"preview_image":          true,
@@ -83,6 +88,13 @@ var allowedActionTypes = map[string]bool{
 	"require_auth":           true,
 	"share":                  true,
 	"subscribe_message":      true,
+	"set_state":              true,
+	"toggle_state":           true,
+	"reset_state":            true,
+	"show_error_state":       true,
+	"show_empty_state":       true,
+	"show_loading_state":     true,
+	"reset_block_state":      true,
 }
 
 // ValidateDynamicPage 对传入的动态页面协议执行严格结构化校验与安全审计
@@ -191,7 +203,7 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 					report.Errors = append(report.Errors, fmt.Sprintf("%s 跨小程序跳转缺少目标 target_app_id 或 app_id", pathPrefix))
 					report.Suggestions = append(report.Suggestions, "请配置跳转目标小程序的 AppID")
 				}
-			case "request_data":
+			case "request_data", "request":
 				endpoint, _ := payload["endpoint"].(string)
 				customURL, _ := payload["url"].(string)
 				if endpoint == "" && customURL == "" {
@@ -243,6 +255,18 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 	if block == nil {
 		return
 	}
+	// 校验当前 block 自身绑定的单一动作
+	validateNestedActionContracts(block.Action, path+".action", report)
+	// 校验当前 block 绑定的多事件流动作列表
+	if block.Events != nil {
+		for eventName, actions := range block.Events {
+			for idx := range actions {
+				validateNestedActionContracts(&actions[idx], fmt.Sprintf("%s.events.%s[%d]", path, eventName, idx), report)
+			}
+		}
+	}
+	// 校验 props 中嵌入的节点动作 (如 timeline 节点 action、item_grid 单元格 action)
+	validateEmbeddedActions(block.Props, path+".props", report)
 	for _, state := range []*models.BlockItem{block.Loading, block.Empty, block.Error, block.Fallback} {
 		if state == nil {
 			continue
@@ -275,14 +299,6 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 			report.Errors = append(report.Errors, fmt.Sprintf("%s.type 必填且不能为空", childPath))
 		} else if !allowedBlockTypes[child.Type] && child.Fallback == nil {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("%s 使用未知积木类型 '%s'，客户端将执行优雅降级", childPath, child.Type))
-		}
-		validateNestedActionContracts(child.Action, childPath+".action", report)
-		if child.Events != nil {
-			for eventName, actions := range child.Events {
-				for idx := range actions {
-					validateNestedActionContracts(&actions[idx], fmt.Sprintf("%s.events.%s[%d]", childPath, eventName, idx), report)
-				}
-			}
 		}
 		childCopy := child
 		validateNestedBlockContracts(&childCopy, childPath, idMap, report)
@@ -320,10 +336,15 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 		}
 	}
 	if action.Type == "copy_text" {
-		textValue, _ := action.Payload["text"].(string)
-		if strings.TrimSpace(textValue) == "" {
+		if !isValidCopyTextPayload(action.Payload) {
 			report.IsValid = false
-			report.Errors = append(report.Errors, fmt.Sprintf("%s 缺少 payload.text", path))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s copy_text 动作缺少有效的 text、content 或 path 载荷", path))
+		}
+	}
+	if action.Type == "request_payment" {
+		if !isValidRequestPaymentPayload(action.Payload) {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s request_payment 动作缺少有效的商品 sku 标识", path))
 		}
 	}
 	if action.Type == "subscribe_message" {
@@ -336,10 +357,22 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 			report.Errors = append(report.Errors, fmt.Sprintf("%s 缺少 template_id 或 tmpl_ids", path))
 		}
 	}
-	if action.Type == "request_data" {
+	if action.Type == "request_data" || action.Type == "request" {
 		if customURL, _ := action.Payload["url"].(string); strings.HasPrefix(customURL, "http://") || strings.HasPrefix(customURL, "https://") || strings.HasPrefix(customURL, "//") {
 			report.IsValid = false
 			report.Errors = append(report.Errors, fmt.Sprintf("%s 包含非同源绝对 URL", path))
+		}
+	}
+	if action.Type == "set_state" || action.Type == "toggle_state" {
+		if !hasActionTarget(action.Payload, "key", "name", "target") {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s %s 动作缺少 payload.key、payload.name 或 payload.target", path, action.Type))
+		}
+	}
+	if action.Type == "show_error_state" || action.Type == "show_empty_state" || action.Type == "show_loading_state" || action.Type == "reset_block_state" {
+		if !hasActionTarget(action.Payload, "target") {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s %s 动作缺少 payload.target", path, action.Type))
 		}
 	}
 	for idx := range action.OnSuccess {
@@ -348,6 +381,55 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 	for idx := range action.OnError {
 		validateNestedActionContracts(&action.OnError[idx], fmt.Sprintf("%s.on_error[%d]", path, idx), report)
 	}
+	// 兼容校验 payload 中的级联成功/失败动作链 (支持 []interface{} 与 []map[string]interface{} 双向兼容)
+	if action.Payload != nil {
+		if rawSucc, ok := action.Payload["on_success"]; ok {
+			var succList []interface{}
+			if s, ok := rawSucc.([]interface{}); ok {
+				succList = s
+			} else if s, ok := rawSucc.([]map[string]interface{}); ok {
+				for _, m := range s {
+					succList = append(succList, m)
+				}
+			}
+			for idx, succItem := range succList {
+				if subActBytes, err := json.Marshal(succItem); err == nil {
+					var subAct models.BlockAction
+					if json.Unmarshal(subActBytes, &subAct) == nil {
+						validateNestedActionContracts(&subAct, fmt.Sprintf("%s.payload.on_success[%d]", path, idx), report)
+					}
+				}
+			}
+		}
+		if rawErr, ok := action.Payload["on_error"]; ok {
+			var errList []interface{}
+			if s, ok := rawErr.([]interface{}); ok {
+				errList = s
+			} else if s, ok := rawErr.([]map[string]interface{}); ok {
+				for _, m := range s {
+					errList = append(errList, m)
+				}
+			}
+			for idx, errItem := range errList {
+				if subActBytes, err := json.Marshal(errItem); err == nil {
+					var subAct models.BlockAction
+					if json.Unmarshal(subActBytes, &subAct) == nil {
+						validateNestedActionContracts(&subAct, fmt.Sprintf("%s.payload.on_error[%d]", path, idx), report)
+					}
+				}
+			}
+		}
+	}
+}
+
+// hasActionTarget 校验动作目标字段为非空字符串，避免客户端静默忽略无效状态动作。
+func hasActionTarget(payload map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // collectNestedBlocks 从任意 props 结构递归提取所有带 type 的子 block。
@@ -505,15 +587,14 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 
 			// 特殊动作类型必填 payload 属性深度校验
 			if b.Action.Type == "copy_text" {
-				if b.Action.Payload == nil {
+				if !isValidCopyTextPayload(b.Action.Payload) {
 					report.IsValid = false
-					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s copy_text 动作 payload 必须包含 text 文本", bPath))
-				} else {
-					textVal, _ := b.Action.Payload["text"].(string)
-					if strings.TrimSpace(textVal) == "" {
-						report.IsValid = false
-						report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s copy_text 动作 payload.text 不能为空", bPath))
-					}
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s copy_text 动作 payload 必须包含有效的 text、content 或 path 载荷", bPath))
+				}
+			} else if b.Action.Type == "request_payment" {
+				if !isValidRequestPaymentPayload(b.Action.Payload) {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s request_payment 动作 payload 必须包含有效商品 sku", bPath))
 				}
 			} else if b.Action.Type == "subscribe_message" {
 				if b.Action.Payload == nil {
@@ -545,12 +626,23 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 			}
 		}
 
-		// 检查 visible_when 条件表达式规范
+		// 检查 visible_when 条件表达式规范 (支持显式 $ 作用域或兼容省略 $ 的受控作用域路径)
 		if b.VisibleWhen != nil {
 			pathVal, _ := b.VisibleWhen["path"].(string)
-			if pathVal != "" && !strings.HasPrefix(pathVal, "$") {
-				report.IsValid = false
-				report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s.visible_when.path '%s' 必须以 $ 状态或实体作用域开头", bPath, pathVal))
+			if pathVal != "" {
+				trimmed := strings.TrimSpace(pathVal)
+				if strings.HasPrefix(trimmed, "$") {
+					trimmed = trimmed[1:]
+				}
+				parts := strings.Split(trimmed, ".")
+				validScopes := map[string]bool{
+					"entity": true, "query": true, "item": true, "state": true,
+					"result": true, "page": true, "session": true, "tenant": true, "props": true,
+				}
+				if len(parts) == 0 || !validScopes[parts[0]] {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s.visible_when.path '%s' 必须属于受控状态或实体作用域 (如 $entity.title 或 entity.title)", bPath, pathVal))
+				}
 			}
 		}
 	}
@@ -560,4 +652,97 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 	}
 
 	return report
+}
+
+// isValidCopyTextPayload 检查 copy_text 动作的载荷是否满足合规要求
+// 严格对齐架构设计文档 3.1 节与 3.7 节：支持 text(非空字符串或 path 结构)、content(非空字符串或 path 结构)与 path(非空受控路径)
+func isValidCopyTextPayload(payload map[string]interface{}) bool {
+	if payload == nil {
+		return false
+	}
+	// 1. 检查 text 字段 (直接字符串或受控 path 对象)
+	if textVal, ok := payload["text"]; ok && textVal != nil {
+		if s, ok := textVal.(string); ok && strings.TrimSpace(s) != "" {
+			return true
+		}
+		if m, ok := textVal.(map[string]interface{}); ok {
+			if p, ok := m["path"].(string); ok && strings.TrimSpace(p) != "" {
+				return true
+			}
+		}
+	}
+	// 2. 检查 content 别名字段 (直接字符串或受控 path 对象)
+	if contentVal, ok := payload["content"]; ok && contentVal != nil {
+		if s, ok := contentVal.(string); ok && strings.TrimSpace(s) != "" {
+			return true
+		}
+		if m, ok := contentVal.(map[string]interface{}); ok {
+			if p, ok := m["path"].(string); ok && strings.TrimSpace(p) != "" {
+				return true
+			}
+		}
+	}
+	// 3. 检查直接挂载于 payload 的受控 path 字段 (如 $result.code / $result.copy_text)
+	if pathVal, ok := payload["path"]; ok && pathVal != nil {
+		if s, ok := pathVal.(string); ok && strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidRequestPaymentPayload 检查 request_payment 动作的载荷是否满足合规要求
+// 严格对齐架构设计文档 3.1 节：必须显式提交商品 sku 或 product_sku，金额始终由服务端查询保障安全
+func isValidRequestPaymentPayload(payload map[string]interface{}) bool {
+	if payload == nil {
+		return false
+	}
+	if sku, ok := payload["sku"].(string); ok && strings.TrimSpace(sku) != "" {
+		return true
+	}
+	if psku, ok := payload["product_sku"].(string); ok && strings.TrimSpace(psku) != "" {
+		return true
+	}
+	// 兼容受控路径绑定的情况 (如 { "sku": { "path": "$item.sku" } })
+	if m, ok := payload["sku"].(map[string]interface{}); ok {
+		if p, ok := m["path"].(string); ok && strings.TrimSpace(p) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// validateEmbeddedActions 递归审计非 BlockItem 属性结构中嵌入的动作对象 (如 timeline 节点、item_grid 单元格)
+func validateEmbeddedActions(value interface{}, path string, report *ValidationReport) {
+	if value == nil {
+		return
+	}
+	switch v := value.(type) {
+	case map[string]interface{}:
+		// 若自身是一个 BlockItem，由 validateNestedBlockContracts 处理，避免重复校验
+		if _, hasBlockType := v["type"].(string); hasBlockType {
+			if _, hasID := v["id"]; hasID {
+				return
+			}
+		}
+		// 若自身是 action 字段对象
+		if actMap, ok := v["action"].(map[string]interface{}); ok {
+			if raw, err := json.Marshal(actMap); err == nil {
+				var act models.BlockAction
+				if json.Unmarshal(raw, &act) == nil && act.Type != "" {
+					validateNestedActionContracts(&act, path+".action", report)
+				}
+			}
+		}
+		for k, sub := range v {
+			if k == "children" || k == "blocks" {
+				continue
+			}
+			validateEmbeddedActions(sub, fmt.Sprintf("%s.%s", path, k), report)
+		}
+	case []interface{}:
+		for idx, sub := range v {
+			validateEmbeddedActions(sub, fmt.Sprintf("%s[%d]", path, idx), report)
+		}
+	}
 }

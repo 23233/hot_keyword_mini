@@ -1,3 +1,4 @@
+// minifront/src/components/UniversalPlayer/index.tsx
 import React from 'react'
 import { View, Text, Image, Video, ChannelVideo } from '@tarojs/components'
 import Taro from '@tarojs/taro'

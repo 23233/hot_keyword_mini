@@ -10,8 +10,8 @@ interface AppleNavbarProps {
 }
 
 export const AppleNavbar: React.FC<AppleNavbarProps> = ({
-  title = '猴王下山',
-  subtitle = '全网热播短剧'
+  title = '热点精选',
+  subtitle = ''
 }) => {
   // 精确获取微信官方胶囊按钮和系统状态栏信息
   const { navBarHeight, statusBarHeight } = useMemo(() => {

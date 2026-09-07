@@ -1,3 +1,4 @@
+// minifront/src/components/ActionModal/index.tsx
 import React from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'

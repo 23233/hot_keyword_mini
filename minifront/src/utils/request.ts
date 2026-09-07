@@ -1,9 +1,32 @@
-// request.ts
+// minifront/src/utils/request.ts
 import Taro from '@tarojs/taro'
 import { getStoredSession, refreshSession, loginWithWechat, isAccessTokenExpiringSoon } from './auth'
 import { getBaseUrl } from '../config/env'
 
 export { getBaseUrl }
+
+/**
+ * 获取当前小程序运行时的真实 AppID (支持真机运行时自适应与本地调试兜底)
+ */
+export function getCurrentAppId(): string {
+  try {
+    const accountInfo = Taro.getAccountInfoSync?.()
+    if (accountInfo?.miniProgram?.appId) {
+      return accountInfo.miniProgram.appId
+    }
+  } catch (e) {
+    // ignore
+  }
+  try {
+    const customAppId = Taro.getStorageSync('custom_app_id')
+    if (customAppId && typeof customAppId === 'string') {
+      return customAppId
+    }
+  } catch (e) {
+    // ignore
+  }
+  return ''
+}
 
 // 请求参数配置接口
 export interface RequestOptions {
@@ -37,22 +60,27 @@ export async function request<T>(options: RequestOptions): Promise<T> {
     }
   }
 
-  // 2. 组装请求头：严格执行凭证防泄露边界拦截
+  // 2. 组装请求头：严格执行凭证防泄露边界拦截与租户识别注入
   const session = getStoredSession()
   const requestHeaders: Record<string, string> = {
     'content-type': 'application/json',
     'X-SDUI-Version': '1.1',
-    'X-Client-Capabilities': 'media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,clipboard,video,request_payment',
+    'X-Client-Capabilities': 'custom,custom_block,image,text,rich_text,container,stack,grid,tabs,carousel,list,spacer,empty,skeleton,media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,score_panel,coupon_card,countdown,result_table,contact_card,map_card,game_header,redeem_code_card,server_status,product_card,download_card,event_card,poll,feed_list,clipboard,video,channels,request_payment,subscribe_message',
     ...header
   }
 
   // 严密安全门禁: 仅向同源或受信任白名单后端地址发送多租户与用户 Authorization Token，杜绝凭证泄露
   if (isRelative || isSameOrigin) {
+    const currentAppId = getCurrentAppId()
+    if (currentAppId) {
+      requestHeaders['X-WX-AppID'] = currentAppId
+    }
     if (session?.access_token) {
       requestHeaders['Authorization'] = `Bearer ${session.access_token}`
     }
   } else {
     // 跨域或非同源第三方外部请求，清除敏感认证 Header
+    delete requestHeaders['X-WX-AppID']
     delete requestHeaders['X-App-Id']
     delete requestHeaders['Authorization']
   }

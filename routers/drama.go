@@ -28,6 +28,7 @@ func GetDramaDetailHandler(ctx iris.Context) {
 	drama, episodes, err := srv.GetDramaDetail(id)
 	if err != nil {
 		ut.IrisErrLog(ctx, err, "获取短剧详情失败")
+		ctx.StatusCode(iris.StatusInternalServerError)
 		_ = ctx.JSON(iris.Map{
 			"code": 500,
 			"msg":  "获取短剧详情失败",
@@ -54,6 +55,7 @@ func GetDramaHomeHandler(ctx iris.Context) {
 	data, err := srv.GetHomeData(mode)
 	if err != nil {
 		ut.IrisErrLog(ctx, err, "获取短剧首页数据失败")
+		ctx.StatusCode(iris.StatusInternalServerError)
 		_ = ctx.JSON(iris.Map{
 			"code": 500,
 			"msg":  "获取短剧首页数据失败: " + err.Error(),
@@ -78,6 +80,7 @@ type SwitchDramaModeReq struct {
 func SwitchDramaModeHandler(ctx iris.Context) {
 	var req SwitchDramaModeReq
 	if err := ctx.ReadJSON(&req); err != nil || req.Mode == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{
 			"code": 400,
 			"msg":  "请传入合法的 mode 参数",
@@ -88,6 +91,7 @@ func SwitchDramaModeHandler(ctx iris.Context) {
 	srv := services.NewDramaService()
 	if err := srv.SwitchDisplayMode(req.Mode); err != nil {
 		ut.IrisErrLog(ctx, err, "切换展示模式失败")
+		ctx.StatusCode(iris.StatusInternalServerError)
 		_ = ctx.JSON(iris.Map{
 			"code": 500,
 			"msg":  "切换展示模式失败: " + err.Error(),

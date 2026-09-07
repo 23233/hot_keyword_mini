@@ -29,7 +29,6 @@ type ActionEndpointMeta struct {
 	// 执行处理器
 	Handler ActionEndpointHandler
 }
-
 // ActionEndpointService 受控业务端点调度服务
 type ActionEndpointService struct {
 	mu        sync.RWMutex
@@ -48,6 +47,14 @@ func NewActionEndpointService() *ActionEndpointService {
 		Description: "游戏独家礼包兑换码防超发事务领取",
 		RequireAuth: true, // 强制要求用户登录微信授权，杜绝匿名刷单
 		Handler:     s.handleGameRedeem,
+	})
+
+	// 注册官方内置受控端点: 考分与通用数据查询 (支持免登录或受控查询)
+	s.RegisterEndpoint(ActionEndpointMeta{
+		Name:        "query.score",
+		Description: "官方成绩与通用数据受控查询端点",
+		RequireAuth: false,
+		Handler:     s.handleQueryScore,
 	})
 
 	return s
@@ -196,5 +203,33 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 		"title":      pkg.Title,
 		"code":       realCode,
 		"remaining":  pkg.RemainingStock,
+	}, nil
+}
+
+// handleQueryScore 官方考分与信息查询受控端点处理实现 (支持免登录或受控查询)
+func (s *ActionEndpointService) handleQueryScore(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
+	queryVal := ""
+	if payload != nil {
+		if v, ok := payload["query_value"].(string); ok && v != "" {
+			queryVal = strings.TrimSpace(v)
+		} else if v, ok := payload["code"].(string); ok && v != "" {
+			queryVal = strings.TrimSpace(v)
+		}
+	}
+	if queryVal == "" {
+		return nil, errors.New("查询关键词或准考证号不能为空")
+	}
+
+	// 模拟返回结构化考分/信息查询结果
+	return map[string]interface{}{
+		"query_value": queryVal,
+		"status":      "success",
+		"title":       "官方成绩查询结果",
+		"subject":     "全国统一认证测试",
+		"score":       628,
+		"rank":        "前 5%",
+		"passed":      true,
+		"remark":      "成绩合格，恭喜通过！",
+		"query_time":  time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
 }

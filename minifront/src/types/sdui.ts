@@ -13,12 +13,20 @@ export type BlockActionType =
   | 'preview_image'          // 全屏预览大图
   | 'open_webview'           // 网页 H5 容器打开
   | 'request_data'           // 业务接口数据请求
+  | 'request'                // 业务接口请求别名 (与 request_data 等价)
   | 'request_payment'        // 创建订单并调起微信支付
   | 'require_auth'           // 强制登录拦截
   | 'toast'                  // 纯文字气泡提示
   | 'refresh'                // 刷新当前页面或指定块
   | 'share'                  // 唤起微信分享面板
   | 'subscribe_message'      // 微信订阅消息授权
+  | 'set_state'              // 页面响应式状态设置
+  | 'toggle_state'           // 页面响应式状态反转切换
+  | 'reset_state'            // 页面响应式状态重置
+  | 'show_error_state'       // 切换目标积木为错误状态
+  | 'show_empty_state'       // 切换目标积木为空状态
+  | 'show_loading_state'     // 切换目标积木为加载中状态
+  | 'reset_block_state'      // 重置目标积木为正常状态
 
 // 交互前置确认弹窗配置
 export interface ActionConfirm {
@@ -56,6 +64,10 @@ export interface BlockAction {
   on_error?: BlockAction[]
   // 数据埋点上报配置
   track?: ActionTrack
+  // 动作目标端点标识 (如 query.score, game.redeem)
+  endpoint?: string
+  // 动作相对请求地址
+  url?: string
   // 动作参数载荷字典
   payload?: Record<string, any>
 }
@@ -82,7 +94,7 @@ export interface BlockStyle {
 export interface BlockItem {
   // 积木唯一标识
   id: string
-  // 积木类型 (如 media_hero, image, text, video, action_button, container, stack 等)
+  // 积木类型 (如 custom, custom_block, media_hero, image, text, video, action_button, container, stack 等)
   type: string
   // 组件业务属性
   props?: Record<string, any>
@@ -104,6 +116,26 @@ export interface BlockItem {
   error?: BlockItem
   // 兜底降级组件
   fallback?: BlockItem
+}
+
+// 通用自由图文卡片组件属性定义 (custom / custom_block)
+export interface CustomBlockProps {
+  title?: string
+  subtitle?: string
+  badge?: string
+  image_url?: string
+  cover_url?: string
+  content?: string
+  desc?: string
+  btn_text?: string
+}
+
+// 受控查询输入表单组件属性定义 (form)
+export interface FormBlockProps {
+  title?: string
+  input_label?: string
+  placeholder?: string
+  btn_text?: string
 }
 
 // 微信分享配置项
@@ -140,7 +172,7 @@ export interface DynamicPageDTO {
   status: string
   // 页面主标题
   title: string
-  // 业务类型 (drama / game / query / download / custom)
+  // 业务领域标签 (Tag/Category，仅作为业务分类与数据归因元数据，所有页面平权由通用积木编排)
   business_type: string
   // 用户搜索意图 (watch / redeem / query / download / buy / book / join)
   intent: string

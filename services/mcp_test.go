@@ -12,8 +12,8 @@ func TestMCPToolDefinitions(t *testing.T) {
 	service := NewMCPService()
 	tools := service.GetToolDefinitions()
 
-	if len(tools) != 15 {
-		t.Fatalf("预期注册 15 个受控工具，实际为 %d", len(tools))
+	if len(tools) != 18 {
+		t.Fatalf("预期注册 18 个受控工具，实际为 %d", len(tools))
 	}
 
 	expectedTools := map[string]bool{
@@ -22,6 +22,9 @@ func TestMCPToolDefinitions(t *testing.T) {
 		"sdui.page.list":           false,
 		"sdui.page.get":            false,
 		"sdui.template.list":       false,
+		"sdui.template.get":        false,
+		"sdui.template.save":       false,
+		"sdui.template.delete":     false,
 		"sdui.page.create":         false,
 		"sdui.page.patch":          false,
 		"sdui.page.validate":       false,
@@ -157,6 +160,31 @@ func TestMCPToolCall_TemplateList(t *testing.T) {
 	}
 }
 
+// TestMCPToolCall_TemplateGet 验证 MCP 与 HTTP 共用的模板服务可读取内置完整协议。
+func TestMCPToolCall_TemplateGet(t *testing.T) {
+	service := NewMCPService()
+	result, err := service.ExecuteTool("sdui.template.get", map[string]interface{}{"template_id": "tpl_sdui_component_lab"})
+	if err != nil {
+		t.Fatalf("读取组件实验室模板失败: %v", err)
+	}
+	template, ok := result.(*SDUITemplate)
+	if !ok || !template.Builtin || len(template.DefaultBlocks) == 0 {
+		t.Fatalf("MCP 返回模板协议异常: %+v", result)
+	}
+}
+
+// TestMCPTemplateWriteScope 验证用户模板写操作必须持有 write:draft 权限。
+func TestMCPTemplateWriteScope(t *testing.T) {
+	service := NewMCPService()
+	_, err := service.ExecuteToolWithContext("ai_agent", "wx_template_test", []string{"read"}, "sdui.template.save", map[string]interface{}{
+		"app_id":   "wx_template_test",
+		"template": map[string]interface{}{"template_id": "tpl_denied", "name": "应被拒绝"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "write:draft") {
+		t.Fatalf("缺少 write:draft 权限时应被拒绝，实际: %v", err)
+	}
+}
+
 // TestMCPToolCall_PublishGate 测试发布必须人工显式确认与权限作用域控制
 func TestMCPToolCall_PublishGate(t *testing.T) {
 	service := NewMCPService()
@@ -178,5 +206,63 @@ func TestMCPToolCall_PublishGate(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "confirmed") {
 		t.Fatalf("预期缺少人工确认门禁报错，实际为: %v", err)
+	}
+}
+
+// TestMCPToolCall_PageValidateDirect 测试 MCP 校验工具直接传入页面协议对象无需依赖落库
+func TestMCPToolCall_PageValidateDirect(t *testing.T) {
+	service := NewMCPService()
+
+	directPage := map[string]interface{}{
+		"app_id":        "wx_test",
+		"page_id":       "test_mcp_page",
+		"title":         "测试页面",
+		"business_type": "drama",
+		"blocks": `[
+			{
+				"id": "hero_1",
+				"type": "media_hero",
+				"props": { "title": "短剧标题" }
+			}
+		]`,
+	}
+
+	result, err := service.ExecuteToolWithContext("ai_agent_1", "wx_test", []string{"read"}, "sdui.page.validate", map[string]interface{}{
+		"page": directPage,
+	})
+	if err != nil {
+		t.Fatalf("直接校验页面协议失败: %v", err)
+	}
+
+	report, ok := result.(ValidationReport)
+	if !ok {
+		t.Fatalf("返回结果非 ValidationReport 类型: %T", result)
+	}
+	if !report.IsValid {
+		t.Fatalf("预期协议校验通过，实际结果为: %v", report)
+	}
+
+	// 2. 测试当 page 省略 app_id 时自动继承上下文 tenantID 注入
+	directPageNoAppID := map[string]interface{}{
+		"page_id":       "test_mcp_page_no_app",
+		"title":         "测试页面",
+		"business_type": "game",
+		"blocks": `[
+			{
+				"id": "game_1",
+				"type": "game_card",
+				"props": { "title": "游戏标题" }
+			}
+		]`,
+	}
+	res2, err := service.ExecuteToolWithContext("ai_agent_1", "wx_tenant_auto", []string{"read"}, "sdui.page.validate", map[string]interface{}{
+		"page": directPageNoAppID,
+	})
+	if err != nil {
+		t.Fatalf("省略 app_id 继承租户校验失败: %v", err)
+	}
+	rep2, ok := res2.(ValidationReport)
+	if !ok || !rep2.IsValid {
+		t.Fatalf("预期自动继承租户后校验通过，实际为: %v", res2)
 	}
 }

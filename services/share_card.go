@@ -70,14 +70,14 @@ func (s *ShareCardService) RenderShareCard(appID, pageID, cardType string) ([]by
 		}
 	}
 
-	// 兜底页面数据
+	// 兜底页面数据 (中立脱敏规范)
 	if page == nil {
 		page = &models.DynamicPage{
 			AppID:        appID,
 			PageID:       pageID,
-			Title:        "精选热播 - 极速直达",
-			BusinessType: "drama",
-			Keyword:      "猴王下山",
+			Title:        "精选推荐 - 极速直达",
+			BusinessType: "custom",
+			Keyword:      "精选推荐",
 		}
 	}
 
@@ -103,7 +103,55 @@ func (s *ShareCardService) RenderDraftShareCard(appID, pageID, cardType string) 
 		ShareConfig:  draft.ShareConfig,
 	}
 
-	return s.RenderShareCardFromPage(tempPage, cardType)
+	pngBytes, _, err := s.RenderPageLayoutIRScreenshot(tempPage, "", "normal", "")
+	return pngBytes, err
+}
+
+// RenderDraftLayoutIRScreenshot 根据已有草稿生成与 MCP 完全同构的 Layout IR 截图。
+func (s *ShareCardService) RenderDraftLayoutIRScreenshot(appID, pageID, deviceName, stateFixture, theme string) ([]byte, *PageLayoutIR, error) {
+	draft, err := s.sduiService.FindRawDraft(appID, pageID)
+	if err != nil {
+		return nil, nil, err
+	}
+	page := &models.DynamicPage{
+		AppID:        draft.AppID,
+		PageID:       draft.PageID,
+		Revision:     draft.Revision,
+		Status:       draft.Status,
+		Title:        draft.Title,
+		BusinessType: draft.BusinessType,
+		Intent:       draft.Intent,
+		Keyword:      draft.Keyword,
+		Theme:        draft.Theme,
+		AccentColor:  draft.AccentColor,
+		Blocks:       draft.Blocks,
+		ShareConfig:  draft.ShareConfig,
+	}
+	return s.RenderPageLayoutIRScreenshot(page, deviceName, stateFixture, theme)
+}
+
+// RenderPageLayoutIRScreenshot 以统一 Layout IR 生成页面截图，供 MCP 与 HTTP 签名地址共同复用。
+func (s *ShareCardService) RenderPageLayoutIRScreenshot(page *models.DynamicPage, deviceName, stateFixture, theme string) ([]byte, *PageLayoutIR, error) {
+	if page == nil {
+		return nil, nil, errors.New("动态页面实体不能为空")
+	}
+	if strings.TrimSpace(theme) != "" {
+		pageCopy := *page
+		pageCopy.Theme = strings.TrimSpace(theme)
+		page = &pageCopy
+	}
+	if strings.TrimSpace(stateFixture) == "" {
+		stateFixture = "normal"
+	}
+	ir, err := BuildPageLayoutIR(page, ResolveDeviceParams(deviceName), stateFixture)
+	if err != nil {
+		return nil, nil, err
+	}
+	pngBytes, err := s.RenderLayoutIRScreenshot(ir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return pngBytes, ir, nil
 }
 
 // RenderShareCardFromPage 根据传入的 DynamicPage 纯实体内存渲染分享图 (无外部 DB 依赖)
@@ -708,6 +756,24 @@ func flattenLayoutNodes(nodes []BlockLayoutNode) []BlockLayoutNode {
 
 // GenerateScreenshotSignature 为草稿截图生成有时效的 HMAC-SHA256 安全签名
 func GenerateScreenshotSignature(appID, pageID, hash string, expires int64) string {
+	return generateLegacyScreenshotSignature(appID, pageID, hash, expires)
+}
+
+// GenerateScreenshotSignatureWithOptions 为带渲染参数的草稿截图生成签名。
+func GenerateScreenshotSignatureWithOptions(appID, pageID, hash string, expires int64, device, theme, state string) string {
+	return generateScreenshotSignature(appID, pageID, hash, expires, device, theme, state)
+}
+
+func generateLegacyScreenshotSignature(appID, pageID, hash string, expires int64) string {
+	return signScreenshotPayload(fmt.Sprintf("%s:%s:%s:%d", appID, pageID, hash, expires))
+}
+
+func generateScreenshotSignature(appID, pageID, hash string, expires int64, device, theme, state string) string {
+	raw := fmt.Sprintf("%s:%s:%s:%d:%s:%s:%s", appID, pageID, hash, expires, device, theme, state)
+	return signScreenshotPayload(raw)
+}
+
+func signScreenshotPayload(raw string) string {
 	secret := os.Getenv("ADMIN_JWT_SECRET")
 	if secret == "" {
 		secret = os.Getenv("JWT_SECRET")
@@ -716,20 +782,31 @@ func GenerateScreenshotSignature(appID, pageID, hash string, expires int64) stri
 		secret = "sdui_screenshot_signature_salt_2026"
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	raw := fmt.Sprintf("%s:%s:%s:%d", appID, pageID, hash, expires)
 	mac.Write([]byte(raw))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // ValidateScreenshotSignature 校验草稿截图签名的合法性与时效 (过期或签名篡改返回 false)
 func ValidateScreenshotSignature(appID, pageID, hash string, expires int64, sign string) bool {
+	if sign == "" || expires <= 0 || time.Now().Unix() > expires {
+		return false
+	}
+	return hmac.Equal([]byte(sign), []byte(generateLegacyScreenshotSignature(appID, pageID, hash, expires)))
+}
+
+// ValidateScreenshotSignatureWithOptions 校验包含设备、主题和状态参数的截图签名。
+func ValidateScreenshotSignatureWithOptions(appID, pageID, hash string, expires int64, sign, device, theme, state string) bool {
+	return validateScreenshotSignature(appID, pageID, hash, expires, sign, device, theme, state)
+}
+
+func validateScreenshotSignature(appID, pageID, hash string, expires int64, sign, device, theme, state string) bool {
 	if sign == "" || expires <= 0 {
 		return false
 	}
 	if time.Now().Unix() > expires {
 		return false
 	}
-	expected := GenerateScreenshotSignature(appID, pageID, hash, expires)
+	expected := generateScreenshotSignature(appID, pageID, hash, expires, device, theme, state)
 	return hmac.Equal([]byte(sign), []byte(expected))
 }
 

@@ -1,3 +1,4 @@
+// minifront/src/components/ImmersiveVideoView/index.tsx
 import React, { useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import { DramaInfo, EpisodeItem, ActionChannel } from '../../types/drama'

@@ -51,6 +51,7 @@ func RegisterAuthRoutes(party iris.Party) {
 func WechatLoginHandler(ctx iris.Context) {
 	var req WechatLoginReq
 	if err := ctx.ReadJSON(&req); err != nil || req.Code == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{
 			"code": 400,
 			"msg":  "微信授权 code 不能为空",
@@ -60,6 +61,7 @@ func WechatLoginHandler(ctx iris.Context) {
 
 	appID, _ := middleware.RequireTenantAppID(ctx)
 	if appID == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": "无法识别当前小程序租户"})
 		return
 	}
@@ -68,8 +70,9 @@ func WechatLoginHandler(ctx iris.Context) {
 	res, err := srv.WechatLogin(ctx.Request().Context(), appID, req.Code)
 	if err != nil {
 		ut.IrisErrLog(ctx, err, "微信登录换取会话失败")
+		ctx.StatusCode(iris.StatusUnauthorized)
 		_ = ctx.JSON(iris.Map{
-			"code": 500,
+			"code": 401,
 			"msg":  "微信登录失败: " + err.Error(),
 		})
 		return
@@ -86,6 +89,7 @@ func WechatLoginHandler(ctx iris.Context) {
 func RefreshSessionHandler(ctx iris.Context) {
 	var req RefreshSessionReq
 	if err := ctx.ReadJSON(&req); err != nil || req.RefreshToken == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{
 			"code": 400,
 			"msg":  "refresh_token 不能为空",
@@ -95,6 +99,7 @@ func RefreshSessionHandler(ctx iris.Context) {
 
 	appID, _ := middleware.RequireTenantAppID(ctx)
 	if appID == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": "无法识别当前小程序租户"})
 		return
 	}
@@ -103,6 +108,7 @@ func RefreshSessionHandler(ctx iris.Context) {
 	res, err := srv.RefreshSession(appID, req.RefreshToken)
 	if err != nil {
 		ut.IrisErrLog(ctx, err, "刷新会话令牌失败")
+		ctx.StatusCode(iris.StatusUnauthorized)
 		_ = ctx.JSON(iris.Map{
 			"code": 401,
 			"msg":  err.Error(),
@@ -128,6 +134,7 @@ func GetSessionInfoHandler(ctx iris.Context) {
 	srv := services.NewAuthService()
 	res, err := srv.GetSessionInfo(sessionID, appID)
 	if err != nil {
+		ctx.StatusCode(iris.StatusNotFound)
 		_ = ctx.JSON(iris.Map{
 			"code": 404,
 			"msg":  err.Error(),

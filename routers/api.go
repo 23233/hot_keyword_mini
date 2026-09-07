@@ -2,6 +2,8 @@
 package routers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"hot_keyword/jwtToken"
 	"hot_keyword/models"
 	"hot_keyword/routers/middleware"
@@ -79,13 +81,21 @@ func RenderSDUIScreenshotHandler(ctx iris.Context) {
 	if isDraft {
 		isAuthorized := false
 
-		// 方式 A: 校验时效签名 (HMAC-SHA256: sign + expires + hash)
+		// 方式 A: 校验时效签名 (HMAC-SHA256 覆盖资源标识、渲染参数、哈希与过期时间)
 		sign := ctx.URLParam("sign")
 		expiresStr := ctx.URLParam("expires")
 		hash := ctx.URLParam("hash")
+		deviceName := ctx.URLParam("device")
+		stateFixture := ctx.URLParam("state")
+		theme := ctx.URLParam("theme")
 		if sign != "" && expiresStr != "" {
 			if expires, err := strconv.ParseInt(expiresStr, 10, 64); err == nil {
-				if services.ValidateScreenshotSignature(appID, pageID, hash, expires, sign) {
+				valid := services.ValidateScreenshotSignatureWithOptions(appID, pageID, hash, expires, sign, deviceName, theme, stateFixture)
+				// 兼容历史未携带渲染参数的签名 URL；新 URL 始终使用带参数签名。
+				if !valid && deviceName == "" && theme == "" && stateFixture == "" {
+					valid = services.ValidateScreenshotSignature(appID, pageID, hash, expires, sign)
+				}
+				if valid {
 					isAuthorized = true
 				}
 			}
@@ -127,7 +137,10 @@ func RenderSDUIScreenshotHandler(ctx iris.Context) {
 	var pngBytes []byte
 	var err error
 	if isDraft {
-		pngBytes, err = shareCardService.RenderDraftShareCard(appID, pageID, "app_message")
+		deviceName := ctx.URLParam("device")
+		stateFixture := ctx.URLParam("state")
+		theme := ctx.URLParam("theme")
+		pngBytes, _, err = shareCardService.RenderDraftLayoutIRScreenshot(appID, pageID, deviceName, stateFixture, theme)
 	} else {
 		pngBytes, err = shareCardService.RenderShareCard(appID, pageID, "app_message")
 	}
@@ -136,6 +149,14 @@ func RenderSDUIScreenshotHandler(ctx iris.Context) {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		_, _ = ctx.WriteString(err.Error())
 		return
+	}
+	if isDraft && ctx.URLParam("hash") != "" {
+		actual := sha256.Sum256(pngBytes)
+		if hex.EncodeToString(actual[:]) != ctx.URLParam("hash") {
+			ctx.StatusCode(iris.StatusConflict)
+			_ = ctx.JSON(iris.Map{"code": 409, "msg": "截图签名与实际图像哈希不一致，请重新生成截图"})
+			return
+		}
 	}
 
 	ctx.Header("Content-Type", "image/png")

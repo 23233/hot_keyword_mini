@@ -15,11 +15,12 @@ interface TextBlockProps {
 export const TextBlock: React.FC<TextBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
   const text = props.text !== undefined ? String(props.text) : props.content !== undefined ? String(props.content) : ''
-  const richNodes = props.rich_text || props.nodes
+  const richNodes = props.rich_text || props.nodes || (block.type === 'rich_text' ? text : '')
 
-  const handleClick = () => {
+  const handleClick = (e: any) => {
     if (block.action || block.events?.tap) {
-      onAction?.(block.action)
+      e.stopPropagation?.()
+      onAction?.(block.action, { item: props, actionPayload: props, text })
     }
   }
 

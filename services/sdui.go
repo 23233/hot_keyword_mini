@@ -8,6 +8,7 @@ import (
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"hot_keyword/sdk"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,7 +47,13 @@ func (s *SDUIService) GetRawPage(appID, pageID string) (*models.DynamicPage, err
 }
 
 // GetPublishedDynamicPageEnvelope 获取面向普通微信客户端的已发布动态页面信封 (严格隔离草稿、下架及未登录数据)
+// GetPublishedDynamicPageEnvelope 获取面向微信小程序正式发布的动态页面统一响应信封
 func (s *SDUIService) GetPublishedDynamicPageEnvelope(appID, pageID string, queryParams map[string]string, isAuthenticated bool) (*models.PageResponseEnvelope, error) {
+	return s.GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pageID, queryParams, isAuthenticated, "")
+}
+
+// GetPublishedDynamicPageEnvelopeWithCapabilities 获取面向微信小程序发布的动态页面信封 (集成客户端能力协商与块级降级)
+func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pageID string, queryParams map[string]string, isAuthenticated bool, clientCapabilities string) (*models.PageResponseEnvelope, error) {
 	if appID == "" {
 		return nil, errors.New("AppID 不能为空")
 	}
@@ -105,11 +112,20 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelope(appID, pageID string, quer
 		return nil, err
 	}
 
-	// 5. 服务端受保页隔离: 若页面声明 require_auth 且用户尚未认证通过，清空 Blocks 避免敏感泄露
+	// 5. 客户端能力协商与块级受控降级: 若客户端申报了 X-Client-Capabilities，执行过滤与 Fallback 替换
+	if strings.TrimSpace(clientCapabilities) != "" && len(envelope.Page.Blocks) > 0 {
+		envelope.Page.Blocks = FilterBlocksByCapabilities(envelope.Page.Blocks, clientCapabilities)
+		envelope.CapabilitiesRequired = extractRequiredCapabilities(envelope.Page.Blocks)
+		// 能力协商会改变积木树，必须同步重建 IR，避免客户端优先消费旧 IR 而绕过降级结果。
+		s.rebuildEnvelopeLayoutIR(rawPage, envelope)
+	}
+
+	// 6. 服务端受保页隔离: 若页面声明 require_auth 且用户尚未认证通过，清空 Blocks 避免敏感泄露
 	if rawPage.RequireAuth && !isAuthenticated {
 		envelope.Page.Blocks = []models.BlockItem{}
-		// 移除敏感附加数据
-		delete(envelope.Data, "keyword")
+		// 未认证响应不得携带可绑定到页面上的衍生数据，避免通过 IR 或数据字段泄露内容。
+		envelope.Data = map[string]interface{}{}
+		s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 	}
 
 	return envelope, nil
@@ -189,7 +205,7 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 		Blocks:       blocks,
 	}
 
-	// 4. 数据装配与附加实体
+	// 4. 数据装配与受控领域业务实体装配 ($entity.* 双端求值支持)
 	dataPayload := make(map[string]interface{})
 	dataPayload["keyword"] = rawPage.Keyword
 	dataPayload["business_type"] = rawPage.BusinessType
@@ -197,32 +213,26 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 		dataPayload["query"] = queryParams
 	}
 
-	// 5. 计算同构布局中间表示 LayoutIR (两端共同消费基线)
-	irContext := make(map[string]interface{})
-	irContext["entity"] = dataPayload
-	irContext["$entity"] = dataPayload
-	if queryParams != nil {
-		irContext["query"] = queryParams
-		irContext["$query"] = queryParams
+	// 按业务领域分类装配真实实体，不泄露未授权敏感数据
+	entityMap := s.assembleDomainEntity(rawPage.AppID, rawPage.BusinessType, rawPage.Keyword, queryParams)
+	for k, v := range entityMap {
+		if _, exists := dataPayload[k]; !exists {
+			dataPayload[k] = v
+		}
 	}
-	device := DefaultDeviceParams()
-	layoutIR, _ := BuildPageLayoutIRWithContext(rawPage, device, "normal", irContext)
+	dataPayload["entity"] = entityMap
 
-	// 6. 组装信封元数据
+	// 5. 组装信封元数据
 	requestID := fmt.Sprintf("req_%s_%d", ut.RandomStr(8), time.Now().UnixNano())
 	etag := fmt.Sprintf("W/\"%s-%d-%d\"", rawPage.PageID, rawPage.Revision, rawPage.UpdatedAt.Unix())
 
 	envelope := &models.PageResponseEnvelope{
-		ProtocolVersion: "1.1",
-		SchemaVersion:   3,
-		RequestID:       requestID,
-		Page:            pageDTO,
-		Data:            dataPayload,
-		LayoutIR:        layoutIR,
-		CapabilitiesRequired: []string{
-			"video",
-			"clipboard",
-		},
+		ProtocolVersion:      "1.1",
+		SchemaVersion:        3,
+		RequestID:            requestID,
+		Page:                 pageDTO,
+		Data:                 dataPayload,
+		CapabilitiesRequired: extractRequiredCapabilities(blocks),
 		Cache: models.EnvelopeCache{
 			ETag:   etag,
 			MaxAge: 30,
@@ -232,8 +242,110 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 			Mode:   mode,
 		},
 	}
+	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 
 	return envelope, nil
+}
+
+// rebuildEnvelopeLayoutIR 使用信封当前的积木树重建布局 IR，确保协议、截图与小程序渲染消费同一份内容。
+func (s *SDUIService) rebuildEnvelopeLayoutIR(rawPage *models.DynamicPage, envelope *models.PageResponseEnvelope) {
+	if rawPage == nil || envelope == nil {
+		return
+	}
+
+	pageForLayout := *rawPage
+	blocksJSON, err := json.Marshal(envelope.Page.Blocks)
+	if err != nil {
+		return
+	}
+	pageForLayout.Blocks = string(blocksJSON)
+	context := map[string]interface{}{
+		"entity":  envelope.Data,
+		"$entity": envelope.Data,
+	}
+	if query, ok := envelope.Data["query"].(map[string]string); ok {
+		context["query"] = query
+		context["$query"] = query
+	}
+	envelope.LayoutIR, _ = BuildPageLayoutIRWithContext(&pageForLayout, DefaultDeviceParams(), "normal", context)
+}
+
+// extractRequiredCapabilities 从页面积木列表中提取必要的能力标识
+func extractRequiredCapabilities(blocks []models.BlockItem) []string {
+	caps := map[string]bool{
+		"video":     true,
+		"clipboard": true,
+	}
+
+	var scanBlock func(b models.BlockItem)
+	scanBlock = func(b models.BlockItem) {
+		if b.Type == "video" || b.Type == "media_hero" {
+			caps["video"] = true
+		}
+		if b.Action != nil {
+			switch b.Action.Type {
+			case "copy_text":
+				caps["clipboard"] = true
+			case "request_payment":
+				caps["request_payment"] = true
+			case "subscribe_message":
+				caps["subscribe_message"] = true
+			case "open_channels_activity":
+				caps["channels"] = true
+			}
+		}
+		if b.Events != nil {
+			for _, actList := range b.Events {
+				for _, act := range actList {
+					switch act.Type {
+					case "copy_text":
+						caps["clipboard"] = true
+					case "request_payment":
+						caps["request_payment"] = true
+					case "subscribe_message":
+						caps["subscribe_message"] = true
+					case "open_channels_activity":
+						caps["channels"] = true
+					}
+				}
+			}
+		}
+		if b.Loading != nil {
+			scanBlock(*b.Loading)
+		}
+		if b.Empty != nil {
+			scanBlock(*b.Empty)
+		}
+		if b.Error != nil {
+			scanBlock(*b.Error)
+		}
+		if b.Fallback != nil {
+			scanBlock(*b.Fallback)
+		}
+		if b.Props != nil {
+			if childrenRaw, ok := b.Props["children"]; ok {
+				if childrenBytes, err := json.Marshal(childrenRaw); err == nil {
+					var children []models.BlockItem
+					if err := json.Unmarshal(childrenBytes, &children); err == nil {
+						for _, child := range children {
+							scanBlock(child)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, b := range blocks {
+		scanBlock(b)
+	}
+
+	res := make([]string, 0, len(caps))
+	for c := range caps {
+		res = append(res, c)
+	}
+	sort.Strings(res)
+	return res
 }
 
 // seedDefaultPage 自举生成特定小程序的默认 SDUI 首页
@@ -884,4 +996,282 @@ func (s *SDUIService) SetCurrentPage(appID, pageID string) error {
 			"current_page": pageID,
 			"updated_at":   time.Now(),
 		}).Error
+}
+
+// assembleDomainEntity 按业务领域分类装配受控业务实体 (支持 short drama, game package, query 等，防止数据暴露与状态污染)
+func (s *SDUIService) assembleDomainEntity(appID, businessType, keyword string, queryParams map[string]string) map[string]interface{} {
+	entity := make(map[string]interface{})
+	if keyword != "" {
+		entity["title"] = keyword
+	}
+
+	if db.Mysql == nil {
+		return entity
+	}
+
+	switch businessType {
+	case "drama":
+		// 短剧领域实体装配: 优先根据 queryParams["id"] 查询，若未指定则查询当前热门短剧
+		var drama models.Drama
+		queryID := ""
+		if queryParams != nil {
+			queryID = queryParams["id"]
+		}
+
+		var err error
+		if queryID != "" {
+			err = db.Mysql.Where("id = ?", queryID).First(&drama).Error
+		} else if keyword != "" {
+			err = db.Mysql.Where("title = ?", keyword).First(&drama).Error
+		}
+		if err != nil || drama.ID == 0 {
+			// 兜底查询爆款短剧：优先按热度降序取当前最热门短剧，无则回退查询种子短剧《猴王下山》
+			if errFallback := db.Mysql.Order("hot_score desc, id asc").First(&drama).Error; errFallback != nil {
+				_ = db.Mysql.Where("title = ?", "猴王下山").First(&drama).Error
+			}
+		}
+
+		if drama.ID != 0 {
+			entity["id"] = drama.ID
+			entity["title"] = drama.Title
+			entity["subtitle"] = drama.Subtitle
+			entity["cover_url"] = drama.CoverUrl
+			entity["banner_url"] = drama.BannerUrl
+			entity["rating"] = drama.Rating
+			entity["hot_score"] = drama.HotScore
+			entity["total_episodes"] = drama.TotalEpisodes
+			entity["updated_episodes"] = drama.UpdatedEpisodes
+			entity["tags"] = drama.Tags
+			entity["description"] = drama.Description
+			entity["is_locked"] = false
+		}
+
+	case "game":
+		// 游戏领域实体装配: 查询该小程序下的公测礼包信息 (未领取前不提前下发真实兑换码)
+		var pkg models.GameRedeemPackage
+		queryPkgID := ""
+		if queryParams != nil {
+			queryPkgID = queryParams["package_id"]
+			if queryPkgID == "" {
+				queryPkgID = queryParams["game_id"]
+			}
+		}
+
+		var err error
+		if queryPkgID != "" {
+			err = db.Mysql.Where("app_id = ? AND (package_id = ? OR game_id = ?)", appID, queryPkgID, queryPkgID).First(&pkg).Error
+		}
+		if err != nil || pkg.ID == 0 {
+			_ = db.Mysql.Where("app_id = ?", appID).First(&pkg).Error
+		}
+
+		if pkg.ID != 0 {
+			entity["package_id"] = pkg.PackageID
+			entity["game_id"] = pkg.GameID
+			entity["title"] = pkg.Title
+			entity["description"] = pkg.Description
+			entity["total_stock"] = pkg.TotalStock
+			entity["remaining_stock"] = pkg.RemainingStock
+			entity["claim_status"] = "unclaimed"
+		}
+
+	case "query":
+		if queryParams != nil && queryParams["query_value"] != "" {
+			entity["query_value"] = queryParams["query_value"]
+		}
+		entity["status"] = "ready"
+
+	case "download":
+		entity["platform"] = "Android / iOS"
+		entity["status"] = "verified"
+	}
+
+	return entity
+}
+
+// FilterBlocksByCapabilities 根据客户端声明的 X-Client-Capabilities 能力集对积木树执行受控协商过滤与 Fallback 降级
+func FilterBlocksByCapabilities(blocks []models.BlockItem, clientCapsStr string) []models.BlockItem {
+	trimmed := strings.TrimSpace(clientCapsStr)
+	if trimmed == "" {
+		return blocks
+	}
+
+	capSet := make(map[string]bool)
+	for _, cap := range strings.Split(trimmed, ",") {
+		c := strings.TrimSpace(cap)
+		if c != "" {
+			capSet[c] = true
+		}
+	}
+
+	return filterBlockList(blocks, capSet)
+}
+
+// filterBlockList 递归过滤积木树，对客户端不支持的类型使用 Fallback 替换，若无可用 Fallback 则剔除
+func filterBlockList(blocks []models.BlockItem, capSet map[string]bool) []models.BlockItem {
+	result := make([]models.BlockItem, 0, len(blocks))
+	for _, block := range blocks {
+		current := block
+
+		// 检查当前积木类型是否在客户端能力支持集中
+		if !capSet[current.Type] {
+			// 若不支持但配置了块级 fallback 且 fallback 类型被客户端支持，则优雅降级为 fallback
+			if current.Fallback != nil && capSet[current.Fallback.Type] {
+				current = *current.Fallback
+			} else {
+				// 不支持且无可用 fallback，安全剔除避免客户端渲染崩溃
+				continue
+			}
+		}
+		// 原生能力动作不受支持时，整块回退或剔除，避免保留不可点击的半成品组件。
+		if !blockActionsSupported(current, capSet) {
+			if current.Fallback != nil && capSet[current.Fallback.Type] && blockActionsSupported(*current.Fallback, capSet) {
+				current = *current.Fallback
+			} else {
+				continue
+			}
+		}
+
+		// 递归过滤布局容器与 Tabs 内的子积木。
+		if current.Props != nil {
+			newProps := make(map[string]interface{})
+			for k, v := range current.Props {
+				newProps[k] = v
+			}
+
+			for _, childKey := range []string{"children", "blocks", "items"} {
+				if childVal, exists := newProps[childKey]; exists {
+					newProps[childKey] = filterBlockListValue(childVal, capSet)
+				}
+			}
+			if tabs, exists := newProps["tabs"]; exists {
+				newProps["tabs"] = filterTabsBlocks(tabs, capSet)
+			}
+			current.Props = newProps
+		}
+
+		result = append(result, current)
+	}
+	return result
+}
+
+// blockActionsSupported 校验当前块的动作链是否依赖客户端已声明的原生能力。
+func blockActionsSupported(block models.BlockItem, capSet map[string]bool) bool {
+	if !actionChainSupported(block.Action, capSet) {
+		return false
+	}
+	for _, actions := range block.Events {
+		for index := range actions {
+			if !actionChainSupported(&actions[index], capSet) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// actionChainSupported 递归验证动作及其成功/失败链需要的原生能力。
+func actionChainSupported(action *models.BlockAction, capSet map[string]bool) bool {
+	if action == nil {
+		return true
+	}
+	if capability := actionCapability(action.Type); capability != "" && !capSet[capability] {
+		return false
+	}
+	for index := range action.OnSuccess {
+		if !actionChainSupported(&action.OnSuccess[index], capSet) {
+			return false
+		}
+	}
+	for index := range action.OnError {
+		if !actionChainSupported(&action.OnError[index], capSet) {
+			return false
+		}
+	}
+	return true
+}
+
+// actionCapability 返回动作所依赖的客户端原生能力；通用路由和状态动作无需额外协商。
+func actionCapability(actionType string) string {
+	switch actionType {
+	case "copy_text":
+		return "clipboard"
+	case "open_channels_activity":
+		return "channels"
+	case "request_payment":
+		return "request_payment"
+	case "subscribe_message":
+		return "subscribe_message"
+	default:
+		return ""
+	}
+}
+
+// filterBlockListValue 兼容 JSON 反序列化后的 []interface{} 与服务端构造的 []BlockItem。
+func filterBlockListValue(value interface{}, capSet map[string]bool) interface{} {
+	if blocks, ok := value.([]models.BlockItem); ok {
+		return filterBlockList(blocks, capSet)
+	}
+	interfaces, ok := value.([]interface{})
+	if !ok {
+		return value
+	}
+	var blocks []models.BlockItem
+	encoded, err := json.Marshal(interfaces)
+	if err != nil || json.Unmarshal(encoded, &blocks) != nil || len(blocks) != len(interfaces) {
+		return value
+	}
+	for _, block := range blocks {
+		if block.ID == "" || block.Type == "" {
+			return value
+		}
+	}
+	filtered := filterBlockList(blocks, capSet)
+	encoded, _ = json.Marshal(filtered)
+	var result []interface{}
+	if json.Unmarshal(encoded, &result) != nil {
+		return value
+	}
+	return result
+}
+
+// filterTabsBlocks 递归过滤每个 Tab 中的 blocks、children、items 和单个 child。
+func filterTabsBlocks(value interface{}, capSet map[string]bool) interface{} {
+	tabs, ok := value.([]interface{})
+	if !ok {
+		return value
+	}
+	result := make([]interface{}, 0, len(tabs))
+	for _, rawTab := range tabs {
+		tab, ok := rawTab.(map[string]interface{})
+		if !ok {
+			result = append(result, rawTab)
+			continue
+		}
+		filteredTab := make(map[string]interface{}, len(tab))
+		for key, tabValue := range tab {
+			filteredTab[key] = tabValue
+		}
+		for _, childKey := range []string{"blocks", "children", "items"} {
+			if childValue, exists := filteredTab[childKey]; exists {
+				filteredTab[childKey] = filterBlockListValue(childValue, capSet)
+			}
+		}
+		if childValue, exists := filteredTab["child"].(map[string]interface{}); exists {
+			var child models.BlockItem
+			if encoded, err := json.Marshal(childValue); err == nil && json.Unmarshal(encoded, &child) == nil && child.ID != "" && child.Type != "" {
+				filtered := filterBlockList([]models.BlockItem{child}, capSet)
+				if len(filtered) == 0 {
+					delete(filteredTab, "child")
+				} else if encoded, err := json.Marshal(filtered[0]); err == nil {
+					var filteredChild map[string]interface{}
+					if json.Unmarshal(encoded, &filteredChild) == nil {
+						filteredTab["child"] = filteredChild
+					}
+				}
+			}
+		}
+		result = append(result, filteredTab)
+	}
+	return result
 }

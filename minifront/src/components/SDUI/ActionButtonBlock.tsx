@@ -5,7 +5,7 @@ import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface ActionButtonBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
 }
 
 /**
@@ -16,9 +16,11 @@ export const ActionButtonBlock: React.FC<ActionButtonBlockProps> = ({ block, onA
   const text = props.text || '立即前往'
   const badge = props.badge || ''
 
-  const handleClick = () => {
-    if ((block.action || block.events?.tap) && onAction) {
-      onAction(block.action)
+  const targetAction = block.action || props.action || props.btn_action
+  const handleClick = (e: any) => {
+    e?.stopPropagation?.()
+    if ((targetAction || block.events?.tap || props.events?.tap) && onAction) {
+      onAction(targetAction, { item: props, actionPayload: props, btn_text: text, badge })
     }
   }
 

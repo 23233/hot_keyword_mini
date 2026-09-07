@@ -1,3 +1,4 @@
+// minifront/src/pages/webview/index.tsx
 import { useEffect, useState } from 'react'
 import { View, Text, WebView } from '@tarojs/components'
 import Taro from '@tarojs/taro'

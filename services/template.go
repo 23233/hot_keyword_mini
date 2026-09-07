@@ -6,15 +6,24 @@ import (
 	"errors"
 	"fmt"
 	"hot_keyword/models"
+	"sort"
 	"time"
 )
 
 // SDUITemplate 定义 SDUI 行业模板包元数据
 type SDUITemplate struct {
+	// 数据库主键，内置模板固定为 0
+	ID int64 `json:"id,omitempty"`
 	// 模板全局唯一标识 (如 tpl_drama_standard / tpl_game_redeem)
 	TemplateID string `json:"template_id"`
+	// 用户模板所属小程序 AppID；内置模板为空
+	AppID string `json:"app_id,omitempty"`
+	// 是否为内置只读模板
+	Builtin bool `json:"builtin"`
 	// 模板版本号 (如 1.0.0)
 	TemplateVersion string `json:"template_version"`
+	// 模板修订版本，用户模板的更新与删除使用此字段进行乐观锁校验
+	Revision int `json:"revision,omitempty"`
 	// 模板展示名称
 	Name string `json:"name"`
 	// 适用业务类型 (drama / game / query / download / custom)
@@ -57,9 +66,12 @@ func (r *TemplateRegistry) ListTemplates(businessType string) []*SDUITemplate {
 	var list []*SDUITemplate
 	for _, tpl := range r.templates {
 		if businessType == "" || tpl.BusinessType == businessType {
-			list = append(list, tpl)
+			cloned := cloneSDUITemplate(tpl)
+			cloned.Builtin = true
+			list = append(list, cloned)
 		}
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].TemplateID < list[j].TemplateID })
 	return list
 }
 
@@ -69,7 +81,25 @@ func (r *TemplateRegistry) GetTemplate(templateID string) (*SDUITemplate, error)
 	if !ok {
 		return nil, fmt.Errorf("未找到行业模板: %s", templateID)
 	}
-	return tpl, nil
+	cloned := cloneSDUITemplate(tpl)
+	cloned.Builtin = true
+	return cloned, nil
+}
+
+// cloneSDUITemplate 深拷贝模板协议，避免调用方修改内置模板引起跨请求状态污染。
+func cloneSDUITemplate(template *SDUITemplate) *SDUITemplate {
+	if template == nil {
+		return nil
+	}
+	raw, err := json.Marshal(template)
+	if err != nil {
+		return &SDUITemplate{}
+	}
+	var cloned SDUITemplate
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		return &SDUITemplate{}
+	}
+	return &cloned
 }
 
 // ApplyTemplateToPage 从模板一键派生为标准 DynamicPage 实体 (不产生模板专属私有协议)
@@ -78,7 +108,14 @@ func (r *TemplateRegistry) ApplyTemplateToPage(templateID, appID, pageID, title 
 	if err != nil {
 		return nil, err
 	}
+	return applySDUITemplateToPage(tpl, appID, pageID, title)
+}
 
+// applySDUITemplateToPage 将统一模板 DTO 派生为标准 DynamicPage，供内置与用户模板共同复用。
+func applySDUITemplateToPage(tpl *SDUITemplate, appID, pageID, title string) (*models.DynamicPage, error) {
+	if tpl == nil {
+		return nil, errors.New("模板不能为空")
+	}
 	if appID == "" || pageID == "" {
 		return nil, errors.New("appID 与 pageID 不能为空")
 	}
@@ -319,9 +356,25 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				GlassBlur:    true,
 			},
 			Action: &models.BlockAction{
-				Type: "toast",
+				Type:        "request_data",
+				RequireAuth: false,
 				Payload: map[string]interface{}{
-					"text": "查询服务通道已受理，正在实时拉取中...",
+					"endpoint": "query.score",
+					"body": map[string]interface{}{
+						"query_value": "$item.query_value",
+					},
+					"response": map[string]interface{}{
+						"data_path": "data",
+						"save_as":   "query_result",
+					},
+					"on_success": []map[string]interface{}{
+						{
+							"type": "toast",
+							"payload": map[string]interface{}{
+								"text": "查询完成",
+							},
+						},
+					},
 				},
 			},
 		},
@@ -389,4 +442,74 @@ func initDefaultTemplates(r *TemplateRegistry) {
 		DefaultAccentColor: "#5E5CE6",
 		DefaultBlocks:      downloadBlocks,
 	}
+
+	// 5. 自由编排起步预设 (custom / general)
+	customBlocks := []models.BlockItem{
+		{
+			ID:   "block_notice_custom",
+			Type: "notice",
+			Props: map[string]interface{}{
+				"icon": "✨",
+				"text": "欢迎来到新页面，所有内容均可自由编排配置！",
+			},
+		},
+		{
+			ID:   "block_custom_hero",
+			Type: "media_hero",
+			Props: map[string]interface{}{
+				"title":    "热点资讯与精彩内容",
+				"subtitle": "全新发布 · 即刻了解详情",
+				"rating":   9.8,
+			},
+			Style: &models.BlockStyle{
+				BorderRadius: "28rpx",
+				GlassBlur:    true,
+				AccentColor:  "#FF9F0A",
+			},
+		},
+		{
+			ID:   "block_custom_btn",
+			Type: "action_button",
+			Props: map[string]interface{}{
+				"text": "⚡ 立即参与 / 了解详情",
+			},
+			Style: &models.BlockStyle{
+				BorderRadius: "999rpx",
+				AccentColor:  "#FF9F0A",
+			},
+			Action: &models.BlockAction{
+				Type: "toast",
+				Payload: map[string]interface{}{
+					"text": "操作已执行",
+				},
+			},
+		},
+	}
+
+	r.templates["tpl_general_custom"] = &SDUITemplate{
+		TemplateID:         "tpl_general_custom",
+		TemplateVersion:    "1.0.0",
+		Name:               "通用自由编排预设",
+		BusinessType:       "custom",
+		Intent:             "watch",
+		Description:        "纯净通用起手模版，包含通知条、大焦点图文和操作大按钮，支持自由拓展任意积木",
+		DefaultTheme:       "dark_glass",
+		DefaultAccentColor: "#FF9F0A",
+		DefaultBlocks:      customBlocks,
+	}
+
+	r.templates["tpl_general_blank"] = &SDUITemplate{
+		TemplateID:         "tpl_general_blank",
+		TemplateVersion:    "1.0.0",
+		Name:               "纯净空白画板",
+		BusinessType:       "custom",
+		Intent:             "watch",
+		Description:        "零初始积木纯净画板，从零开始自由拼搭原子组件",
+		DefaultTheme:       "dark_glass",
+		DefaultAccentColor: "#FF9F0A",
+		DefaultBlocks:      []models.BlockItem{},
+	}
+
+	// 6. 全组件验证模板仅用于开发、验收和复杂页面回归，不会作为普通行业页面默认推荐。
+	r.templates["tpl_sdui_component_lab"] = buildComponentLabTemplate()
 }

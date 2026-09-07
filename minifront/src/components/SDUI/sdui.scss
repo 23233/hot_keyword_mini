@@ -14,6 +14,10 @@
     box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.45);
   }
 }
+// repeat 循环展开容器，采用 display: contents 穿透保证父级 Flex/Grid 布局与间距生效
+.sdui-repeat-container {
+  display: contents;
+}
 
 // 1. 媒体大焦点卡片 (MediaHero)
 .sdui-media-hero {
@@ -486,17 +490,61 @@
     width: 100%;
     height: 240rpx;
     border-radius: 14rpx;
+    margin-bottom: 8rpx;
   }
 
-  .sdui-generic-title {
-    font-size: 30rpx;
-    font-weight: 700;
+  .sdui-generic-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12rpx;
+
+    .sdui-generic-title {
+      font-size: 30rpx;
+      font-weight: 700;
+      flex: 1;
+    }
+
+    .sdui-generic-badge {
+      font-size: 20rpx;
+      padding: 4rpx 14rpx;
+      background: rgba(255, 159, 10, 0.18);
+      border: 1rpx solid rgba(255, 159, 10, 0.35);
+      color: #ff9f0a;
+      border-radius: 999rpx;
+      font-weight: 600;
+      white-space: nowrap;
+    }
   }
 
   .sdui-generic-content {
     font-size: 25rpx;
     line-height: 1.5;
     color: rgba(255, 255, 255, 0.68);
+  }
+
+  .sdui-generic-action-row {
+    margin-top: 8rpx;
+    display: flex;
+    justify-content: flex-end;
+
+    .sdui-generic-btn {
+      padding: 12rpx 32rpx;
+      background: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+      border-radius: 999rpx;
+      box-shadow: 0 4rpx 14rpx rgba(255, 159, 10, 0.3);
+
+      .btn-text {
+        color: #fff;
+        font-size: 24rpx;
+        font-weight: 700;
+      }
+
+      &:active {
+        opacity: 0.85;
+        transform: scale(0.98);
+      }
+    }
   }
 }
 
@@ -536,6 +584,13 @@
         }
       }
     }
+  }
+
+  .tabs-content-body {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20rpx;
   }
 }
 
@@ -624,5 +679,654 @@
   }
   100% {
     background-position: -200% 0;
+  }
+}
+
+// 15. 战力/积分评分面板积木 (ScorePanelBlock)
+.sdui-score-panel {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 32rpx;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 32rpx;
+  backdrop-filter: blur(24px);
+
+  .score-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20rpx;
+
+    .score-panel-meta {
+      display: flex;
+      align-items: center;
+      gap: 16rpx;
+
+      .score-avatar {
+        width: 64rpx;
+        height: 64rpx;
+        border-radius: 50%;
+        border: 2rpx solid rgba(255, 255, 255, 0.3);
+      }
+
+      .score-title {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #fff;
+        display: block;
+      }
+
+      .score-subtitle {
+        font-size: 22rpx;
+        color: rgba(255, 255, 255, 0.5);
+        display: block;
+        margin-top: 4rpx;
+      }
+    }
+
+    .score-level-badge {
+      font-size: 22rpx;
+      font-weight: 700;
+      color: #ff9f0a;
+      background: rgba(255, 159, 10, 0.18);
+      border: 1rpx solid rgba(255, 159, 10, 0.35);
+      padding: 4rpx 16rpx;
+      border-radius: 999rpx;
+    }
+  }
+
+  .score-main-value {
+    display: flex;
+    align-items: baseline;
+    gap: 8rpx;
+    margin: 16rpx 0 24rpx 0;
+
+    .score-number {
+      font-size: 72rpx;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -2rpx;
+      line-height: 1;
+      text-shadow: 0 4rpx 20rpx rgba(255, 159, 10, 0.25);
+    }
+
+    .score-unit {
+      font-size: 26rpx;
+      color: rgba(255, 255, 255, 0.6);
+      font-weight: 600;
+    }
+  }
+
+  .score-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12rpx;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 20rpx;
+    padding: 16rpx 12rpx;
+
+    .score-stat-cell {
+      text-align: center;
+
+      .stat-label {
+        font-size: 20rpx;
+        color: rgba(255, 255, 255, 0.45);
+        display: block;
+        margin-bottom: 6rpx;
+      }
+
+      .stat-val {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #fff;
+        display: block;
+      }
+    }
+  }
+}
+
+// 16. 卡券与兑换码积木 (CouponCardBlock)
+.sdui-coupon-card {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  position: relative;
+  background: linear-gradient(135deg, rgba(30, 30, 36, 0.9) 0%, rgba(20, 20, 24, 0.95) 100%);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 28rpx;
+  overflow: hidden;
+  box-shadow: 0 8rpx 28rpx rgba(0, 0, 0, 0.35);
+
+  &.is-disabled {
+    opacity: 0.5;
+    filter: grayscale(0.8);
+  }
+
+  .coupon-left {
+    flex: 0 0 180rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 12rpx;
+    background: linear-gradient(135deg, rgba(255, 159, 10, 0.15) 0%, rgba(255, 69, 58, 0.15) 100%);
+
+    .coupon-discount-wrap {
+      display: flex;
+      align-items: baseline;
+
+      .coupon-currency {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #ff9f0a;
+      }
+
+      .coupon-discount {
+        font-size: 44rpx;
+        font-weight: 800;
+        color: #ff9f0a;
+        line-height: 1;
+      }
+    }
+
+    .coupon-min-spend {
+      font-size: 18rpx;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 8rpx;
+    }
+  }
+
+  .coupon-notch-divider {
+    position: relative;
+    width: 20rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+
+    .notch-circle {
+      width: 24rpx;
+      height: 24rpx;
+      background: #0a0a0c;
+      border-radius: 50%;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+
+      &.notch-top {
+        top: -12rpx;
+      }
+
+      &.notch-bottom {
+        bottom: -12rpx;
+      }
+    }
+
+    .notch-line {
+      width: 2rpx;
+      height: 100%;
+      border-left: 2rpx dashed rgba(255, 255, 255, 0.18);
+    }
+  }
+
+  .coupon-right {
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24rpx 28rpx;
+
+    .coupon-info {
+      flex: 1;
+      margin-right: 16rpx;
+
+      .coupon-title {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #fff;
+        display: block;
+      }
+
+      .coupon-desc {
+        font-size: 22rpx;
+        color: rgba(255, 255, 255, 0.5);
+        display: block;
+        margin: 6rpx 0;
+      }
+
+      .coupon-expire {
+        font-size: 20rpx;
+        color: rgba(255, 255, 255, 0.35);
+        display: block;
+      }
+    }
+
+    .coupon-action-btn {
+      padding: 12rpx 28rpx;
+      background: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+      border-radius: 999rpx;
+      box-shadow: 0 4rpx 14rpx rgba(255, 159, 10, 0.3);
+
+      .action-text {
+        font-size: 24rpx;
+        font-weight: 700;
+        color: #fff;
+        white-space: nowrap;
+      }
+
+      &:active {
+        opacity: 0.85;
+      }
+    }
+  }
+}
+
+// 17. 实时倒计时积木 (CountdownBlock)
+.sdui-countdown-block {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx 28rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 28rpx;
+  backdrop-filter: blur(20px);
+
+  .countdown-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16rpx;
+
+    .countdown-title {
+      font-size: 28rpx;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .countdown-subtitle {
+      font-size: 22rpx;
+      color: rgba(255, 255, 255, 0.45);
+    }
+  }
+
+  .countdown-ended {
+    text-align: center;
+    padding: 12rpx 0;
+
+    .ended-text {
+      font-size: 26rpx;
+      color: rgba(255, 255, 255, 0.5);
+    }
+  }
+
+  .countdown-digits-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8rpx;
+
+    .digit-box {
+      display: flex;
+      align-items: baseline;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1rpx solid rgba(255, 255, 255, 0.12);
+      border-radius: 14rpx;
+      padding: 8rpx 14rpx;
+      gap: 4rpx;
+
+      .digit-num {
+        font-size: 36rpx;
+        font-weight: 800;
+        color: #ff9f0a;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+
+      .digit-unit {
+        font-size: 20rpx;
+        color: rgba(255, 255, 255, 0.5);
+      }
+    }
+
+    .digit-sep {
+      font-size: 32rpx;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.4);
+      margin: 0 2rpx;
+    }
+  }
+}
+
+// 18. 服务状态监控积木 (ServerStatusBlock)
+.sdui-server-status-block {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx 28rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 28rpx;
+  backdrop-filter: blur(20px);
+
+  .server-main-info {
+    flex: 1;
+
+    .server-title-row {
+      display: flex;
+      align-items: center;
+      gap: 12rpx;
+      margin-bottom: 8rpx;
+
+      .status-breath-dot {
+        width: 16rpx;
+        height: 16rpx;
+        border-radius: 50%;
+        animation: breath-animation 2s infinite ease-in-out;
+      }
+
+      .server-name {
+        font-size: 28rpx;
+        font-weight: 700;
+        color: #fff;
+      }
+
+      .server-region-tag {
+        font-size: 20rpx;
+        color: rgba(255, 255, 255, 0.5);
+        background: rgba(255, 255, 255, 0.08);
+        padding: 2rpx 10rpx;
+        border-radius: 6rpx;
+      }
+    }
+
+    .server-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 10rpx;
+
+      .server-status-label {
+        font-size: 22rpx;
+        font-weight: 600;
+      }
+
+      .server-meta-divider {
+        color: rgba(255, 255, 255, 0.3);
+      }
+
+      .server-latency {
+        font-size: 22rpx;
+        color: rgba(255, 255, 255, 0.5);
+      }
+    }
+
+    .server-notice {
+      font-size: 20rpx;
+      color: rgba(255, 159, 10, 0.8);
+      margin-top: 6rpx;
+      display: block;
+    }
+  }
+
+  .server-action-pill {
+    padding: 10rpx 24rpx;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1rpx solid rgba(255, 255, 255, 0.18);
+    border-radius: 999rpx;
+
+    .pill-text {
+      font-size: 22rpx;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.18);
+    }
+  }
+}
+
+@keyframes breath-animation {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+}
+
+// 19. 商品与周边卡片积木 (ProductCardBlock)
+.sdui-product-card {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 28rpx;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+
+  .product-image-wrap {
+    position: relative;
+    width: 100%;
+    height: 320rpx;
+    background: #000;
+
+    .product-img {
+      width: 100%;
+      height: 100%;
+    }
+
+    .product-tag {
+      position: absolute;
+      top: 16rpx;
+      left: 16rpx;
+      background: rgba(255, 69, 58, 0.85);
+      color: #fff;
+      font-size: 20rpx;
+      font-weight: 700;
+      padding: 4rpx 14rpx;
+      border-radius: 8rpx;
+      backdrop-filter: blur(8px);
+    }
+  }
+
+  .product-content {
+    padding: 24rpx;
+
+    .product-title {
+      font-size: 30rpx;
+      font-weight: 700;
+      color: #fff;
+      display: block;
+    }
+
+    .product-subtitle {
+      font-size: 22rpx;
+      color: rgba(255, 255, 255, 0.5);
+      display: block;
+      margin: 6rpx 0 16rpx 0;
+    }
+
+    .product-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      .product-pricing {
+        display: flex;
+        align-items: baseline;
+        gap: 6rpx;
+
+        .price-currency {
+          font-size: 24rpx;
+          font-weight: 700;
+          color: #ff453a;
+        }
+
+        .price-num {
+          font-size: 40rpx;
+          font-weight: 800;
+          color: #ff453a;
+          line-height: 1;
+        }
+
+        .price-original {
+          font-size: 22rpx;
+          color: rgba(255, 255, 255, 0.35);
+          text-decoration: line-through;
+          margin-left: 6rpx;
+        }
+
+        .product-sales {
+          font-size: 20rpx;
+          color: rgba(255, 255, 255, 0.4);
+          margin-left: 10rpx;
+        }
+      }
+
+      .product-buy-btn {
+        padding: 12rpx 32rpx;
+        background: linear-gradient(135deg, #ff9f0a 0%, #ff453a 100%);
+        border-radius: 999rpx;
+        box-shadow: 0 4rpx 14rpx rgba(255, 69, 58, 0.3);
+
+        .buy-btn-text {
+          font-size: 24rpx;
+          font-weight: 700;
+          color: #fff;
+        }
+
+        &:active {
+          opacity: 0.85;
+        }
+      }
+    }
+  }
+}
+
+// 20. 应用与资源下载卡片积木 (DownloadCardBlock)
+.sdui-download-card {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 28rpx;
+  backdrop-filter: blur(20px);
+
+  .download-header-row {
+    display: flex;
+    align-items: center;
+    gap: 20rpx;
+
+    .download-app-icon {
+      width: 96rpx;
+      height: 96rpx;
+      border-radius: 22rpx;
+      border: 1rpx solid rgba(255, 255, 255, 0.15);
+      flex-shrink: 0;
+    }
+
+    .download-meta-info {
+      flex: 1;
+
+      .app-name {
+        font-size: 30rpx;
+        font-weight: 700;
+        color: #fff;
+        display: block;
+      }
+
+      .app-sub-specs {
+        display: flex;
+        align-items: center;
+        gap: 12rpx;
+        margin-top: 6rpx;
+
+        .spec-item {
+          font-size: 22rpx;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .spec-platform-badge {
+          font-size: 20rpx;
+          color: #30d158;
+          background: rgba(48, 209, 88, 0.15);
+          padding: 2rpx 10rpx;
+          border-radius: 6rpx;
+          font-weight: 600;
+        }
+      }
+    }
+
+    .download-action-pill {
+      padding: 12rpx 36rpx;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1rpx solid rgba(255, 255, 255, 0.2);
+      border-radius: 999rpx;
+
+      .pill-text {
+        font-size: 26rpx;
+        font-weight: 700;
+        color: #2997ff;
+      }
+
+      &:active {
+        background: rgba(255, 255, 255, 0.25);
+      }
+    }
+  }
+
+  .download-desc {
+    font-size: 22rpx;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 16rpx;
+    display: block;
+    line-height: 1.5;
+  }
+}
+
+// 21. 通用弹性容器与重叠堆叠积木 (ContainerBlock / Stack)
+.sdui-container-block {
+  width: 100%;
+  box-sizing: border-box;
+
+  &.is-overlap {
+    display: grid !important;
+    grid-template-areas: 'overlap' !important;
+    position: relative;
+
+    & > .sdui-container-item {
+      grid-area: overlap;
+      max-width: 100%;
+      max-height: 100%;
+      box-sizing: border-box;
+
+      &.is-full-bleed {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  }
+
+  .sdui-container-item {
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+  }
+}
+
+// 22. 通用网格布局积木 (GridBlock)
+.sdui-grid-layout-block {
+  width: 100%;
+  box-sizing: border-box;
+
+  .sdui-grid-cell {
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0; // 防止内容溢出挤爆网格
   }
 }

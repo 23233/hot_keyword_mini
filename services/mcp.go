@@ -11,6 +11,7 @@ import (
 	"hot_keyword/config"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -52,7 +53,7 @@ type MCPToolDefinition struct {
 
 // MCPService AI Model Context Protocol 编排调度服务
 type MCPService struct {
-	templateRegistry *TemplateRegistry
+	templateService  *TemplateService
 	sduiService      *SDUIService
 	shareCardService *ShareCardService
 }
@@ -60,7 +61,7 @@ type MCPService struct {
 // NewMCPService 创建 MCP 编排调度服务
 func NewMCPService() *MCPService {
 	return &MCPService{
-		templateRegistry: GetGlobalTemplateRegistry(),
+		templateService:  NewTemplateService(),
 		sduiService:      NewSDUIService(),
 		shareCardService: NewShareCardService(),
 	}
@@ -101,16 +102,35 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.template.list",
-			Description: "查询可用的行业模板包列表 (drama/game/query/download) 与适用场景",
+			Description: "查询内置行业模板与指定小程序可复用的用户模板",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"app_id": map[string]interface{}{
+						"type":        "string",
+						"description": "可选；传入后同时返回该小程序的用户模板",
+					},
 					"business_type": map[string]interface{}{
 						"type":        "string",
 						"description": "按业务类型过滤: drama / game / query / download",
 					},
 				},
 			},
+		},
+		{
+			Name:        "sdui.template.get",
+			Description: "读取一个内置模板或指定小程序内的用户模板完整协议",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"template_id"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "template_id": map[string]interface{}{"type": "string"}}},
+		},
+		{
+			Name:        "sdui.template.save",
+			Description: "创建或更新用户 SDUI 模板；模板协议使用 default_blocks/default_share，与 HTTP 管理接口完全一致",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "template"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "template": map[string]interface{}{"type": "object", "description": "模板对象，必须含 template_id、name，更新时搭配 expected_revision"}, "expected_revision": map[string]interface{}{"type": "integer", "minimum": 0}}},
+		},
+		{
+			Name:        "sdui.template.delete",
+			Description: "按修订版本删除指定小程序内的用户模板；内置模板不可删除",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "template_id", "expected_revision"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "template_id": map[string]interface{}{"type": "string"}, "expected_revision": map[string]interface{}{"type": "integer", "minimum": 1}}},
 		},
 		{
 			Name:        "sdui.page.create",
@@ -156,13 +176,14 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.page.validate",
-			Description: "对页面协议执行强校验，输出机器可读的错误、警告与修复建议",
+			Description: "对页面协议执行强校验，输出机器可读的错误、警告与修复建议 (支持传入已存 page_id 或直接提供页面协议对象)",
 			InputSchema: map[string]interface{}{
-				"type":     "object",
-				"required": []string{"app_id", "page_id"},
+				"type": "object",
 				"properties": map[string]interface{}{
-					"app_id":  map[string]interface{}{"type": "string"},
-					"page_id": map[string]interface{}{"type": "string"},
+					"app_id":   map[string]interface{}{"type": "string", "description": "归属小程序 AppID"},
+					"page_id":  map[string]interface{}{"type": "string", "description": "页面唯一标识 (与 page 二选一)"},
+					"page":     map[string]interface{}{"type": "object", "description": "待校验的完整页面协议对象 (与 page_id 二选一)"},
+					"protocol": map[string]interface{}{"type": "string", "description": "待校验的完整页面协议 JSON 字符串"},
 				},
 			},
 		},
@@ -369,11 +390,90 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, errors.New("权限不足: 需要 read 权限以查询行业模板列表")
 		}
 		businessType, _ := args["business_type"].(string)
-		templates := m.templateRegistry.ListTemplates(businessType)
+		appID, err := resolveMCPOptionalAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if appID != "" {
+			if err := ensureMCPAppExists(appID); err != nil {
+				return nil, err
+			}
+		}
+		templates, err := m.templateService.ListTemplates(appID, businessType)
+		if err != nil {
+			return nil, fmt.Errorf("查询模板列表失败: %w", err)
+		}
 		return map[string]interface{}{
 			"total":     len(templates),
 			"templates": templates,
 		}, nil
+
+	case "sdui.template.get":
+		if !hasScope(scopes, "read") {
+			return nil, errors.New("权限不足: 需要 read 权限以读取模板")
+		}
+		templateID, _ := args["template_id"].(string)
+		appID, err := resolveMCPOptionalAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if appID != "" {
+			if err := ensureMCPAppExists(appID); err != nil {
+				return nil, err
+			}
+		}
+		return m.templateService.GetTemplate(appID, templateID)
+
+	case "sdui.template.save":
+		if !hasScope(scopes, "write:draft") {
+			return nil, errors.New("权限不足: 需要 write:draft 权限以保存用户模板")
+		}
+		appID, err := resolveMCPAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if err := ensureMCPAppExists(appID); err != nil {
+			return nil, err
+		}
+		rawTemplate, ok := args["template"]
+		if !ok {
+			return nil, errors.New("template 为必填对象")
+		}
+		templateBytes, err := json.Marshal(rawTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("模板参数序列化失败: %w", err)
+		}
+		var template SDUITemplate
+		if err := json.Unmarshal(templateBytes, &template); err != nil {
+			return nil, fmt.Errorf("模板参数格式无效: %w", err)
+		}
+		if template.AppID != "" && template.AppID != appID {
+			return nil, fmt.Errorf("多租户越权拦截: 模板 app_id %s 与目标小程序 %s 不一致", template.AppID, appID)
+		}
+		template.AppID = appID
+		expectedRevision, _ := mcpIntArg(args["expected_revision"])
+		return m.templateService.SaveCustomTemplate(&template, actorID, expectedRevision)
+
+	case "sdui.template.delete":
+		if !hasScope(scopes, "write:draft") {
+			return nil, errors.New("权限不足: 需要 write:draft 权限以删除用户模板")
+		}
+		appID, err := resolveMCPAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if err := ensureMCPAppExists(appID); err != nil {
+			return nil, err
+		}
+		templateID, _ := args["template_id"].(string)
+		expectedRevision, ok := mcpIntArg(args["expected_revision"])
+		if !ok {
+			return nil, errors.New("expected_revision 必须为正整数")
+		}
+		if err := m.templateService.DeleteCustomTemplate(appID, templateID, expectedRevision); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"status": "deleted", "app_id": appID, "template_id": templateID}, nil
 
 	case "sdui.app.list":
 		if !hasScope(scopes, "read") {
@@ -505,7 +605,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 				page.Title = pageID
 			}
 		} else {
-			page, err = m.templateRegistry.ApplyTemplateToPage(templateID, appID, pageID, title)
+			page, err = m.templateService.ApplyTemplateToPage(templateID, appID, pageID, title)
 			if err != nil {
 				return nil, err
 			}
@@ -532,7 +632,9 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			UpdatedAt:    time.Now(),
 		}
 		if db.Mysql != nil {
-			_ = m.sduiService.SaveDraft(&draft)
+			if err := m.sduiService.SaveDraft(&draft); err != nil {
+				return nil, fmt.Errorf("保存页面草稿失败: %w", err)
+			}
 		}
 		return map[string]interface{}{
 			"draft_id": fmt.Sprintf("%s:%s", appID, pageID),
@@ -609,6 +711,38 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if !hasScope(scopes, "read") {
 			return nil, errors.New("权限不足: 需要 read 权限以校验协议")
 		}
+
+		// 优先支持直接传入页面协议对象进行强校验 (契合架构文档 3.12 节: draft_id 或协议 JSON)
+		if pageRaw, ok := args["page"]; ok && pageRaw != nil {
+			var directPage models.DynamicPage
+			rawBytes, err := json.Marshal(pageRaw)
+			if err == nil && json.Unmarshal(rawBytes, &directPage) == nil {
+				if directPage.AppID == "" {
+					if appArg, _ := args["app_id"].(string); appArg != "" {
+						directPage.AppID = appArg
+					} else if tenantID != "" {
+						directPage.AppID = tenantID
+					}
+				}
+				report := ValidateDynamicPage(&directPage)
+				return report, nil
+			}
+		}
+		if protocolStr, ok := args["protocol"].(string); ok && strings.TrimSpace(protocolStr) != "" {
+			var directPage models.DynamicPage
+			if err := json.Unmarshal([]byte(protocolStr), &directPage); err == nil {
+				if directPage.AppID == "" {
+					if appArg, _ := args["app_id"].(string); appArg != "" {
+						directPage.AppID = appArg
+					} else if tenantID != "" {
+						directPage.AppID = tenantID
+					}
+				}
+				report := ValidateDynamicPage(&directPage)
+				return report, nil
+			}
+		}
+
 		appID, _ := args["app_id"].(string)
 		pageID, _ := args["page_id"].(string)
 
@@ -753,15 +887,10 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			stateFixture = "normal"
 		}
 
-		layoutIR, err := BuildPageLayoutIR(targetPage, deviceParams, stateFixture)
+		// MCP 与 HTTP 草稿截图共同消费同一渲染入口，确保签名 URL 返回的字节与哈希严格一致。
+		pngBytes, layoutIR, err := m.shareCardService.RenderPageLayoutIRScreenshot(targetPage, deviceParams.Name, stateFixture, targetPage.Theme)
 		if err != nil {
-			return nil, fmt.Errorf("构建布局 IR 失败: %w", err)
-		}
-
-		// 消费 Layout IR 渲染符合视觉基线的快照
-		pngBytes, err := m.shareCardService.RenderLayoutIRScreenshot(layoutIR)
-		if err != nil {
-			return nil, fmt.Errorf("截图渲染失败: %w", err)
+			return nil, fmt.Errorf("构建布局 IR 或截图渲染失败: %w", err)
 		}
 
 		hasher := sha256.New()
@@ -770,8 +899,8 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 
 		// 签发 2 小时有效期的安全访问签名凭证 (防草稿内容匿名遍历窃取)
 		expires := time.Now().Add(2 * time.Hour).Unix()
-		sign := GenerateScreenshotSignature(appID, pageID, imgHash, expires)
-		signedImageURL := fmt.Sprintf("/api/v1/sdui/screenshot?app_id=%s&page_id=%s&draft=true&hash=%s&expires=%d&sign=%s", appID, pageID, imgHash, expires, sign)
+		sign := GenerateScreenshotSignatureWithOptions(appID, pageID, imgHash, expires, deviceParams.Name, targetPage.Theme, stateFixture)
+		signedImageURL := fmt.Sprintf("/api/v1/sdui/screenshot?app_id=%s&page_id=%s&draft=true&device=%s&theme=%s&state=%s&hash=%s&expires=%d&sign=%s", appID, pageID, url.QueryEscape(deviceParams.Name), url.QueryEscape(targetPage.Theme), url.QueryEscape(stateFixture), imgHash, expires, sign)
 
 		// 提取积木组件层级树 structure_tree
 		var blocks []models.BlockItem
@@ -1006,6 +1135,19 @@ func resolveMCPAppID(args map[string]interface{}, tenantID string) (string, erro
 	return appID, nil
 }
 
+// resolveMCPOptionalAppID 解析可选的小程序参数；仅查询内置模板时允许不传 app_id。
+func resolveMCPOptionalAppID(args map[string]interface{}, tenantID string) (string, error) {
+	appID, _ := args["app_id"].(string)
+	appID = strings.TrimSpace(appID)
+	if tenantID == "" {
+		return appID, nil
+	}
+	if appID != "" && appID != tenantID {
+		return "", fmt.Errorf("多租户越权拦截: 操作者绑定租户 %s，不可访问 %s", tenantID, appID)
+	}
+	return tenantID, nil
+}
+
 // ensureMCPAppExists 确认 MCP 请求目标属于已注册小程序，防止对任意租户标识执行操作。
 func ensureMCPAppExists(appID string) error {
 	if allowed := mcpAllowedTenantSet(); len(allowed) > 0 && !allowed[appID] {
@@ -1051,11 +1193,11 @@ func mcpAPIResource(tools []MCPToolDefinition) map[string]interface{} {
 		"scopes":                    map[string]string{"read": "读取模板、应用、页面并执行校验、预览、截图", "write:draft": "创建和修改草稿", "release": "发布已确认且通过校验的草稿"},
 		"global_token":              true,
 		"app_id_rule":               "全局 Token 不绑定小程序；每个页面工具必须在 arguments 中显式提供已注册 app_id。",
-		"workflow":                  []string{"resources/read sdui://rules", "sdui.app.list", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.file.prepare_upload (需要图片时)", "sdui.page.create", "sdui.page.patch", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.share_card (需要分享图时)", "sdui.page.publish", "sdui.page.set_current (需要切换主页时)", "sdui.page.revisions", "sdui.page.rollback (需要人工确认)"},
-		"coverage":                  map[string]string{"app_selection": "sdui.app.list", "page_inspection": "sdui.page.list + sdui.page.get", "draft_creation": "sdui.page.create", "draft_editing": "sdui.page.patch", "validation": "sdui.page.validate", "preview": "sdui.page.preview", "visual_review": "sdui.page.screenshot", "image_upload": "sdui.file.prepare_upload", "publish": "sdui.page.publish", "history": "sdui.page.revisions", "rollback": "sdui.page.rollback", "homepage_activation": "sdui.page.set_current", "share_assets": "sdui.page.share_card"},
+		"workflow":                  []string{"resources/read sdui://rules", "sdui.app.list", "sdui.template.list", "sdui.template.get", "sdui.template.save (创建或更新用户模板)", "sdui.page.create (从内置或用户模板派生草稿)", "sdui.page.patch", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.publish", "sdui.template.delete (不再需要时)"},
+		"coverage":                  map[string]string{"app_selection": "sdui.app.list", "template_inspection": "sdui.template.list + sdui.template.get", "template_save": "sdui.template.save", "template_delete": "sdui.template.delete", "draft_creation": "sdui.page.create", "draft_editing": "sdui.page.patch", "validation": "sdui.page.validate", "preview": "sdui.page.preview", "visual_review": "sdui.page.screenshot", "image_upload": "sdui.file.prepare_upload", "publish": "sdui.page.publish", "history": "sdui.page.revisions", "rollback": "sdui.page.rollback", "homepage_activation": "sdui.page.set_current", "share_assets": "sdui.page.share_card"},
 		"supported_runtime_actions": []string{"require_auth", "copy_text", "toast", "refresh", "navigate_page", "open_channels_activity", "open_mini_program", "open_webview", "preview_image", "request_data", "request_payment", "share", "subscribe_message"},
 		"unsupported_or_admin_only": []string{"管理员账号与权限管理", "微信 AppSecret 与支付私钥配置", "商品和金额配置", "数据库迁移与种子数据", "任意 HTTP 代理或任意脚本执行", "直接上传二进制到 MCP（必须使用预签名 COS PUT）"},
-		"coverage_note":             "MCP 覆盖 SDUI 页面从选择小程序、读取、创建草稿、修改、校验、预览、视觉审查、资源上传、分享图生成、发布、切换主页、版本回滚的完整闭环；系统级敏感配置和未登记业务接口仍必须由管理后台或专用服务处理。",
+		"coverage_note":             "MCP 与 HTTP 管理接口共用模板服务，覆盖内置模板读取、用户模板 CRUD、从模板创建草稿、修改、校验、预览和发布闭环；系统级敏感配置和未登记业务接口仍必须由管理后台或专用服务处理。",
 		"publish_gate":              map[string]interface{}{"required_scope": "release", "required_argument": "confirmed=true", "human_review": true},
 		"image_upload":              map[string]interface{}{"mcp_tool": "sdui.file.prepare_upload", "admin_endpoint": "/api/v1/admin/files/presigned-upload-url", "flow": []string{"调用工具申请预签名 PUT 地址", "调用方按 uploadHeaders 直接 PUT 二进制到 presignedUrl", "将 finalCosFileUrl 写入 page.patch 的图片字段"}, "prefix": "miniapps/{app_id}/", "stored_value": "CDN URL only", "acl": "由 COS 控制台 miniapps/* 规则统一管理"},
 	}

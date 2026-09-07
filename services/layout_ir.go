@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hot_keyword/models"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -83,7 +84,11 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 	// 基础上下文初始化，注入页面元数据
 	if context == nil {
 		context = make(map[string]interface{})
+	} else {
+		// IR 构建只消费调用方上下文，页面元数据与别名写入内部副本，避免跨请求状态污染。
+		context = shallowCopyMap(context)
 	}
+	normalizeScopedContextAliases(context)
 	pageContext := map[string]interface{}{
 		"page_id":       page.PageID,
 		"title":         page.Title,
@@ -111,7 +116,7 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 
 		for _, itemBlock := range expandedBlocks {
 			// 构建当前节点私有上下文 (继承并注入当前 item)
-			nodeCtx := shallowCopyMap(context)
+			nodeCtx := contextForBlock(context, itemBlock)
 
 			// 2. 状态多态分支处理 (loading / empty / error)
 			targetBlock := resolveBlockStateVariant(itemBlock, stateFixture)
@@ -177,6 +182,8 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 					Height: blockHeight,
 				},
 				Visible:      visible,
+				VisibleWhen:  targetBlock.VisibleWhen,
+				Repeat:       targetBlock.Repeat,
 				MarginY:      marginY,
 				Padding:      padding,
 				BorderRadius: borderRadius,
@@ -191,12 +198,16 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 				Fallback:     targetBlock.Fallback,
 			}
 
-			// 布局块递归生成子节点，确保容器内图片、文本和按钮保留同一棵渲染树
+			// 布局块递归生成子节点，确保容器内图片、文本和按钮保留同一棵同构渲染树，并按容器布局特性 (Grid/Overlap/Row/Column) 准确计算尺寸
 			if children := extractNestedBlocks(targetBlock.Props); len(children) > 0 {
 				var childHeight int
-				node.Children, childHeight = buildNestedLayoutNodes(children, nodeCtx, device, accentColor, stateFixture, node.BoundingBox.X+padding, node.BoundingBox.Y+padding, contentWidth-padding*2, 1)
-				if childHeight+padding*2 > node.BoundingBox.Height {
-					node.BoundingBox.Height = childHeight + padding*2
+				headerOffset := 0
+				if targetBlock.Type == "tabs" {
+					headerOffset = 46 // 选项卡顶部分段胶囊标签栏高度避让
+				}
+				node.Children, childHeight = buildNestedLayoutNodesForParent(&targetBlock, children, nodeCtx, device, accentColor, stateFixture, node.BoundingBox.X+padding, node.BoundingBox.Y+padding+headerOffset, contentWidth-padding*2, 1)
+				if childHeight+padding*2+headerOffset > node.BoundingBox.Height {
+					node.BoundingBox.Height = childHeight + padding*2 + headerOffset
 				}
 			}
 
@@ -215,6 +226,21 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 
 	ir.TotalHeight = currentY + 40
 	return ir, nil
+}
+
+// normalizeScopedContextAliases 为协议受控作用域补齐带 $ 与不带 $ 的同一引用，确保预览与小程序解析一致。
+func normalizeScopedContextAliases(context map[string]interface{}) {
+	for _, scope := range []string{"entity", "query", "item", "state", "result", "session", "tenant", "props"} {
+		plainKey := scope
+		dollarKey := "$" + scope
+		if value, ok := context[plainKey]; ok {
+			context[dollarKey] = value
+			continue
+		}
+		if value, ok := context[dollarKey]; ok {
+			context[plainKey] = value
+		}
+	}
 }
 
 // deviceTopInset 返回标题栏占用的顶部安全高度，单位为逻辑像素。
@@ -250,7 +276,7 @@ func resolveBlockStateVariant(block models.BlockItem, stateFixture string) model
 			}
 			return cloned
 		}
-	case "error", "offline", "out_of_stock":
+	case "error", "offline", "out_of_stock", "expired":
 		if block.Error != nil {
 			cloned := *block.Error
 			if cloned.ID == "" {
@@ -269,15 +295,26 @@ func ExpandBlockRepeat(block models.BlockItem, context map[string]interface{}) [
 	}
 
 	var repeatList []interface{}
+	hasExplicitSource := false
 	if itemsRaw, ok := block.Repeat["items"]; ok {
+		hasExplicitSource = true
 		if itemsSlice, ok := itemsRaw.([]interface{}); ok {
 			repeatList = itemsSlice
 		}
 	} else if pathVal, ok := block.Repeat["path"].(string); ok {
+		hasExplicitSource = true
 		resolved := ResolveBindingValue(pathVal, context)
 		if slice, ok := resolved.([]interface{}); ok {
 			repeatList = slice
 		}
+	}
+
+	// 若显式指定了 repeat 数据源但列表为空，杜绝渲染含未解析表达式的幽灵积木
+	if hasExplicitSource && len(repeatList) == 0 {
+		if block.Empty != nil {
+			return []models.BlockItem{*block.Empty}
+		}
+		return []models.BlockItem{}
 	}
 
 	if len(repeatList) == 0 {
@@ -295,6 +332,8 @@ func ExpandBlockRepeat(block models.BlockItem, context map[string]interface{}) [
 		for k, v := range block.Props {
 			clonedProps[k] = v
 		}
+		clonedProps["_repeat_item"] = itemData
+		clonedProps["_repeat_index"] = idx
 
 		itemCtx := shallowCopyMap(context)
 		itemCtx["$item"] = itemData
@@ -308,38 +347,82 @@ func ExpandBlockRepeat(block models.BlockItem, context map[string]interface{}) [
 	return results
 }
 
-// ResolveBindingValue 解析单个受控路径绑定值 (如 $entity.title, $query.id, $item.name)
+// contextForBlock 为展开后的循环块恢复独立 $item 上下文，确保条件、绑定和动作与小程序一致。
+func contextForBlock(context map[string]interface{}, block models.BlockItem) map[string]interface{} {
+	result := shallowCopyMap(context)
+	if block.Props == nil {
+		return result
+	}
+	if item, ok := block.Props["_repeat_item"]; ok {
+		result["item"] = item
+		result["$item"] = item
+	}
+	return result
+}
+
+// isKnownScopedPath 判断路径是否属于受控作用域（如 $entity.title 或 entity.title）
+func isKnownScopedPath(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if strings.HasPrefix(trimmed, "$") {
+		trimmed = trimmed[1:]
+	}
+	parts := strings.Split(trimmed, ".")
+	if len(parts) == 0 {
+		return false
+	}
+	switch parts[0] {
+	case "entity", "query", "item", "state", "result", "page", "session", "tenant", "props":
+		return true
+	default:
+		return false
+	}
+}
+
+// inlineInterpolationRegex 匹配字符串内嵌的数据绑定插值表达式 (如 "恭喜 {{$entity.name}} 领取成功")
+var inlineInterpolationRegex = regexp.MustCompile(`\{\{\s*(\$?[a-zA-Z0-9_.]+)\s*\}\}`)
+
+// ResolveBindingValue 解析单个受控路径绑定值 (如 $entity.title, entity.title, $query.id, $item.name)
 func ResolveBindingValue(val interface{}, context map[string]interface{}) interface{} {
 	if val == nil {
 		return nil
 	}
 
-	// 1. 处理对象形式: { "path": "$entity.title" }
+	// 1. 处理对象形式: { "path": "$entity.title" } 或 { "path": "entity.title" }
 	if m, ok := val.(map[string]interface{}); ok {
 		if pathStr, ok := m["path"].(string); ok && pathStr != "" {
 			return resolvePathString(pathStr, context)
 		}
 	}
 
-	// 2. 处理直接字符串形式: "$entity.title" 或 "{{entity.title}}"
+	// 2. 处理直接字符串形式: "$entity.title", "entity.title", "{{entity.title}}" 或内嵌插值文本 "前缀 {{path}} 后缀"
 	if s, ok := val.(string); ok {
 		trimmed := strings.TrimSpace(s)
-		if strings.HasPrefix(trimmed, "$") {
+		if strings.HasPrefix(trimmed, "{{") && strings.HasSuffix(trimmed, "}}") && !strings.Contains(trimmed[2:len(trimmed)-2], "{{") {
+			innerPath := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
+			return resolvePathString(innerPath, context)
+		}
+		if isKnownScopedPath(trimmed) {
 			return resolvePathString(trimmed, context)
 		}
-		if strings.HasPrefix(trimmed, "{{") && strings.HasSuffix(trimmed, "}}") {
-			innerPath := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
-			if !strings.HasPrefix(innerPath, "$") {
-				innerPath = "$" + innerPath
-			}
-			return resolvePathString(innerPath, context)
+		if strings.Contains(s, "{{") && strings.Contains(s, "}}") {
+			interpolated := inlineInterpolationRegex.ReplaceAllStringFunc(s, func(match string) string {
+				sub := inlineInterpolationRegex.FindStringSubmatch(match)
+				if len(sub) > 1 {
+					res := resolvePathString(sub[1], context)
+					if res != nil {
+						return fmt.Sprintf("%v", res)
+					}
+				}
+				return match
+			})
+			return interpolated
 		}
 	}
 
 	return val
 }
 
-// resolvePathString 根据点号分割路径提取上下文深度属性
+// resolvePathString 根据点号分割路径提取上下文深度属性 (支持显式 $ 作用域与省略 $ 语法双向归一化)
 func resolvePathString(path string, context map[string]interface{}) interface{} {
 	if context == nil || path == "" {
 		return path
@@ -353,12 +436,20 @@ func resolvePathString(path string, context map[string]interface{}) interface{} 
 	rootKey := parts[0]
 	var current interface{}
 
-	// 支持直接 $xxx 查找，也支持无 $ 别名兼容
+	// 双向兼容：支持 context 中无论以 $xxx 还是以无 $ 存储均能精准命中文本
 	if val, ok := context[rootKey]; ok {
 		current = val
-	} else if val, ok := context[strings.TrimPrefix(rootKey, "$")]; ok {
-		current = val
+	} else if strings.HasPrefix(rootKey, "$") {
+		if val, ok := context[strings.TrimPrefix(rootKey, "$")]; ok {
+			current = val
+		}
 	} else {
+		if val, ok := context["$"+rootKey]; ok {
+			current = val
+		}
+	}
+
+	if current == nil {
 		return nil
 	}
 
@@ -385,7 +476,7 @@ func ResolveObjectBindings(target interface{}, context map[string]interface{}) i
 
 	// 若自身是绑定描述
 	if m, ok := target.(map[string]interface{}); ok {
-		if pathStr, ok := m["path"].(string); ok && len(m) == 1 && strings.HasPrefix(pathStr, "$") {
+		if pathStr, ok := m["path"].(string); ok && len(m) == 1 && (strings.HasPrefix(pathStr, "$") || isKnownScopedPath(pathStr)) {
 			return ResolveBindingValue(pathStr, context)
 		}
 
@@ -432,7 +523,7 @@ func resolvePropsPreservingBlocks(value interface{}, context map[string]interfac
 		if _, hasType := m["type"]; hasType {
 			return m
 		}
-		if path, isBinding := m["path"].(string); isBinding && len(m) == 1 && strings.HasPrefix(path, "$") {
+		if path, isBinding := m["path"].(string); isBinding && len(m) == 1 && (strings.HasPrefix(path, "$") || isKnownScopedPath(path)) {
 			return ResolveObjectBindings(m, context)
 		}
 		result := make(map[string]interface{}, len(m))
@@ -477,9 +568,9 @@ func extractNestedBlocks(props map[string]interface{}) []models.BlockItem {
 			}
 		}
 	}
-	// tabs 只展开默认首个 tab，与小程序初始 activeKey 行为保持一致。
+	// tabs 按小程序初始 activeKey 规则展开当前选中栏，保持 IR 与客户端一致。
 	if rawTabs, ok := props["tabs"].([]interface{}); ok && len(rawTabs) > 0 {
-		if tab, ok := rawTabs[0].(map[string]interface{}); ok {
+		if tab := selectActiveTab(rawTabs, props); tab != nil {
 			if children := extractNestedBlocks(tab); len(children) > 0 {
 				return children
 			}
@@ -495,7 +586,380 @@ func extractNestedBlocks(props map[string]interface{}) []models.BlockItem {
 	return nil
 }
 
-// buildNestedLayoutNodes 递归构建布局子树。子树使用与顶层相同的绑定、条件、状态和尺寸规则。
+// selectActiveTab 按 TabsBlock 的 active_key、active_tab、default_active_key、default_index 顺序选择当前栏。
+func selectActiveTab(tabs []interface{}, props map[string]interface{}) map[string]interface{} {
+	selectedIndex := 0
+	selectedKey := ""
+	for _, key := range []string{"active_key", "active_tab", "default_active_key"} {
+		if value, exists := props[key]; exists && value != nil {
+			selectedKey = fmt.Sprintf("%v", value)
+			break
+		}
+	}
+	if selectedKey == "" {
+		if defaultIndex, exists := props["default_index"]; exists {
+			selectedIndex = int(toFloat64(defaultIndex))
+		}
+	} else {
+		for index, rawTab := range tabs {
+			tab, ok := rawTab.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			key := fmt.Sprintf("%v", index)
+			if value, exists := tab["key"]; exists && value != nil {
+				key = fmt.Sprintf("%v", value)
+			} else if value, exists := tab["id"]; exists && value != nil {
+				key = fmt.Sprintf("%v", value)
+			}
+			if key == selectedKey {
+				selectedIndex = index
+				break
+			}
+		}
+	}
+	if selectedIndex < 0 || selectedIndex >= len(tabs) {
+		selectedIndex = 0
+	}
+	tab, _ := tabs[selectedIndex].(map[string]interface{})
+	return tab
+}
+
+// buildNestedLayoutNodesForParent 根据父容器的布局特性 (Grid/Overlap/Row/Column) 精准计算子节点点阵坐标与高度
+func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.BlockItem, context map[string]interface{}, device DeviceParams, accentColor, stateFixture string, x, y, width, depth int) ([]BlockLayoutNode, int) {
+	if depth > 32 || width <= 0 {
+		return nil, 0
+	}
+
+	parentType := ""
+	var parentProps map[string]interface{}
+	if parent != nil {
+		parentType = parent.Type
+		parentProps = parent.Props
+	}
+	if parentProps == nil {
+		parentProps = make(map[string]interface{})
+	}
+
+	// 1. 识别是否为多列网格 (grid / item_grid)
+	if parentType == "grid" || parentType == "item_grid" {
+		cols := 2
+		if c := int(toFloat64(parentProps["columns"])); c >= 1 && c <= 4 {
+			cols = c
+		}
+		gap := 8
+		if gapStr, ok := parentProps["gap"].(string); ok {
+			gap = parsePixelValue(gapStr, 8)
+		}
+		totalGap := (cols - 1) * gap
+		cellWidth := (width - totalGap) / cols
+		if cellWidth <= 0 {
+			cellWidth = width
+		}
+
+		flatItems := make([]models.BlockItem, 0)
+		for _, b := range blocks {
+			flatItems = append(flatItems, ExpandBlockRepeat(b, context)...)
+		}
+
+		result := make([]BlockLayoutNode, 0, len(flatItems))
+		currentY := y
+		rowMaxH := 0
+
+		for idx, item := range flatItems {
+			nodeCtx := contextForBlock(context, item)
+			target := resolveBlockStateVariant(item, stateFixture)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
+
+			colIdx := idx % cols
+			if colIdx == 0 && idx > 0 {
+				currentY += rowMaxH + gap
+				rowMaxH = 0
+			}
+
+			cellX := x + colIdx*(cellWidth+gap)
+			cellY := currentY
+
+			h, stub := CalculateAdaptiveBlockHeight(&target, props, cellWidth)
+			marginY, padding, radius, glass := 4, 8, 12, true
+			if target.Style != nil {
+				glass = target.Style.GlassBlur
+				marginY = parsePixelValue(target.Style.MarginY, marginY)
+				padding = parsePixelValue(target.Style.Padding, padding)
+				radius = parsePixelValue(target.Style.BorderRadius, radius)
+			}
+
+			child := BlockLayoutNode{
+				ID: target.ID, Type: target.Type, Props: props, Visible: visible,
+				VisibleWhen: target.VisibleWhen, Repeat: target.Repeat,
+				BoundingBox: BoundingBox{X: cellX, Y: cellY + marginY, Width: cellWidth, Height: h},
+				MarginY:     marginY, Padding: padding, BorderRadius: radius, GlassBlur: glass,
+				AccentColor: accentColor, TextSummary: extractTextSummary(&target, props),
+				Action: target.Action, Events: target.Events, NativeStub: stub,
+				Loading: target.Loading, Empty: target.Empty, Error: target.Error, Fallback: target.Fallback,
+			}
+			if target.Action != nil {
+				child.ActionType = target.Action.Type
+			}
+
+			if nested := extractNestedBlocks(props); len(nested) > 0 {
+				var childH int
+				child.Children, childH = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, accentColor, stateFixture, cellX+padding, child.BoundingBox.Y+padding, cellWidth-padding*2, depth+1)
+				if childH+padding*2 > child.BoundingBox.Height {
+					child.BoundingBox.Height = childH + padding*2
+				}
+			}
+
+			result = append(result, child)
+			if child.BoundingBox.Height+marginY*2 > rowMaxH {
+				rowMaxH = child.BoundingBox.Height + marginY*2
+			}
+		}
+
+		totalH := (currentY - y) + rowMaxH
+		return result, totalH
+	}
+
+	// 2. 识别是否为层叠重叠堆叠 (Stack Overlap / ZStack)
+	mode, _ := parentProps["mode"].(string)
+	if mode == "" {
+		mode, _ = parentProps["layout"].(string)
+	}
+	if (parentType == "stack" || parentType == "container") && (mode == "overlap" || mode == "zstack") {
+		flatItems := make([]models.BlockItem, 0)
+		for _, b := range blocks {
+			flatItems = append(flatItems, ExpandBlockRepeat(b, context)...)
+		}
+
+		type tempChildNode struct {
+			target  models.BlockItem
+			props   map[string]interface{}
+			visible bool
+			nodeCtx map[string]interface{}
+			height  int
+			width   int
+			stub    string
+			marginY int
+			padding int
+			radius  int
+			glass   bool
+			nested  []models.BlockItem
+		}
+
+		temps := make([]tempChildNode, 0, len(flatItems))
+		maxH := 0
+
+		// 第一趟扫描：计算每个子项的自适应高度与宽度，求出整个 Overlap 容器的最大高度 maxH
+		for _, item := range flatItems {
+			nodeCtx := contextForBlock(context, item)
+			target := resolveBlockStateVariant(item, stateFixture)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
+
+			childW := width
+			if explicitW := int(toFloat64(props["width"])); explicitW > 0 && explicitW <= width {
+				childW = explicitW
+			}
+
+			h, stub := CalculateAdaptiveBlockHeight(&target, props, childW)
+			marginY, padding, radius, glass := 0, 0, 14, false
+			if target.Style != nil {
+				glass = target.Style.GlassBlur
+				marginY = parsePixelValue(target.Style.MarginY, marginY)
+				padding = parsePixelValue(target.Style.Padding, padding)
+				radius = parsePixelValue(target.Style.BorderRadius, radius)
+			}
+
+			nested := extractNestedBlocks(props)
+
+			t := tempChildNode{
+				target:  target,
+				props:   props,
+				visible: visible,
+				nodeCtx: nodeCtx,
+				height:  h,
+				width:   childW,
+				stub:    stub,
+				marginY: marginY,
+				padding: padding,
+				radius:  radius,
+				glass:   glass,
+				nested:  nested,
+			}
+			temps = append(temps, t)
+
+			if h+marginY*2 > maxH {
+				maxH = h + marginY*2
+			}
+		}
+
+		// 第二趟扫描：结合容器总高度与对齐属性 (justify_self, align_self) 精准定位每个子节点的坐标
+		result := make([]BlockLayoutNode, 0, len(temps))
+		for _, t := range temps {
+			justifySelf := ""
+			if js, ok := t.props["justify_self"].(string); ok {
+				justifySelf = strings.ToLower(strings.TrimSpace(js))
+			}
+			alignSelf := ""
+			if as, ok := t.props["align_self"].(string); ok {
+				alignSelf = strings.ToLower(strings.TrimSpace(as))
+			}
+
+			// 水平坐标计算
+			childX := x
+			switch justifySelf {
+			case "end", "flex-end", "right":
+				if t.width < width {
+					childX = x + width - t.width
+				}
+			case "center", "middle":
+				if t.width < width {
+					childX = x + (width-t.width)/2
+				}
+			default:
+				childX = x
+			}
+
+			// 垂直坐标计算
+			childY := y + t.marginY
+			switch alignSelf {
+			case "end", "flex-end", "bottom":
+				if t.height < maxH {
+					childY = y + maxH - t.height - t.marginY
+				}
+			case "center", "middle":
+				if t.height < maxH {
+					childY = y + (maxH-t.height)/2
+				}
+			default:
+				childY = y + t.marginY
+			}
+
+			child := BlockLayoutNode{
+				ID: t.target.ID, Type: t.target.Type, Props: t.props, Visible: t.visible,
+				VisibleWhen: t.target.VisibleWhen, Repeat: t.target.Repeat,
+				BoundingBox: BoundingBox{X: childX, Y: childY, Width: t.width, Height: t.height},
+				MarginY:     t.marginY, Padding: t.padding, BorderRadius: t.radius, GlassBlur: t.glass,
+				AccentColor: accentColor, TextSummary: extractTextSummary(&t.target, t.props),
+				Action: t.target.Action, Events: t.target.Events, NativeStub: t.stub,
+				Loading: t.target.Loading, Empty: t.target.Empty, Error: t.target.Error, Fallback: t.target.Fallback,
+			}
+			if t.target.Action != nil {
+				child.ActionType = t.target.Action.Type
+			}
+
+			if len(t.nested) > 0 {
+				var childH int
+				child.Children, childH = buildNestedLayoutNodesForParent(&t.target, t.nested, t.nodeCtx, device, accentColor, stateFixture, childX+t.padding, child.BoundingBox.Y+t.padding, t.width-t.padding*2, depth+1)
+				if childH+t.padding*2 > child.BoundingBox.Height {
+					child.BoundingBox.Height = childH + t.padding*2
+				}
+			}
+
+			result = append(result, child)
+			if child.BoundingBox.Height+t.marginY*2 > maxH {
+				maxH = child.BoundingBox.Height + t.marginY*2
+			}
+		}
+
+		return result, maxH
+	}
+
+	// 3. 识别是否为水平弹性排列 (direction: row)
+	direction, _ := parentProps["direction"].(string)
+	if direction == "" {
+		direction, _ = parentProps["flex_direction"].(string)
+	}
+	if (parentType == "stack" || parentType == "container") && (direction == "row" || direction == "row-reverse") {
+		flatItems := make([]models.BlockItem, 0)
+		for _, b := range blocks {
+			flatItems = append(flatItems, ExpandBlockRepeat(b, context)...)
+		}
+
+		itemCount := len(flatItems)
+		if itemCount == 0 {
+			return nil, 0
+		}
+
+		gap := 8
+		if gapStr, ok := parentProps["gap"].(string); ok {
+			gap = parsePixelValue(gapStr, 8)
+		}
+
+		totalGap := (itemCount - 1) * gap
+		colWidth := (width - totalGap) / itemCount
+		if colWidth <= 0 {
+			colWidth = width
+		}
+
+		result := make([]BlockLayoutNode, 0, itemCount)
+		currentX := x
+		maxRowH := 0
+
+		for _, item := range flatItems {
+			nodeCtx := contextForBlock(context, item)
+			target := resolveBlockStateVariant(item, stateFixture)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
+
+			itemW := colWidth
+			if explicitW := int(toFloat64(props["width"])); explicitW > 0 {
+				itemW = explicitW
+			}
+
+			h, stub := CalculateAdaptiveBlockHeight(&target, props, itemW)
+			marginY, padding, radius, glass := 4, 8, 12, false
+			if target.Style != nil {
+				glass = target.Style.GlassBlur
+				marginY = parsePixelValue(target.Style.MarginY, marginY)
+				padding = parsePixelValue(target.Style.Padding, padding)
+				radius = parsePixelValue(target.Style.BorderRadius, radius)
+			}
+
+			child := BlockLayoutNode{
+				ID: target.ID, Type: target.Type, Props: props, Visible: visible,
+				VisibleWhen: target.VisibleWhen, Repeat: target.Repeat,
+				BoundingBox: BoundingBox{X: currentX, Y: y + marginY, Width: itemW, Height: h},
+				MarginY:     marginY, Padding: padding, BorderRadius: radius, GlassBlur: glass,
+				AccentColor: accentColor, TextSummary: extractTextSummary(&target, props),
+				Action: target.Action, Events: target.Events, NativeStub: stub,
+				Loading: target.Loading, Empty: target.Empty, Error: target.Error, Fallback: target.Fallback,
+			}
+			if target.Action != nil {
+				child.ActionType = target.Action.Type
+			}
+
+			if nested := extractNestedBlocks(props); len(nested) > 0 {
+				var childH int
+				child.Children, childH = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, accentColor, stateFixture, currentX+padding, child.BoundingBox.Y+padding, itemW-padding*2, depth+1)
+				if childH+padding*2 > child.BoundingBox.Height {
+					child.BoundingBox.Height = childH + padding*2
+				}
+			}
+
+			result = append(result, child)
+			currentX += itemW + gap
+			if child.BoundingBox.Height+marginY*2 > maxRowH {
+				maxRowH = child.BoundingBox.Height + marginY*2
+			}
+		}
+
+		return result, maxRowH
+	}
+
+	// 4. 默认常规纵向弹性流布局 (Column)
+	startY := y
+	headerOffset := 0
+	if parentType == "tabs" {
+		headerOffset = 46 // 选项卡顶部分段胶囊标签栏高度避让
+		startY = y + headerOffset
+	}
+	nodes, h := buildNestedLayoutNodes(blocks, context, device, accentColor, stateFixture, x, startY, width, depth)
+	return nodes, h + headerOffset
+}
+
+// buildNestedLayoutNodes 递归构建常规纵向布局子树。子树使用与顶层相同的绑定、条件、状态和尺寸规则。
 func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interface{}, device DeviceParams, accentColor, stateFixture string, x, y, width, depth int) ([]BlockLayoutNode, int) {
 	if depth > 32 || width <= 0 {
 		return nil, 0
@@ -504,7 +968,7 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 	currentY := y
 	for _, block := range blocks {
 		for _, expanded := range ExpandBlockRepeat(block, context) {
-			nodeCtx := shallowCopyMap(context)
+			nodeCtx := contextForBlock(context, expanded)
 			target := resolveBlockStateVariant(expanded, stateFixture)
 			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
 			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
@@ -518,6 +982,7 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 			}
 			child := BlockLayoutNode{
 				ID: target.ID, Type: target.Type, Props: props, Visible: visible,
+				VisibleWhen: target.VisibleWhen, Repeat: target.Repeat,
 				BoundingBox: BoundingBox{X: x, Y: currentY + marginY, Width: width, Height: height},
 				MarginY:     marginY, Padding: padding, BorderRadius: radius, GlassBlur: glass,
 				AccentColor: accentColor, TextSummary: extractTextSummary(&target, props),
@@ -529,14 +994,18 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 			}
 			if nested := extractNestedBlocks(props); len(nested) > 0 {
 				var childHeight int
-				child.Children, childHeight = buildNestedLayoutNodes(nested, nodeCtx, device, accentColor, stateFixture, x+padding, child.BoundingBox.Y+padding, width-padding*2, depth+1)
-				if childHeight+padding*2 > child.BoundingBox.Height {
-					child.BoundingBox.Height = childHeight + padding*2
+				headerOffset := 0
+				if target.Type == "tabs" {
+					headerOffset = 46
+				}
+				child.Children, childHeight = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, accentColor, stateFixture, x+padding, child.BoundingBox.Y+padding+headerOffset, width-padding*2, depth+1)
+				if childHeight+padding*2+headerOffset > child.BoundingBox.Height {
+					child.BoundingBox.Height = childHeight + padding*2 + headerOffset
 				}
 			}
 			result = append(result, child)
 			if visible {
-				currentY += height + marginY*2
+				currentY += child.BoundingBox.Height + marginY*2
 			}
 		}
 	}
@@ -591,12 +1060,60 @@ func EvaluateCondition(cond interface{}, context map[string]interface{}) bool {
 		return !EvaluateCondition(notRaw, context)
 	}
 
+	// 属性简写: {"path":"$state.enabled", "eq":true}。
+	// Schema 已支持此写法，需与小程序端保持同一运行语义。
+	if path, ok := m["path"].(string); ok && path != "" {
+		left := ResolveBindingValue(map[string]interface{}{"path": path}, context)
+		if right, exists := m["eq"]; exists {
+			return compareLooseEqual(left, ResolveBindingValue(right, context))
+		}
+		if right, exists := m["neq"]; exists {
+			return !compareLooseEqual(left, ResolveBindingValue(right, context))
+		}
+		if expected, exists := m["exists"]; exists {
+			existsValue := left != nil && fmt.Sprintf("%v", left) != ""
+			if expectedBool, isBool := expected.(bool); isBool {
+				return existsValue == expectedBool
+			}
+			return existsValue
+		}
+		if right, exists := m["in"]; exists {
+			if values, isSlice := ResolveBindingValue(right, context).([]interface{}); isSlice {
+				for _, value := range values {
+					if compareLooseEqual(left, value) {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		for _, operator := range []string{"gt", "gte", "lt", "lte"} {
+			if right, exists := m[operator]; exists {
+				leftNumber, leftOK := toFloatStrict(left)
+				rightNumber, rightOK := toFloatStrict(ResolveBindingValue(right, context))
+				if !leftOK || !rightOK {
+					return false
+				}
+				switch operator {
+				case "gt":
+					return leftNumber > rightNumber
+				case "gte":
+					return leftNumber >= rightNumber
+				case "lt":
+					return leftNumber < rightNumber
+				default:
+					return leftNumber <= rightNumber
+				}
+			}
+		}
+	}
+
 	// 等值比较: eq
 	if eqRaw, ok := m["eq"]; ok {
 		if slice, ok := eqRaw.([]interface{}); ok && len(slice) >= 2 {
 			l := ResolveBindingValue(slice[0], context)
 			r := ResolveBindingValue(slice[1], context)
-			return fmt.Sprintf("%v", l) == fmt.Sprintf("%v", r)
+			return compareLooseEqual(l, r)
 		}
 	}
 
@@ -605,7 +1122,7 @@ func EvaluateCondition(cond interface{}, context map[string]interface{}) bool {
 		if slice, ok := neqRaw.([]interface{}); ok && len(slice) >= 2 {
 			l := ResolveBindingValue(slice[0], context)
 			r := ResolveBindingValue(slice[1], context)
-			return fmt.Sprintf("%v", l) != fmt.Sprintf("%v", r)
+			return !compareLooseEqual(l, r)
 		}
 	}
 
@@ -615,15 +1132,21 @@ func EvaluateCondition(cond interface{}, context map[string]interface{}) bool {
 		return val != nil && fmt.Sprintf("%v", val) != ""
 	}
 
-	// 集合包含: in
+	// 集合包含: in (双向容错与 compareLooseEqual 类型安全等值比较)
 	if inRaw, ok := m["in"]; ok {
 		if slice, ok := inRaw.([]interface{}); ok && len(slice) >= 2 {
-			item := ResolveBindingValue(slice[0], context)
-			list := ResolveBindingValue(slice[1], context)
-			itemStr := fmt.Sprintf("%v", item)
-			if arr, ok := list.([]interface{}); ok {
+			val0 := ResolveBindingValue(slice[0], context)
+			val1 := ResolveBindingValue(slice[1], context)
+			if arr, ok := val1.([]interface{}); ok {
 				for _, el := range arr {
-					if fmt.Sprintf("%v", el) == itemStr {
+					if compareLooseEqual(el, val0) {
+						return true
+					}
+				}
+			}
+			if arr, ok := val0.([]interface{}); ok {
+				for _, el := range arr {
+					if compareLooseEqual(el, val1) {
 						return true
 					}
 				}
@@ -635,30 +1158,30 @@ func EvaluateCondition(cond interface{}, context map[string]interface{}) bool {
 	// 数值比较: gt, gte, lt, lte
 	if gtRaw, ok := m["gt"]; ok {
 		if slice, ok := gtRaw.([]interface{}); ok && len(slice) >= 2 {
-			l := toFloat64(ResolveBindingValue(slice[0], context))
-			r := toFloat64(ResolveBindingValue(slice[1], context))
-			return l > r
+			l, leftOK := toFloatStrict(ResolveBindingValue(slice[0], context))
+			r, rightOK := toFloatStrict(ResolveBindingValue(slice[1], context))
+			return leftOK && rightOK && l > r
 		}
 	}
 	if gteRaw, ok := m["gte"]; ok {
 		if slice, ok := gteRaw.([]interface{}); ok && len(slice) >= 2 {
-			l := toFloat64(ResolveBindingValue(slice[0], context))
-			r := toFloat64(ResolveBindingValue(slice[1], context))
-			return l >= r
+			l, leftOK := toFloatStrict(ResolveBindingValue(slice[0], context))
+			r, rightOK := toFloatStrict(ResolveBindingValue(slice[1], context))
+			return leftOK && rightOK && l >= r
 		}
 	}
 	if ltRaw, ok := m["lt"]; ok {
 		if slice, ok := ltRaw.([]interface{}); ok && len(slice) >= 2 {
-			l := toFloat64(ResolveBindingValue(slice[0], context))
-			r := toFloat64(ResolveBindingValue(slice[1], context))
-			return l < r
+			l, leftOK := toFloatStrict(ResolveBindingValue(slice[0], context))
+			r, rightOK := toFloatStrict(ResolveBindingValue(slice[1], context))
+			return leftOK && rightOK && l < r
 		}
 	}
 	if lteRaw, ok := m["lte"]; ok {
 		if slice, ok := lteRaw.([]interface{}); ok && len(slice) >= 2 {
-			l := toFloat64(ResolveBindingValue(slice[0], context))
-			r := toFloat64(ResolveBindingValue(slice[1], context))
-			return l <= r
+			l, leftOK := toFloatStrict(ResolveBindingValue(slice[0], context))
+			r, rightOK := toFloatStrict(ResolveBindingValue(slice[1], context))
+			return leftOK && rightOK && l <= r
 		}
 	}
 
@@ -745,7 +1268,13 @@ func CalculateAdaptiveBlockHeight(block *models.BlockItem, props map[string]inte
 
 	// 7. 网盘多渠道资源卡片
 	case "resource_card":
-		return 116, ""
+		h := 116
+		if rawCh, ok := props["channels"].([]interface{}); ok && len(rawCh) > 1 {
+			h += 26
+		} else if rawCh, ok := props["pan_list"].([]interface{}); ok && len(rawCh) > 1 {
+			h += 26
+		}
+		return h, ""
 
 	// 8. 游戏礼包卡片
 	case "game_card":
@@ -828,6 +1357,101 @@ func CalculateAdaptiveBlockHeight(block *models.BlockItem, props map[string]inte
 	case "container", "stack":
 		return 160, ""
 
+	// 19. 通用自由编排卡片积木
+	case "custom", "custom_block":
+		h := 80
+		if img, ok := props["image_url"].(string); ok && img != "" {
+			h += 130
+		} else if cover, ok := props["cover_url"].(string); ok && cover != "" {
+			h += 130
+		}
+		if text, ok := props["content"].(string); ok && text != "" {
+			h += 30
+		}
+		if btn, ok := props["btn_text"].(string); ok && btn != "" {
+			h += 40
+		}
+		return h, ""
+
+	// 20. 战力/积分/成绩面板积木
+	case "score_panel":
+		h := 130
+		if items, ok := props["items"].([]interface{}); ok && len(items) > 0 {
+			rows := int(math.Ceil(float64(len(items)) / 2.0))
+			h += rows * 36
+		}
+		return h, ""
+
+	// 21. 优惠卡券与兑换码积木
+	case "coupon_card":
+		return 96, ""
+	case "redeem_code_card":
+		return 108, ""
+
+	// 22. 实时倒计时积木
+	case "countdown":
+		return 106, ""
+
+	// 23. 服务节点监控积木
+	case "server_status":
+		h := 84
+		if notice, ok := props["notice"].(string); ok && notice != "" {
+			h += 20
+		}
+		return h, ""
+
+	// 24. 苹果风商品卡片积木
+	case "product_card":
+		return 118, ""
+
+	// 25. 应用与资源下载卡片积木
+	case "download_card":
+		h := 68
+		if desc, ok := props["desc"].(string); ok && desc != "" {
+			h += 26
+		} else if desc, ok := props["description"].(string); ok && desc != "" {
+			h += 26
+		}
+		return h, ""
+
+	// 26. 结果表格积木
+	case "result_table":
+		rowCount := 2
+		if rows, ok := props["rows"].([]interface{}); ok && len(rows) > 0 {
+			rowCount = len(rows)
+		}
+		return 40 + rowCount*34, ""
+
+	// 27. 联系人与客服卡片
+	case "contact_card":
+		return 88, ""
+
+	// 28. 地图与地理位置卡片
+	case "map_card":
+		return 160, "map_view_stub"
+
+	// 29. 游戏头图与活动日程卡片
+	case "game_header":
+		return 180, ""
+	case "event_card":
+		return 116, ""
+
+	// 30. 投票与问卷
+	case "poll":
+		optCount := 2
+		if opts, ok := props["options"].([]interface{}); ok && len(opts) > 0 {
+			optCount = len(opts)
+		}
+		return 44 + optCount*42, ""
+
+	// 31. 信息流列表
+	case "feed_list":
+		itemCount := 3
+		if items, ok := props["items"].([]interface{}); ok && len(items) > 0 {
+			itemCount = len(items)
+		}
+		return itemCount * 88, ""
+
 	default:
 		return 90, ""
 	}
@@ -903,4 +1527,62 @@ func shallowCopyMap(m map[string]interface{}) map[string]interface{} {
 		res[k] = v
 	}
 	return res
+}
+
+// compareLooseEqual 比较两个受控值的等值性，与前端 isLooseEqual 绝对同构对齐
+func compareLooseEqual(l, r interface{}) bool {
+	if l == nil && r == nil {
+		return true
+	}
+	if l == nil || r == nil {
+		return false
+	}
+	// 布尔比较
+	if lb, ok := toBool(l); ok {
+		if rb, ok := toBool(r); ok {
+			return lb == rb
+		}
+	}
+	// 数值比较
+	if ln, ok := toFloatStrict(l); ok {
+		if rn, ok := toFloatStrict(r); ok {
+			return ln == rn
+		}
+	}
+	return fmt.Sprintf("%v", l) == fmt.Sprintf("%v", r)
+}
+
+func toBool(val interface{}) (bool, bool) {
+	if b, ok := val.(bool); ok {
+		return b, true
+	}
+	if s, ok := val.(string); ok {
+		lower := strings.ToLower(strings.TrimSpace(s))
+		if lower == "true" {
+			return true, true
+		}
+		if lower == "false" {
+			return false, true
+		}
+	}
+	return false, false
+}
+
+func toFloatStrict(val interface{}) (float64, bool) {
+	switch v := val.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err == nil {
+			return f, true
+		}
+	}
+	return 0, false
 }

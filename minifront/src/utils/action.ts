@@ -1,9 +1,10 @@
-// action.ts
+// minifront/src/utils/action.ts
 import Taro from '@tarojs/taro'
 import { BlockAction } from '../types/sdui'
 import { ensureSession } from './auth'
 import { request } from './request'
-import { evaluateCondition } from './condition'
+import { evaluateCondition, isKnownScopedPath } from './condition'
+import { resolveRemoteUrl } from '../config/env'
 
 /**
  * 统一万能交互动作执行上下文
@@ -50,24 +51,33 @@ function getByPath(obj: any, path: string): any {
 
 /**
  * 受控绑定路径求值辅助函数
- * 支持解析 $entity.*, $query.*, $item.*, $state.*, $result.*
+ * 支持解析 $entity.*, entity.*, $query.*, $item.*, $state.*, $result.*
  */
 export function resolveBindingValue(val: any, context?: ActionContext): any {
   if (val == null) return val
 
-  // 1. 处理显式对象路径形式: { path: "$entity.title" }
+  // 1. 处理显式对象路径形式: { path: "$entity.title" } 或 { path: "entity.title" }
   if (typeof val === 'object' && val.path && typeof val.path === 'string') {
     return resolvePathString(val.path, context)
   }
 
-  // 2. 处理直接字符串路径形式: "$entity.title" 或 "{{entity.title}}"
+  // 2. 处理直接字符串路径形式: "$entity.title", "entity.title", "{{entity.title}}" 或内嵌插值文本 "前缀 {{path}} 后缀"
   if (typeof val === 'string') {
     if (val.startsWith('$')) {
       return resolvePathString(val, context)
     }
-    if (val.startsWith('{{') && val.endsWith('}}')) {
+    if (val.startsWith('{{') && val.endsWith('}}') && !val.slice(2, -2).includes('{{')) {
       const path = val.slice(2, -2).trim()
       return resolvePathString(path.startsWith('$') ? path : `$${path}`, context)
+    }
+    if (isKnownScopedPath(val)) {
+      return resolvePathString(val, context)
+    }
+    if (val.includes('{{') && val.includes('}}')) {
+      return val.replace(/\{\{\s*(\$?[a-zA-Z0-9_.]+)\s*\}\}/g, (_match, path) => {
+        const resolved = resolvePathString(path.startsWith('$') ? path : `$${path}`, context)
+        return resolved !== undefined && resolved !== null ? String(resolved) : _match
+      })
     }
   }
 
@@ -75,20 +85,18 @@ export function resolveBindingValue(val: any, context?: ActionContext): any {
 }
 
 function resolvePathString(path: string, context?: ActionContext): any {
-  const scopes: Record<string, any> = {
-    '$entity': context?.entity,
-    '$query': context?.query,
-    '$item': context?.item,
-    '$state': context?.state,
-    '$result': context?.result,
-    '$page': context?.page,
-    '$session': context?.session,
-    '$tenant': context?.tenant,
-    '$props': (context as any)?.props
-  }
-  const root = path.split('.')[0]
-  if (!Object.prototype.hasOwnProperty.call(scopes, root)) return undefined
-  return getByPath(scopes[root], path.slice(root.length + 1))
+  if (!path) return undefined
+  const normalizedPath = path.startsWith('$') ? path : `$${path}`
+  const segments = normalizedPath.split('.')
+  const root = segments[0]
+  const rawRoot = root.startsWith('$') ? root.slice(1) : root
+  const ctx = context as Record<string, any> | undefined
+  if (!ctx) return undefined
+
+  // 双向兼容：支持 context 中无论以 $xxx 还是以无 $ 存储均能精准读取
+  const scopeVal = ctx[root] ?? ctx[rawRoot] ?? ctx[`$${rawRoot}`]
+  if (scopeVal === undefined || scopeVal === null) return undefined
+  return getByPath(scopeVal, normalizedPath.slice(root.length + 1))
 }
 
 /**
@@ -153,34 +161,53 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context?: 
 }
 
 /**
- * 批量分发积木事件动作列表 (支持 events.tap 动作序列按序执行)
+ * 批量分发积木事件动作列表 (支持 events.tap 动作序列按序执行、前置失败安全阻断与上下文流转管道)
  */
-export async function dispatchEvents(events?: Record<string, BlockAction[] | BlockAction>, eventName = 'tap', context?: ActionContext): Promise<void> {
-  if (!events) return
+export async function dispatchEvents(events?: Record<string, BlockAction[] | BlockAction>, eventName = 'tap', context?: ActionContext): Promise<any> {
+  if (!events) return undefined
   const target = events[eventName]
-  if (!target) return
+  if (!target) return undefined
+
+  let currentContext: ActionContext = { ...context }
+  let lastResult: any = currentContext.result
 
   if (Array.isArray(target)) {
     for (const action of target) {
-      await dispatchAction(action, context)
+      const actResult = await dispatchAction(action, currentContext)
+      // 若关键动作执行失败或用户取消，阻断后续强依赖的动作序列
+      if (actResult === false) {
+        return false
+      }
+      if (actResult !== undefined) {
+        lastResult = actResult
+        currentContext = {
+          ...currentContext,
+          result: actResult
+        }
+      }
     }
   } else {
-    await dispatchAction(target, context)
+    lastResult = await dispatchAction(target, currentContext)
   }
+  return lastResult
 }
 
 /**
  * 万能原子交互动作分发器 (Action Dispatcher)
  * 支持登录拦截、跨小程序矩阵互跳、微信视频号原生拉起、剪贴板震动与多页面路由流转
  */
-export async function dispatchAction(action?: BlockAction, context?: ActionContext): Promise<void> {
-  if (!action || !action.type) return
+export async function dispatchAction(action?: BlockAction | BlockAction[], context?: ActionContext): Promise<any> {
+  if (!action) return undefined
+  if (Array.isArray(action)) {
+    return dispatchEvents({ tap: action }, 'tap', context)
+  }
+  if (!action.type) return undefined
 
   // 1. 动作执行前置受控条件求值 (若配置了 condition 且条件不满足则中断)
   if (action.condition) {
     const isMet = evaluateCondition(action.condition, context || {})
     if (!isMet) {
-      return
+      return undefined
     }
   }
 
@@ -197,7 +224,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
       cancelText
     })
     if (!modalRes.confirm) {
-      return
+      return false
     }
   }
 
@@ -209,7 +236,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         title: '请先完成微信授权登录',
         icon: 'none'
       })
-      return
+      return false
     }
   }
 
@@ -251,6 +278,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         break
       }
 
+      actionResult = textToCopy
       Taro.setClipboardData({
         data: String(textToCopy),
         success: () => {
@@ -273,6 +301,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     // 页面内轻提示 (Toast)
     case 'toast': {
       const msg = resolveBindingValue(payload.text || payload.message || '操作已执行', context)
+      actionResult = msg
       Taro.showToast({
         title: String(msg),
         icon: payload.icon || 'none',
@@ -281,16 +310,114 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
       break
     }
 
-    // 刷新当前页面协议与数据
+    // 刷新当前页面协议与数据 (支持文档 3.8 节按 target 局部重置积木状态，无 target 时触发全页刷新)
     case 'refresh': {
-      if (context?.refresh) {
+      const target = payload.target
+      if (target && context?.setBlockState) {
+        context.setBlockState(target, 'normal')
+        actionResult = { target, state: 'normal' }
+      } else if (context?.refresh) {
         context.refresh()
+      }
+      break
+    }
+
+    // 页面响应式状态设置，原地同步消除时序竞争
+    case 'set_state': {
+      const stateKey = payload.key || payload.name || payload.target
+      const stateVal = resolveBindingValue(payload.value !== undefined ? payload.value : payload.val, context)
+      if (stateKey) {
+        if (context) {
+          context.state = { ...(context.state || {}), [stateKey]: stateVal }
+        }
+        if (context?.updateState) {
+          context.updateState(stateKey, stateVal)
+        }
+        actionResult = { key: stateKey, value: stateVal }
+      }
+      break
+    }
+
+    // 页面响应式状态反转/折叠切换
+    case 'toggle_state': {
+      const stateKey = payload.key || payload.name || payload.target
+      if (stateKey) {
+        const curr = context?.state?.[stateKey]
+        const toggled = !curr
+        if (context) {
+          context.state = { ...(context.state || {}), [stateKey]: toggled }
+        }
+        if (context?.updateState) {
+          context.updateState(stateKey, toggled)
+        }
+        actionResult = { key: stateKey, value: toggled }
+      }
+      break
+    }
+
+    // 页面响应式状态重置
+    case 'reset_state': {
+      const stateKey = payload.key || payload.name || payload.target
+      if (context) {
+        if (stateKey) {
+          context.state = { ...(context.state || {}), [stateKey]: undefined }
+        } else {
+          context.state = {}
+        }
+      }
+      if (context?.updateState) {
+        if (stateKey) {
+          context.updateState(stateKey, undefined)
+        } else if (context.state) {
+          Object.keys(context.state).forEach((k) => context.updateState!(k, undefined))
+        }
+      }
+      actionResult = { reset: true }
+      break
+    }
+
+    // 块级局部状态切换 (支持文档 3.8 节 show_error_state / show_empty_state / show_loading_state / reset_block_state)
+    case 'show_error_state': {
+      const target = payload.target
+      if (target && context?.setBlockState) {
+        context.setBlockState(target, 'error')
+        actionResult = { target, state: 'error' }
+      }
+      break
+    }
+    case 'show_empty_state': {
+      const target = payload.target
+      if (target && context?.setBlockState) {
+        context.setBlockState(target, 'empty')
+        actionResult = { target, state: 'empty' }
+      }
+      break
+    }
+    case 'show_loading_state': {
+      const target = payload.target
+      if (target && context?.setBlockState) {
+        context.setBlockState(target, 'loading')
+        actionResult = { target, state: 'loading' }
+      }
+      break
+    }
+    case 'reset_block_state': {
+      const target = payload.target
+      if (target && context?.setBlockState) {
+        context.setBlockState(target, 'normal')
+        actionResult = { target, state: 'normal' }
       }
       break
     }
 
     // 微信小程序多页面路由流转 (万能动态承载页)
     case 'navigate_page': {
+      const openType = payload.open_type || payload.type
+      if (openType === 'back' || payload.delta) {
+        Taro.navigateBack({ delta: Number(payload.delta) || 1 })
+        break
+      }
+
       const targetPageId = payload.page_id || 'home'
       const queryParts: string[] = [`page_id=${encodeURIComponent(targetPageId)}`]
 
@@ -305,19 +432,35 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         })
       }
 
-      Taro.navigateTo({
-        url: `/pages/dynamic/index?${queryParts.join('&')}`,
-        fail: (err) => {
-          console.error('动态页面跳转失败:', err)
-        }
-      })
+      const targetUrl = targetPageId === 'home' && queryParts.length === 1
+        ? '/pages/index/index'
+        : `/pages/dynamic/index?${queryParts.join('&')}`
+
+      if (openType === 'reLaunch') {
+        Taro.reLaunch({ url: targetUrl })
+      } else if (openType === 'redirect') {
+        Taro.redirectTo({ url: targetUrl })
+      } else {
+        Taro.navigateTo({
+          url: targetUrl,
+          fail: (err) => {
+            console.warn('动态页面 navigateTo 失败，尝试以 redirectTo 打开:', err)
+            Taro.redirectTo({
+              url: targetUrl,
+              fail: (reErr) => {
+                console.error('动态页面 redirectTo 亦失败:', reErr)
+              }
+            })
+          }
+        })
+      }
       break
     }
 
     // 微信视频号动态原生拉起 (调起微信原生剧场)
     case 'open_channels_activity': {
-      const feedId = payload.feed_id || payload.feedId || ''
-      const finderUserName = payload.finder_user_name || payload.finderUserName || ''
+      const feedId = String(resolveBindingValue(payload.feed_id || payload.feedId, context) || '')
+      const finderUserName = String(resolveBindingValue(payload.finder_user_name || payload.finderUserName, context) || '')
 
       if (!feedId || !finderUserName) {
         Taro.showToast({ title: '视频号参数未配置完整', icon: 'none' })
@@ -346,7 +489,7 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
 
     // 跨小程序矩阵跳转 (流量互导与分流承接)
     case 'open_mini_program': {
-      const targetAppId = payload.target_app_id || payload.app_id || payload.appId
+      const targetAppId = String(resolveBindingValue(payload.target_app_id || payload.app_id || payload.appId, context) || '')
       if (!targetAppId) {
         Taro.showToast({ title: '目标小程序 AppID 未指定', icon: 'none' })
         actionSuccess = false
@@ -404,8 +547,8 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
 
     // 全屏大图预览
     case 'preview_image': {
-      const current = payload.current || payload.url || ''
-      const urls: string[] = Array.isArray(payload.urls) ? payload.urls : (current ? [current] : [])
+      const current = resolveRemoteUrl(payload.current || payload.url)
+      const urls: string[] = (Array.isArray(payload.urls) ? payload.urls : (current ? [current] : [])).map(resolveRemoteUrl)
       if (urls.length === 0) {
         actionSuccess = false
         break
@@ -419,9 +562,10 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     }
 
     // 异步受控业务数据请求与事务触发 (支持 path_params / query / body / response / timeout / on_error 完整规范)
+    case 'request':
     case 'request_data': {
-      const endpoint = payload.endpoint || ''
-      let targetUrl = payload.url || '/api/v1/action/execute'
+      const endpoint = payload.endpoint || action.endpoint || (action as any).endpoint || ''
+      let targetUrl = payload.url || action.url || (action as any).url || '/api/v1/action/execute'
       const method = endpoint ? 'POST' : (payload.method || 'POST').toUpperCase()
       const idempotencyKey = payload.idempotency_key || `idem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const timeoutMs = Number(payload.timeout_ms || payload.timeout || 15000)
@@ -445,7 +589,44 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
       // 2. 递归求值解析 path_params、query 与 body
       const resolvedPathParams = resolveObjectBindings(payload.path_params || {}, context)
       const resolvedQuery = resolveObjectBindings(payload.query || {}, context)
-      const resolvedBody = resolveObjectBindings(payload.body || payload.payload || {}, context)
+
+      // 智能提取请求体: 优先读取 payload.body 或 payload.payload; 若未显式包裹，则提取 payload 顶层业务参数
+      let rawBody = payload.body ?? payload.payload
+      if (!rawBody || (typeof rawBody === 'object' && Object.keys(rawBody).length === 0)) {
+        const reservedKeys = new Set([
+          'endpoint', 'url', 'method', 'idempotency_key', 'timeout_ms', 'timeout',
+          'target', 'response', 'on_success', 'on_error', 'path_params', 'query',
+          'body', 'payload', 'require_auth'
+        ])
+        const extracted: Record<string, any> = {}
+        for (const [k, v] of Object.entries(payload)) {
+          if (!reservedKeys.has(k)) {
+            extracted[k] = v
+          }
+        }
+        if (Object.keys(extracted).length > 0) {
+          rawBody = extracted
+        }
+      }
+
+      let resolvedBody = resolveObjectBindings(rawBody || {}, context)
+      if (typeof resolvedBody !== 'object' || resolvedBody === null) {
+        resolvedBody = {}
+      }
+
+      // 智能业务端点上下文兜底注入 (覆盖表单查询、礼包套餐等关键链路)
+      if (endpoint === 'query.score' && !(resolvedBody as any).query_value && !(resolvedBody as any).code) {
+        const fallbackVal = (context as any)?.query_value ?? (context?.item as any)?.query_value ?? (context?.state as any)?.query_value ?? (context?.state as any)?.form?.query_value
+        if (fallbackVal) {
+          resolvedBody = { ...(resolvedBody as any), query_value: fallbackVal }
+        }
+      }
+      if (endpoint === 'game.redeem' && !(resolvedBody as any).package_id) {
+        const fallbackPkg = (context as any)?.package_id ?? (context?.item as any)?.package_id
+        if (fallbackPkg) {
+          resolvedBody = { ...(resolvedBody as any), package_id: fallbackPkg }
+        }
+      }
 
       // 3. 处理 URL 路径参数替换 (如 /api/v1/actions/game/{game_id}/redeem)
       if (resolvedPathParams && typeof resolvedPathParams === 'object') {
@@ -491,8 +672,8 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         Taro.hideLoading()
         if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'normal')
 
-        // 契约对齐: request 层解包返回 data，直接消费 res；若为原始信封则消费 res.data
-        const resultData = (res && typeof res === 'object' && res.data !== undefined) ? res.data : res
+        // 契约对齐: request 层已解包返回 data，直接消费 res；若为未解包原始业务信封 ({ code: 0, data: ... }) 则消费 res.data
+        const resultData = (res && typeof res === 'object' && typeof res.code === 'number' && res.data !== undefined) ? res.data : res
 
         // 6. response 状态持久化映射 (save_as 与 data_path) 并触发 React 响应式渲染
         let extractedData = resultData
@@ -518,12 +699,14 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
           result: extractedData
         }
 
-        const hasTopLevelSuccess = Array.isArray(action.on_success) && action.on_success.length > 0
-        if (!hasTopLevelSuccess && Array.isArray(payload.on_success) && payload.on_success.length > 0) {
-          for (const subAction of payload.on_success) {
+        const successActions = Array.isArray(action.on_success) && action.on_success.length > 0
+          ? action.on_success
+          : payload.on_success
+        if (Array.isArray(successActions) && successActions.length > 0) {
+          for (const subAction of successActions) {
             await dispatchAction(subAction, nextContext)
           }
-        } else if (!hasTopLevelSuccess) {
+        } else {
           // 默认成功反馈
           if (extractedData && extractedData.code) {
             Taro.setClipboardData({
@@ -575,7 +758,14 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
         actionSuccess = false
         break
       }
-      const sku = String(payload.sku || payload.product_sku || '')
+      let sku = String(resolveBindingValue(payload.sku || payload.product_sku, context) || '')
+      if (!sku) {
+        // 智能从上下文 item 或 actionPayload 中兜底提取 sku
+        const fallbackSku = (context as any)?.sku ?? (context?.item as any)?.sku ?? (context?.item as any)?.product_sku ?? (context?.item as any)?.id ?? (context as any)?.actionPayload?.sku ?? (context as any)?.actionPayload?.id
+        if (fallbackSku) {
+          sku = String(fallbackSku)
+        }
+      }
       if (!sku) {
         Taro.showToast({ title: '商品 SKU 不能为空', icon: 'none' })
         actionSuccess = false
@@ -665,12 +855,14 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
             ...context,
             result: res
           }
-          const hasTopLevelSuccess = Array.isArray(action.on_success) && action.on_success.length > 0
-          if (!hasTopLevelSuccess && Array.isArray(payload.on_success) && payload.on_success.length > 0) {
-            for (const nextAction of payload.on_success) {
+          const successActions = Array.isArray(action.on_success) && action.on_success.length > 0
+            ? action.on_success
+            : payload.on_success
+          if (Array.isArray(successActions) && successActions.length > 0) {
+            for (const nextAction of successActions) {
               await dispatchAction(nextAction, subContext)
             }
-          } else if (!hasTopLevelSuccess) {
+          } else {
             Taro.showToast({
               title: payload.toast || '订阅完成',
               icon: 'success'
@@ -721,14 +913,22 @@ export async function dispatchAction(action?: BlockAction, context?: ActionConte
     }
   }
 
-  // 6. 执行通用 on_success 动作链
-  if (actionSuccess && Array.isArray(action.on_success) && action.on_success.length > 0) {
+  // 6. 执行通用 on_success 动作链 (兼容 action.on_success 与 payload.on_success)
+  const successActions = (Array.isArray(action.on_success) && action.on_success.length > 0)
+    ? action.on_success
+    : (Array.isArray(payload?.on_success) && payload.on_success.length > 0 && action.type !== 'request_data' && action.type !== 'request' && action.type !== 'subscribe_message'
+      ? payload.on_success
+      : null)
+
+  if (actionSuccess && successActions && successActions.length > 0) {
     const successContext: ActionContext = {
       ...context,
       result: actionResult !== undefined ? actionResult : context?.result
     }
-    for (const succAct of action.on_success) {
+    for (const succAct of successActions) {
       await dispatchAction(succAct, successContext)
     }
   }
+
+  return actionSuccess ? (actionResult !== undefined ? actionResult : context?.result) : false
 }

@@ -599,6 +599,9 @@
         <span id="currentAdminName" style="color:#fff; font-weight:600;">未登录</span>
         <button onclick="adminLogout()" style="background:none; border:none; color:#ff453a; cursor:pointer; font-size:12px; margin-left:4px;">[退出]</button>
       </div>
+      <button class="btn-ctrl" onclick="saveDraftWork()" style="padding:10px 18px; background:rgba(255,255,255,0.12); color:#fff; border-radius:999px; cursor:pointer;">
+        <span>💾 保存草稿</span>
+      </button>
       <button class="btn-save" onclick="saveCurrentWork()">
         <span>⚡ 保存并同步至小程序</span>
       </button>
@@ -658,6 +661,7 @@
           <div style="display:flex; gap:10px;">
             <button class="btn-ctrl" onclick="openRevisionsModal()" style="background:rgba(255,255,255,0.15); color:#fff;">🕒 历史版本</button>
             <button class="btn-ctrl" onclick="openTemplateModal()" style="background:linear-gradient(135deg,#5e5ce6,#0a84ff); color:#fff; font-weight:700;">📋 套用行业模板</button>
+			<button class="btn-ctrl" onclick="saveCurrentAsTemplate()" style="background:rgba(48,209,88,0.18); color:#30d158; border-color:rgba(48,209,88,0.45);">💾 保存为模板</button>
             <button class="btn-ctrl" onclick="setCurrentAsHomePage()" style="background:var(--accent); color:#000; font-weight:700;">设为激活主页</button>
             <button class="btn-ctrl" onclick="openAddPageModal()">+ 新建页面</button>
           </div>
@@ -746,12 +750,23 @@
 
           <!-- 快速添加积木按钮 -->
           <div class="add-block-row">
+            <button class="btn-add-block" onclick="addBlock('custom')">✨ + 自由图文卡片</button>
+            <button class="btn-add-block" onclick="addBlock('image')">🖼️ + 纯图片积木</button>
+            <button class="btn-add-block" onclick="addBlock('text')">📄 + 文本/富文本</button>
+            <button class="btn-add-block" onclick="addBlock('container')">📦 + 容器/弹性堆叠</button>
+            <button class="btn-add-block" onclick="addBlock('grid')">▦ + 多列网格</button>
+            <button class="btn-add-block" onclick="addBlock('tabs')">📑 + 分段标签</button>
+            <button class="btn-add-block" onclick="addBlock('carousel')">🎠 + 轮播海报</button>
             <button class="btn-add-block" onclick="addBlock('media_hero')">🎬 + 媒体海报/视频</button>
-            <button class="btn-add-block" onclick="addBlock('resource_card')">📦 + 网盘极速提取卡片</button>
-            <button class="btn-add-block" onclick="addBlock('action_button')">⚡ + 通栏主操作按钮</button>
-            <button class="btn-add-block" onclick="addBlock('notice')">📢 + 顶部通告栏</button>
+            <button class="btn-add-block" onclick="addBlock('video')">▶️ + 独立视频播放</button>
+            <button class="btn-add-block" onclick="addBlock('resource_card')">💾 + 网盘提取卡片</button>
+            <button class="btn-add-block" onclick="addBlock('action_button')">⚡ + 通栏主按钮</button>
             <button class="btn-add-block" onclick="addBlock('game_card')">🎮 + 游戏礼包卡片</button>
             <button class="btn-add-block" onclick="addBlock('form')">📝 + 查询表单组件</button>
+            <button class="btn-add-block" onclick="addBlock('episode_list')">🔢 + 选集列表</button>
+            <button class="btn-add-block" onclick="addBlock('notice')">📢 + 顶部通告栏</button>
+            <button class="btn-add-block" onclick="addBlock('spacer')">↕️ + 空白留白间距</button>
+            <button class="btn-add-block" onclick="addBlock('empty')">📭 + 空态占位提示</button>
           </div>
         </div>
       </div>
@@ -875,7 +890,7 @@
         <div class="card-head">
           <div>
             <div class="title">🤖 AI MCP 智能编排中心 (Model Context Protocol)</div>
-            <div class="desc">遵循标准 JSON-RPC 2.0 协议，提供全局 Token、协议资源和 15 个受控工具</div>
+          <div class="desc">遵循标准 JSON-RPC 2.0 协议，提供全局 Token、协议资源和 18 个受控工具</div>
           </div>
           <div>
             <span style="font-size:12px; background:rgba(48,209,88,0.2); color:#30d158; border:1px solid rgba(48,209,88,0.3); padding:4px 10px; border-radius:999px; font-weight:700;">● MCP 服务正常运行中</span>
@@ -992,6 +1007,9 @@
               <select id="mcpToolSelect" class="form-select" onchange="onMcpToolSelectChanged()">
                 <option value="sdui.app.list">sdui.app.list (查询小程序)</option>
                 <option value="sdui.template.list">sdui.template.list (查询行业模板)</option>
+				<option value="sdui.template.get">sdui.template.get (读取模板协议)</option>
+				<option value="sdui.template.save">sdui.template.save (保存用户模板)</option>
+				<option value="sdui.template.delete">sdui.template.delete (删除用户模板)</option>
                 <option value="sdui.file.prepare_upload">sdui.file.prepare_upload (申请 COS 上传)</option>
                 <option value="sdui.page.validate">sdui.page.validate (强校验当前页面)</option>
                 <option value="sdui.page.preview">sdui.page.preview (装配预览当前页面)</option>
@@ -1097,7 +1115,7 @@
         <button class="btn-ctrl" onclick="closeTemplateModal()">✕</button>
       </div>
       <div style="font-size:13px; color:var(--text-sub);">
-        选择行业模板一键派生当前页面积木树，生成后支持逐块自由增删改与定制：
+        内置模板只读；当前页面可另存为本小程序专属模板，也可将当前编排更新到已有自定义模板：
       </div>
       <div class="template-grid" id="templateGridContainer">
         <!-- 模板卡片列表 -->
@@ -1597,11 +1615,63 @@
       const act = b.action || {};
       const payload = act.payload || {};
 
+      if (b.type === 'custom' || b.type === 'custom_block') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">卡片标题</label>
+              <input class="form-input" value="${escapeAttr(p.title || '')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">角标徽章 (可选)</label>
+              <input class="form-input" value="${escapeAttr(p.badge || '')}" oninput="updateBlockProp(${idx}, 'badge', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">图片/横幅 URL (可选)</label>
+              <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.image_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'image_url', 'sdui')" /></label></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">按钮文案 (可选)</label>
+              <input class="form-input" value="${escapeAttr(p.btn_text || '')}" oninput="updateBlockProp(${idx}, 'btn_text', this.value)" />
+            </div>
+            <div class="form-group full-width">
+              <label class="form-label">正文说明内容</label>
+              <input class="form-input" value="${escapeAttr(p.content || '')}" oninput="updateBlockProp(${idx}, 'content', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
       if (b.type === 'image') {
         return `
-          <div class="form-group">
-            <label class="form-label">图片 URL</label>
-            <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.image_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'image_url', 'sdui')" /></label></div>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label">图片 URL</label>
+              <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.image_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'image_url', 'sdui')" /></label></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">宽高比 (如 16:9, 4:3, 1:1)</label>
+              <input class="form-input" value="${escapeAttr(p.aspect_ratio || '16:9')}" oninput="updateBlockProp(${idx}, 'aspect_ratio', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'text' || b.type === 'rich_text') {
+        return `
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label">文本正文内容</label>
+              <textarea class="form-input" style="height:64px; resize:vertical;" oninput="updateBlockProp(${idx}, 'text', this.value)">${escapeHtml(p.text || p.content || '')}</textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字号 (px)</label>
+              <input type="number" class="form-input" value="${escapeAttr(p.font_size || 14)}" oninput="updateBlockProp(${idx}, 'font_size', Number(this.value))" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">字体颜色</label>
+              <input class="form-input" value="${escapeAttr(p.color || '#ffffff')}" oninput="updateBlockProp(${idx}, 'color', this.value)" />
+            </div>
           </div>
         `;
       }
@@ -1714,6 +1784,253 @@
         `;
       }
 
+      if (b.type === 'container' || b.type === 'stack') {
+        const dir = p.direction || 'column';
+        const align = p.align || 'stretch';
+        const justify = p.justify || 'start';
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">排版主轴方向</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'direction', this.value)">
+                <option value="column" ${dir === 'column' ? 'selected' : ''}>垂直排布 (column)</option>
+                <option value="row" ${dir === 'row' ? 'selected' : ''}>水平排布 (row)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">交叉轴对齐 (align)</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'align', this.value)">
+                <option value="stretch" ${align === 'stretch' ? 'selected' : ''}>拉伸铺满 (stretch)</option>
+                <option value="start" ${align === 'start' ? 'selected' : ''}>起点对齐 (start)</option>
+                <option value="center" ${align === 'center' ? 'selected' : ''}>居中对齐 (center)</option>
+                <option value="end" ${align === 'end' ? 'selected' : ''}>终点对齐 (end)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">主轴分布 (justify)</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'justify', this.value)">
+                <option value="start" ${justify === 'start' ? 'selected' : ''}>靠前分布 (start)</option>
+                <option value="center" ${justify === 'center' ? 'selected' : ''}>居中分布 (center)</option>
+                <option value="end" ${justify === 'end' ? 'selected' : ''}>靠后分布 (end)</option>
+                <option value="between" ${justify === 'between' ? 'selected' : ''}>两端对齐 (between)</option>
+                <option value="around" ${justify === 'around' ? 'selected' : ''}>均匀环绕 (around)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">子项间距 (gap, 如 16rpx 或 12px)</label>
+              <input class="form-input" value="${escapeAttr(p.gap || '16rpx')}" oninput="updateBlockProp(${idx}, 'gap', this.value)" />
+            </div>
+            <div class="form-group full-width">
+              <label class="form-label">容器内边距 (padding, 如 20rpx)</label>
+              <input class="form-input" value="${escapeAttr(p.padding || '')}" oninput="updateBlockProp(${idx}, 'padding', this.value)" placeholder="如: 24rpx 或 16px" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'grid') {
+        const cols = p.columns || 2;
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">列数 (columns)</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'columns', Number(this.value))">
+                <option value="1" ${cols === 1 ? 'selected' : ''}>1 列 (单列流)</option>
+                <option value="2" ${cols === 2 ? 'selected' : ''}>2 列 (双列卡片)</option>
+                <option value="3" ${cols === 3 ? 'selected' : ''}>3 列 (九宫格风格)</option>
+                <option value="4" ${cols === 4 ? 'selected' : ''}>4 列 (金刚区/小图标)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">网格间距 (gap)</label>
+              <input class="form-input" value="${escapeAttr(p.gap || '16rpx')}" oninput="updateBlockProp(${idx}, 'gap', this.value)" placeholder="如: 16rpx 或 10px" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'tabs') {
+        const tabsStr = Array.isArray(p.tabs) ? p.tabs.map(t => t.title || t.label || t.id).join(', ') : '';
+        const defIdx = p.default_index != null ? p.default_index : 0;
+        return `
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label">Tab 标签列表 (逗号分隔)</label>
+              <input class="form-input" value="${escapeAttr(tabsStr)}" onchange="updateTabsList(${idx}, this.value)" placeholder="如: 精选推荐, 最新上线, 热门必看" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">默认高亮标签索引</label>
+              <input type="number" class="form-input" value="${escapeAttr(defIdx)}" oninput="updateBlockProp(${idx}, 'default_index', Number(this.value))" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'carousel') {
+        const autoplay = p.autoplay !== false;
+        const loop = p.loop !== false;
+        const dots = p.dots !== false;
+        const interval = p.interval || 3000;
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">自动播放</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'autoplay', this.value === 'true')">
+                <option value="true" ${autoplay ? 'selected' : ''}>开启</option>
+                <option value="false" ${!autoplay ? 'selected' : ''}>关闭</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">切换间隔 (毫秒)</label>
+              <input type="number" class="form-input" value="${escapeAttr(interval)}" oninput="updateBlockProp(${idx}, 'interval', Number(this.value))" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">循环轮播</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'loop', this.value === 'true')">
+                <option value="true" ${loop ? 'selected' : ''}>开启</option>
+                <option value="false" ${!loop ? 'selected' : ''}>关闭</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">指示点显示</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'dots', this.value === 'true')">
+                <option value="true" ${dots ? 'selected' : ''}>显示</option>
+                <option value="false" ${!dots ? 'selected' : ''}>隐藏</option>
+              </select>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'video') {
+        const autoplay = !!p.autoplay;
+        const loop = !!p.loop;
+        const controls = p.controls !== false;
+        return `
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label">视频地址 (URL / mp4 / m3u8)</label>
+              <input class="form-input" value="${escapeAttr(p.video_url || p.src || '')}" oninput="updateBlockProp(${idx}, 'video_url', this.value); updateBlockProp(${idx}, 'src', this.value);" placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label class="form-label">视频封面图 URL</label>
+              <div style="display:flex; gap:8px;"><input class="form-input" value="${escapeAttr(p.poster || p.cover_url || '')}" readonly /><label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadBlockImage(this, ${idx}, 'poster', 'sdui')" /></label></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">控制条</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'controls', this.value === 'true')">
+                <option value="true" ${controls ? 'selected' : ''}>显示</option>
+                <option value="false" ${!controls ? 'selected' : ''}>隐藏</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">自动播放</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'autoplay', this.value === 'true')">
+                <option value="false" ${!autoplay ? 'selected' : ''}>关闭</option>
+                <option value="true" ${autoplay ? 'selected' : ''}>开启 (需注意平台限制)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">循环播放</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'loop', this.value === 'true')">
+                <option value="false" ${!loop ? 'selected' : ''}>关闭</option>
+                <option value="true" ${loop ? 'selected' : ''}>开启</option>
+              </select>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'spacer') {
+        return `
+          <div class="form-group full-width">
+            <label class="form-label">空白高度 (如 24rpx 或 16px)</label>
+            <input class="form-input" value="${escapeAttr(p.height || '24rpx')}" oninput="updateBlockProp(${idx}, 'height', this.value)" placeholder="如: 32rpx" />
+          </div>
+        `;
+      }
+
+      if (b.type === 'empty') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">提示标题</label>
+              <input class="form-input" value="${escapeAttr(p.title || '暂无内容')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">详细描述</label>
+              <input class="form-input" value="${escapeAttr(p.description || '')}" oninput="updateBlockProp(${idx}, 'description', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'skeleton') {
+        const stype = p.skeleton_type || 'list';
+        const rows = p.rows || 3;
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">骨架屏样式</label>
+              <select class="form-select" onchange="updateBlockProp(${idx}, 'skeleton_type', this.value)">
+                <option value="list" ${stype === 'list' ? 'selected' : ''}>列表骨架 (list)</option>
+                <option value="card" ${stype === 'card' ? 'selected' : ''}>卡片骨架 (card)</option>
+                <option value="detail" ${stype === 'detail' ? 'selected' : ''}>详情骨架 (detail)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">骨架行数</label>
+              <input type="number" class="form-input" value="${escapeAttr(rows)}" oninput="updateBlockProp(${idx}, 'rows', Number(this.value))" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'episode_list') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">标题</label>
+              <input class="form-input" value="${escapeAttr(p.title || '选集播放')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">总集数</label>
+              <input type="number" class="form-input" value="${escapeAttr(p.total || 80)}" oninput="updateBlockProp(${idx}, 'total', Number(this.value))" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">开始加锁集数 (0 表示不锁)</label>
+              <input type="number" class="form-input" value="${escapeAttr(p.locked_from || 6)}" oninput="updateBlockProp(${idx}, 'locked_from', Number(this.value))" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'item_grid') {
+        return `
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">标题</label>
+              <input class="form-input" value="${escapeAttr(p.title || '快捷功能')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">列数 (columns)</label>
+              <input type="number" class="form-input" value="${escapeAttr(p.columns || 4)}" oninput="updateBlockProp(${idx}, 'columns', Number(this.value))" />
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'timeline') {
+        return `
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label">时间线标题</label>
+              <input class="form-input" value="${escapeAttr(p.title || '发展历程')}" oninput="updateBlockProp(${idx}, 'title', this.value)" />
+            </div>
+          </div>
+        `;
+      }
+
       const genericImageFields = ['image_url', 'cover_url', 'poster', 'src'].filter(field => Object.prototype.hasOwnProperty.call(p, field));
       if (genericImageFields.length > 0) {
         return genericImageFields.map(field => `
@@ -1730,6 +2047,19 @@
       }
 
       return `<div style="font-size:12px; color:var(--text-sub);">通用组件属性</div>`;
+    }
+
+    // 标签页列表快捷更新
+    function updateTabsList(idx, val) {
+      if (!currentDynamicPage?.blocks?.[idx]) return;
+      if (!currentDynamicPage.blocks[idx].props) currentDynamicPage.blocks[idx].props = {};
+      const titles = val.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+      currentDynamicPage.blocks[idx].props.tabs = titles.map((title, i) => ({
+        id: `tab_${i + 1}`,
+        title: title,
+        label: title
+      }));
+      renderSimulator();
     }
 
     // 积木属性修改
@@ -1787,7 +2117,29 @@
         style: { border_radius: '28rpx', glass_blur: true }
       };
 
-      if (type === 'media_hero') {
+      if (type === 'custom' || type === 'custom_block') {
+        newBlock.props = {
+          title: '自由卡片标题',
+          badge: '推荐',
+          content: '这是一段支持任意配置的正文介绍内容，支持绑定点击跳转与图文展示。',
+          btn_text: '立即了解'
+        };
+        newBlock.action = {
+          type: 'toast',
+          payload: { text: '操作已触发' }
+        };
+      } else if (type === 'image') {
+        newBlock.props = {
+          image_url: '',
+          aspect_ratio: '16:9'
+        };
+      } else if (type === 'text') {
+        newBlock.props = {
+          text: '这是一段可以通过后台自由修改的文本说明内容。',
+          font_size: 14,
+          color: '#ffffff'
+        };
+      } else if (type === 'media_hero') {
         newBlock.props = {
           title: '精彩短剧',
           subtitle: '高清全集 · 爆款首播',
@@ -1831,6 +2183,94 @@
           type: 'toast',
           payload: { text: '查询服务已受理' }
         };
+      } else if (type === 'container' || type === 'stack') {
+        newBlock.props = {
+          direction: 'column',
+          gap: '16rpx',
+          align: 'stretch',
+          children: [
+            { id: `text_${Date.now()}_1`, type: 'text', props: { text: '容器内子文本 1', font_size: 14 } },
+            { id: `text_${Date.now()}_2`, type: 'text', props: { text: '容器内子文本 2', font_size: 13, color: 'rgba(255,255,255,0.7)' } }
+          ]
+        };
+      } else if (type === 'grid') {
+        newBlock.props = {
+          columns: 2,
+          gap: '16rpx',
+          children: [
+            { id: `custom_${Date.now()}_1`, type: 'custom', props: { title: '网格卡片 1', content: '卡片介绍 A' } },
+            { id: `custom_${Date.now()}_2`, type: 'custom', props: { title: '网格卡片 2', content: '卡片介绍 B' } }
+          ]
+        };
+      } else if (type === 'tabs') {
+        newBlock.props = {
+          tabs: [
+            { id: 'tab_1', title: '精选' },
+            { id: 'tab_2', title: '全部' }
+          ],
+          default_index: 0,
+          children: [
+            { id: `text_${Date.now()}_tab`, type: 'text', props: { text: '分段标签内容展示区域', font_size: 14 } }
+          ]
+        };
+      } else if (type === 'carousel') {
+        newBlock.props = {
+          autoplay: true,
+          interval: 3000,
+          loop: true,
+          dots: true,
+          items: [
+            { image_url: 'https://images.unsplash.com/photo-1579202673506-ca3ce28943ef?w=800&auto=format&fit=crop&q=80', title: '轮播图 1' },
+            { image_url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800&auto=format&fit=crop&q=80', title: '轮播图 2' }
+          ]
+        };
+      } else if (type === 'video') {
+        newBlock.props = {
+          video_url: '',
+          poster: '',
+          controls: true,
+          autoplay: false,
+          loop: false
+        };
+      } else if (type === 'spacer') {
+        newBlock.props = {
+          height: '24rpx'
+        };
+      } else if (type === 'empty') {
+        newBlock.props = {
+          title: '暂无更多内容',
+          description: '敬请期待精彩更新'
+        };
+      } else if (type === 'skeleton') {
+        newBlock.props = {
+          skeleton_type: 'card',
+          rows: 3
+        };
+      } else if (type === 'episode_list') {
+        newBlock.props = {
+          title: '选集播放',
+          total: 60,
+          locked_from: 6
+        };
+      } else if (type === 'item_grid') {
+        newBlock.props = {
+          title: '推荐功能',
+          columns: 4,
+          items: [
+            { id: 'item_1', title: '新手专区', badge: '热门' },
+            { id: 'item_2', title: '每日礼包', badge: '免费' },
+            { id: 'item_3', title: '积分兑换', badge: '' },
+            { id: 'item_4', title: '在线客服', badge: '' }
+          ]
+        };
+      } else if (type === 'timeline') {
+        newBlock.props = {
+          title: '更新历程',
+          nodes: [
+            { id: 'node_1', title: '版本 1.0 发布', desc: '全新架构上线', time: '2026-09-01', active: true },
+            { id: 'node_2', title: '版本 2.0 迭代', desc: '支持 SDUI 动态积木引擎', time: '2026-09-07', active: true }
+          ]
+        };
       }
 
       currentDynamicPage.blocks.push(newBlock);
@@ -1852,11 +2292,607 @@
     }
 
     // 4. iPhone 12/13 Pro 模拟器实时同构渲染引擎
+    // 维护模拟器内部各 Tabs 激活索引状态
+    window.simTabState = window.simTabState || {};
+    window.switchSimTab = function(tabId, idx) {
+      window.simTabState[tabId] = idx;
+      renderSimulator();
+    };
+
+    // 递归同构渲染模拟器积木节点 (支持 Stack/Container/Grid/Tabs/Carousel 嵌套与全原子积木)
+    function renderSimulatorNode(b, depth = 0) {
+      if (!b || !b.type) return '';
+      if (depth > 16) return '';
+      const p = b.props || {};
+
+      if (b.type === 'container' || b.type === 'stack' || b.type === 'list') {
+        const isOverlap = p.mode === 'overlap' || p.mode === 'zstack' || p.layout === 'overlap';
+        const direction = p.direction || p.flex_direction || 'column';
+        const gap = p.gap || '12px';
+        const align = p.align || p.align_items || 'stretch';
+        const children = p.children || p.items || p.blocks || [];
+
+        if (isOverlap) {
+          return `
+            <div style="display:grid; grid-template-areas:'stack'; position:relative; width:100%; padding:${escapeHtml(b.style?.padding || '0')}; background:${escapeHtml(b.style?.background || 'transparent')}; border-radius:${escapeHtml(b.style?.border_radius || '18px')}; overflow:hidden;">
+              ${Array.isArray(children) && children.length > 0
+                ? children.map((child, i) => {
+                    const cp = child.props || {};
+                    const cs = child.style || {};
+                    const alignSelf = cp.align_self || cp.alignSelf || cs.align_self || '';
+                    const justifySelf = cp.justify_self || cp.justifySelf || cs.justify_self || '';
+                    const isFloating = alignSelf || justifySelf || cp.width;
+                    const w = cp.width ? (typeof cp.width === 'number' ? cp.width + 'px' : escapeHtml(cp.width)) : (isFloating ? 'auto' : '100%');
+                    const h = cp.height ? (typeof cp.height === 'number' ? cp.height + 'px' : escapeHtml(cp.height)) : (isFloating ? 'auto' : '100%');
+                    const hasAction = child.action || child.events || cp.action || cp.btn_action || cp.card_action;
+                    return `<div style="grid-area:1/1; width:${w}; height:${h}; align-self:${escapeHtml(alignSelf || 'stretch')}; justify-self:${escapeHtml(justifySelf || 'stretch')}; z-index:${cs.z_index || (i + 1)}; pointer-events:${hasAction ? 'auto' : 'none'};"><div style="pointer-events:auto; width:100%; height:100%;">${renderSimulatorNode(child, depth + 1)}</div></div>`;
+                  }).join('')
+                : '<div style="grid-area:1/1; padding:16px; border:1px dashed rgba(255,255,255,0.15); border-radius:12px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center; width:100%;">📦 弹性重叠容器 (暂无子积木)</div>'
+              }
+            </div>
+          `;
+        }
+
+        return `
+          <div style="display:flex; flex-direction:${escapeHtml(direction)}; flex-wrap:${direction === 'row' && p.flex_wrap !== false ? 'wrap' : 'nowrap'}; gap:${escapeHtml(gap)}; align-items:${escapeHtml(align)}; width:100%; padding:${escapeHtml(b.style?.padding || '0')}; background:${escapeHtml(b.style?.background || 'transparent')}; border-radius:${escapeHtml(b.style?.border_radius || '18px')};">
+            ${Array.isArray(children) && children.length > 0
+              ? children.map(child => `<div style="flex:${escapeHtml(p.item_flex || (direction === 'row' ? '1 1 auto' : 'none'))}; width:${direction === 'row' ? 'auto' : '100%'};">${renderSimulatorNode(child, depth + 1)}</div>`).join('')
+              : '<div style="padding:16px; border:1px dashed rgba(255,255,255,0.15); border-radius:12px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center; width:100%;">📦 弹性堆叠容器 (暂无子积木)</div>'
+            }
+          </div>
+        `;
+      }
+
+      if (b.type === 'grid') {
+        const cols = Number(p.columns) || 2;
+        const gap = p.gap || '12px';
+        const alignItems = p.align_items || p.alignItems || 'stretch';
+        const justifyItems = p.justify_items || p.justifyItems || 'stretch';
+        const children = p.children || p.items || p.blocks || [];
+        return `
+          <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:${escapeHtml(gap)}; align-items:${escapeHtml(alignItems)}; justify-items:${escapeHtml(justifyItems)}; width:100%;">
+            ${Array.isArray(children) && children.length > 0
+              ? children.map(child => `<div>${renderSimulatorNode(child, depth + 1)}</div>`).join('')
+              : '<div style="grid-column:1/-1; padding:16px; border:1px dashed rgba(255,255,255,0.15); border-radius:12px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">📐 网格布局容器 (暂无子积木)</div>'
+            }
+          </div>
+        `;
+      }
+
+      if (b.type === 'tabs') {
+        const rawTabs = p.tabs || p.items || [];
+        const tabs = Array.isArray(rawTabs) ? rawTabs : [];
+        const tabId = b.id || ('tabs_' + depth);
+        const activeIdx = window.simTabState[tabId] !== undefined ? window.simTabState[tabId] : 0;
+        const currentTab = tabs[activeIdx] || tabs[0] || {};
+        const activeChildren = currentTab.blocks || currentTab.children || (currentTab.child ? [currentTab.child] : []);
+        return `
+          <div style="width:100%;">
+            <div style="display:flex; gap:8px; background:rgba(255,255,255,0.06); padding:4px; border-radius:999px; margin-bottom:12px; overflow-x:auto;">
+              ${tabs.length > 0
+                ? tabs.map((tab, idx) => `<div onclick="switchSimTab('${escapeHtml(tabId)}', ${idx})" style="cursor:pointer; padding:5px 14px; border-radius:999px; font-size:11px; font-weight:700; background:${idx === activeIdx ? 'var(--accent-gradient)' : 'transparent'}; color:#fff; white-space:nowrap; transition:all 0.2s;">${escapeHtml(tab.title || tab.label || `标签 ${idx+1}`)}</div>`).join('')
+                : '<div style="padding:5px 14px; border-radius:999px; font-size:11px; background:var(--accent-gradient); color:#fff;">精选</div>'
+              }
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              ${Array.isArray(activeChildren) && activeChildren.length > 0
+                ? activeChildren.map(child => renderSimulatorNode(child, depth + 1)).join('')
+                : '<div style="padding:16px; border:1px dashed rgba(255,255,255,0.12); border-radius:12px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">📑 选项卡当前标签内容区</div>'
+              }
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'carousel') {
+        const items = p.items || p.children || p.blocks || [];
+        const firstItem = Array.isArray(items) && items.length > 0 ? items[0] : null;
+        let firstContent = '<div style="text-align:center; color:rgba(255,255,255,0.4); font-size:11px;">🎠 轮播图视口 (共 ' + items.length + ' 帧)</div>';
+        if (firstItem) {
+          if (typeof firstItem === 'object' && firstItem.type) {
+            firstContent = renderSimulatorNode(firstItem, depth + 1);
+          } else {
+            const imgUrl = (typeof firstItem === 'object' ? (firstItem.image_url || firstItem.image || firstItem.cover_url || firstItem.src) : firstItem) || '';
+            firstContent = imgUrl ? `<img src="${escapeHtml(imgUrl)}" style="width:100%; height:100%; object-fit:cover;" />` : firstContent;
+          }
+        }
+        return `
+          <div style="position:relative; width:100%; height:${escapeHtml(p.height || '170px')}; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background:rgba(26,26,30,0.85); display:flex; flex-direction:column; justify-content:center;">
+            ${firstContent}
+            <div style="position:absolute; bottom:8px; left:0; right:0; display:flex; justify-content:center; gap:6px;">
+              <span style="width:16px; height:4px; border-radius:2px; background:#ff9f0a;"></span>
+              <span style="width:6px; height:4px; border-radius:2px; background:rgba(255,255,255,0.3);"></span>
+              <span style="width:6px; height:4px; border-radius:2px; background:rgba(255,255,255,0.3);"></span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'video') {
+        return `
+          <div style="width:100%; aspect-ratio:16/9; border-radius:16px; overflow:hidden; position:relative; background:#000; border:1px solid rgba(255,255,255,0.1);">
+            ${p.poster || p.cover_url ? `<img src="${escapeHtml(p.poster || p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : ''}
+            <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.3);">
+              <div style="width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,0.25); backdrop-filter:blur(10px); display:flex; align-items:center; justify-content:center; font-size:18px; color:#fff;">▶</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'spacer') {
+        return `<div style="height:${escapeHtml(p.height || '16px')}; width:100%;"></div>`;
+      }
+
+      if (b.type === 'empty') {
+        return `
+          <div style="padding:28px 16px; text-align:center; background:rgba(255,255,255,0.04); border-radius:18px; border:1px solid rgba(255,255,255,0.08);">
+            <div style="font-size:32px; margin-bottom:8px;">${escapeHtml(p.icon || (p.state === 'out_of_stock' ? '📦' : (p.state === 'expired' ? '⌛' : (p.state === 'offline' ? '📡' : '📭'))))}</div>
+            <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:4px;">${escapeHtml(p.title || '暂无内容')}</div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.5);">${escapeHtml(p.desc || p.message || '内容暂不可用')}</div>
+            ${p.btn_text ? `<div style="display:inline-block; margin-top:12px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15); color:#fff; font-size:11px; padding:4px 14px; border-radius:999px;">${escapeHtml(p.btn_text)}</div>` : ''}
+          </div>
+        `;
+      }
+
+      if (b.type === 'skeleton') {
+        const rows = Number(p.rows) || 3;
+        return `
+          <div style="padding:16px; background:rgba(255,255,255,0.03); border-radius:16px; border:1px solid rgba(255,255,255,0.06);">
+            ${p.hero !== false ? '<div style="height:60px; background:rgba(255,255,255,0.08); border-radius:10px; margin-bottom:12px;"></div>' : ''}
+            ${Array.from({ length: rows }).map((_, i) => `<div style="height:12px; width:${85 - i * 15}%; background:rgba(255,255,255,0.06); border-radius:6px; margin-bottom:8px;"></div>`).join('')}
+          </div>
+        `;
+      }
+
+      if (b.type === 'custom' || b.type === 'custom_block') {
+        return `
+          <div style="background:rgba(26,26,30,0.85); border-radius:18px; padding:16px; border:1px solid rgba(255,255,255,0.12); backdrop-filter:blur(20px); box-shadow:0 8px 24px rgba(0,0,0,0.45);">
+            ${p.image_url ? `<div style="height:120px; border-radius:12px; overflow:hidden; margin-bottom:10px;"><img src="${escapeHtml(p.image_url)}" style="width:100%; height:100%; object-fit:cover;" /></div>` : ''}
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '自由卡片')}</div>
+              ${p.badge ? `<div style="font-size:10px; color:#ff9f0a; background:rgba(255,159,10,0.2); padding:2px 8px; border-radius:999px;">${escapeHtml(p.badge)}</div>` : ''}
+            </div>
+            ${p.subtitle ? `<div style="font-size:10px; color:rgba(255,255,255,0.5); margin-bottom:4px;">${escapeHtml(p.subtitle)}</div>` : ''}
+            ${p.content ? `<div style="font-size:11px; color:rgba(255,255,255,0.65); line-height:1.5; margin-bottom:10px;">${escapeHtml(p.content)}</div>` : ''}
+            ${p.btn_text ? `<div style="display:flex; justify-content:flex-end;"><div style="background:var(--accent-gradient); color:#fff; font-size:11px; font-weight:700; padding:6px 16px; border-radius:999px;">${escapeHtml(p.btn_text)}</div></div>` : ''}
+          </div>
+        `;
+      }
+
+      if (b.type === 'image') {
+        return `
+          <div style="border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.08); background:#111;">
+            ${p.image_url ? `<img src="${escapeHtml(p.image_url)}" style="width:100%; display:block; object-fit:cover;" />` : '<div style="height:120px; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.3); font-size:12px;">🖼️ 等待配置图片</div>'}
+          </div>
+        `;
+      }
+
+      if (b.type === 'text' || b.type === 'rich_text') {
+        return `
+          <div style="padding:8px 4px; font-size:${escapeHtml(p.font_size || 13)}px; color:${escapeHtml(p.color || '#ffffff')}; line-height:1.6; text-align:${escapeHtml(p.align || 'left')};">
+            ${escapeHtml(p.text || p.content || '文本说明内容')}
+          </div>
+        `;
+      }
+
+      if (b.type === 'media_hero') {
+        return `
+          <div style="background:#151518; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
+            <div style="height:190px; background:#000; position:relative;">
+              ${p.cover_url ? `<img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35);">等待上传 COS 图片</div>'}
+              <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:3px 10px; border-radius:999px; font-size:10px; color:#fff;">🎬 精选热播</div>
+            </div>
+            <div style="padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '精彩短剧')}</div>
+                <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px;">${escapeHtml(p.subtitle || '')}</div>
+              </div>
+              <div style="font-size:15px; font-weight:800; color:#ff9f0a;">★ ${escapeHtml(p.rating || '9.8')}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'resource_card') {
+        const channels = p.channels || p.pan_list || [];
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px; backdrop-filter:blur(20px);">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <div style="background:linear-gradient(135deg,#ff9f0a,#ff453a); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px;">${escapeHtml(p.pan_name || '网盘直达')}</div>
+              <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || '网盘极速看全集')}</div>
+            </div>
+            ${Array.isArray(channels) && channels.length > 1
+              ? `<div style="display:flex; gap:6px; margin-bottom:10px;">${channels.map((ch, i) => `<span style="font-size:9px; padding:2px 8px; border-radius:999px; background:${i === 0 ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.1)'}; color:#fff;">${escapeHtml(ch.name || `渠道 ${i+1}`)}</span>`).join('')}</div>`
+              : ''
+            }
+            <div style="font-size:11px; color:rgba(255,255,255,0.6); margin-bottom:12px;">${escapeHtml(p.desc || '高清未删减版 免费自取')}</div>
+            <div style="background:rgba(0,0,0,0.3); border-radius:12px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:11px; color:#ff9f0a; font-weight:600;">提取码: ${escapeHtml(p.fetch_code || '直接访问')}</div>
+              <div style="background:var(--accent-gradient); color:#fff; font-size:11px; font-weight:700; padding:5px 14px; border-radius:999px;">复制</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'action_button') {
+        return `
+          <div style="width:100%; height:46px; border-radius:999px; background:var(--accent-gradient); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; font-weight:700; box-shadow:0 6px 18px rgba(255,159,10,0.4); position:relative;">
+            <span>${escapeHtml(p.text || '立即前往')}</span>
+            ${p.badge ? `<span style="position:absolute; top:-6px; right:16px; background:#30d158; color:#fff; font-size:9px; padding:2px 8px; border-radius:999px;">${escapeHtml(p.badge)}</span>` : ''}
+          </div>
+        `;
+      }
+
+      if (b.type === 'notice') {
+        return `
+          <div style="background:rgba(255,159,10,0.15); border:1px solid rgba(255,159,10,0.3); border-radius:12px; padding:8px 12px; display:flex; align-items:center; gap:8px; font-size:11px; color:#ff9f0a;">
+            <span>📢</span>
+            <span>${escapeHtml(p.text || p.content || '')}</span>
+          </div>
+        `;
+      }
+
+      if (b.type === 'game_card') {
+        return `
+          <div style="background:#14161d; border-radius:18px; overflow:hidden; border:1px solid rgba(48,209,88,0.3); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
+            <div style="height:150px; background:#000; position:relative;">
+              ${p.cover_url ? `<img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35);">等待上传 COS 图片</div>'}
+              <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.65); padding:3px 10px; border-radius:999px; font-size:10px; color:#30d158; font-weight:700;">🎮 官方公测</div>
+            </div>
+            <div style="padding:12px 14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '游戏名称')}</div>
+                <div style="font-size:10px; color:rgba(255,255,255,0.5);">${escapeHtml(p.version || '')}</div>
+              </div>
+              <div style="background:rgba(0,0,0,0.4); border-radius:10px; padding:8px 12px; border:1px dashed rgba(48,209,88,0.4); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:9px; color:rgba(255,255,255,0.4);">礼包码</div>
+                  <div style="font-size:14px; font-weight:800; color:#30d158; letter-spacing:1px;">${escapeHtml(p.redeem_code || 'VIP888')}</div>
+                </div>
+                <div style="background:linear-gradient(135deg,#30d158,#00c7be); color:#000; font-size:10px; font-weight:700; padding:4px 12px; border-radius:999px;">复制</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'form') {
+        return `
+          <div style="background:rgba(26,26,30,0.8); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px;">
+            <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:12px;">${escapeHtml(p.title || '信息查询')}</div>
+            <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:10px 12px; color:rgba(255,255,255,0.4); font-size:12px; margin-bottom:12px;">
+              ${escapeHtml(p.placeholder || '请输入查询内容')}
+            </div>
+            <div style="background:linear-gradient(135deg,#0a84ff,#5e5ce6); height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700;">
+              ${escapeHtml(p.btn_text || '立即查询')}
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'episode_list') {
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
+            <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '选集列表')} (全 ${escapeHtml(p.total_episodes || 80)} 集)</div>
+            <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;">
+              <span style="background:var(--accent); color:#000; font-weight:700; padding:4px 10px; border-radius:6px; font-size:11px;">1</span>
+              <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">2</span>
+              <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">3</span>
+              <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">...</span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'item_grid') {
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
+            <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '推荐项目')}</div>
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; font-size:11px; color:#fff;">
+              <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 1</div>
+              <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 2</div>
+              <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 3</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'timeline') {
+        const rawNodes = p.nodes || p.items || [];
+        const nodes = Array.isArray(rawNodes) && rawNodes.length > 0 ? rawNodes : [{ title: '初始化动态', time: '10:00' }];
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
+            <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '时间线始末')}</div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.6); padding-left:12px; border-left:2px solid var(--accent); display:flex; flex-direction:column; gap:8px;">
+              ${nodes.map(n => `<div><span style="color:#ff9f0a; margin-right:6px;">${escapeHtml(n.time || '')}</span><span style="color:#fff; font-weight:600;">${escapeHtml(n.title || '')}</span>${n.content ? `<div style="color:rgba(255,255,255,0.5); font-size:10px; margin-top:2px;">${escapeHtml(n.content)}</div>` : ''}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'score_panel') {
+        const score = p.score !== undefined ? p.score : (p.total_score !== undefined ? p.total_score : '98.5');
+        const level = p.level ? `Lv.${p.level}` : (p.badge || '');
+        const items = Array.isArray(p.items) ? p.items : [];
+        return `
+          <div style="background:linear-gradient(135deg,rgba(255,255,255,0.08) 0%,rgba(255,255,255,0.02) 100%); border:1px solid rgba(255,255,255,0.12); border-radius:18px; padding:16px; backdrop-filter:blur(20px);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                ${p.avatar_url || p.icon_url ? `<img src="${escapeHtml(p.avatar_url || p.icon_url)}" style="width:32px; height:32px; border-radius:50%; border:1px solid rgba(255,255,255,0.3); object-fit:cover;" />` : ''}
+                <div>
+                  <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || '当前战力评分')}</div>
+                  ${p.subtitle || p.rank ? `<div style="font-size:10px; color:rgba(255,255,255,0.5);">${escapeHtml(p.subtitle || `全区排名: ${p.rank}`)}</div>` : ''}
+                </div>
+              </div>
+              ${level ? `<div style="font-size:11px; font-weight:700; color:#ff9f0a; background:rgba(255,159,10,0.2); padding:2px 8px; border-radius:999px;">${escapeHtml(level)}</div>` : ''}
+            </div>
+            <div style="display:flex; align-items:baseline; gap:4px; margin-bottom:12px;">
+              <div style="font-size:36px; font-weight:800; color:#fff; line-height:1; letter-spacing:-1px;">${escapeHtml(score)}</div>
+              ${p.unit ? `<div style="font-size:12px; color:rgba(255,255,255,0.6);">${escapeHtml(p.unit)}</div>` : ''}
+            </div>
+            ${items.length > 0 ? `
+              <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; background:rgba(0,0,0,0.25); border-radius:10px; padding:8px 6px; text-align:center;">
+                ${items.map((it, idx) => `<div><div style="font-size:10px; color:rgba(255,255,255,0.45);">${escapeHtml(it.label || it.name || `指标${idx+1}`)}</div><div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(it.value || it.val || '--')}</div></div>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      if (b.type === 'coupon_card' || b.type === 'redeem_code_card') {
+        const discount = p.discount || p.amount || (p.redeem_code || p.code ? '兑换码' : '特惠');
+        const code = p.redeem_code || p.code || '';
+        const btnText = p.btn_text || (code ? '一键复制' : '立即领取');
+        return `
+          <div style="display:flex; background:linear-gradient(135deg,rgba(30,30,36,0.9) 0%,rgba(20,20,24,0.95) 100%); border:1px solid rgba(255,255,255,0.12); border-radius:16px; overflow:hidden;">
+            <div style="flex:0 0 90px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 6px; background:linear-gradient(135deg,rgba(255,159,10,0.15),rgba(255,69,58,0.15));">
+              <div style="font-size:20px; font-weight:800; color:#ff9f0a; line-height:1;">${p.amount && !p.discount ? '¥' : ''}${escapeHtml(discount)}</div>
+              ${p.min_spend ? `<div style="font-size:9px; color:rgba(255,255,255,0.5); margin-top:4px;">${escapeHtml(p.min_spend)}</div>` : ''}
+            </div>
+            <div style="position:relative; width:10px; display:flex; flex-direction:column; align-items:center; justify-content:space-between;">
+              <div style="width:12px; height:12px; border-radius:50%; background:#000; position:absolute; top:-6px;"></div>
+              <div style="width:1px; height:100%; border-left:1px dashed rgba(255,255,255,0.2);"></div>
+              <div style="width:12px; height:12px; border-radius:50%; background:#000; position:absolute; bottom:-6px;"></div>
+            </div>
+            <div style="flex:1; display:flex; justify-content:space-between; align-items:center; padding:12px 14px;">
+              <div>
+                <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || '专属优惠特权')}</div>
+                <div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:2px;">${escapeHtml(p.desc || '即领即用')}</div>
+                ${p.valid_until || p.expire_time ? `<div style="font-size:9px; color:rgba(255,255,255,0.35); margin-top:2px;">有效期至: ${escapeHtml(p.valid_until || p.expire_time)}</div>` : ''}
+              </div>
+              <div style="padding:6px 14px; background:var(--accent-gradient); border-radius:999px; font-size:11px; font-weight:700; color:#fff; white-space:nowrap;">${escapeHtml(btnText)}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'countdown') {
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <div style="font-size:13px; font-weight:700; color:#fff;">⏱️ ${escapeHtml(p.title || '活动倒计时')}</div>
+              ${p.subtitle ? `<div style="font-size:10px; color:rgba(255,255,255,0.45);">${escapeHtml(p.subtitle)}</div>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
+              <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:4px 8px; font-size:16px; font-weight:800; color:#ff9f0a;">02 <span style="font-size:10px; color:rgba(255,255,255,0.5);">天</span></div>
+              <span style="color:rgba(255,255,255,0.4); font-weight:700;">:</span>
+              <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:4px 8px; font-size:16px; font-weight:800; color:#ff9f0a;">14 <span style="font-size:10px; color:rgba(255,255,255,0.5);">时</span></div>
+              <span style="color:rgba(255,255,255,0.4); font-weight:700;">:</span>
+              <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:4px 8px; font-size:16px; font-weight:800; color:#ff9f0a;">35 <span style="font-size:10px; color:rgba(255,255,255,0.5);">分</span></div>
+              <span style="color:rgba(255,255,255,0.4); font-weight:700;">:</span>
+              <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:4px 8px; font-size:16px; font-weight:800; color:#ff9f0a;">58 <span style="font-size:10px; color:rgba(255,255,255,0.5);">秒</span></div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'server_status') {
+        const st = String(p.status || 'normal').toLowerCase();
+        let color = '#30d158';
+        let label = '运行流畅';
+        if (st === 'busy' || st === 'crowded') { color = '#ff9f0a'; label = '服务繁忙'; }
+        else if (st === 'full') { color = '#ff453a'; label = '已爆满'; }
+        else if (st === 'maintenance' || st === 'offline') { color = '#8e8e93'; label = '停服维护'; }
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:14px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <div style="width:8px; height:8px; border-radius:50%; background:${color}; box-shadow:0 0 8px ${color};"></div>
+                <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.server_name || p.name || '亚太核心主节点')}</div>
+                <div style="font-size:9px; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">${escapeHtml(p.region || '亚太华南')}</div>
+              </div>
+              <div style="font-size:11px; color:${color}; font-weight:600;">${label} <span style="color:rgba(255,255,255,0.3); margin:0 4px;">·</span> <span style="color:rgba(255,255,255,0.5);">延迟 ${escapeHtml(p.latency || 18)}ms</span></div>
+            </div>
+            <div style="padding:5px 14px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15); border-radius:999px; font-size:11px; font-weight:600; color:#fff;">${escapeHtml(p.btn_text || '切换节点')}</div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'product_card') {
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; overflow:hidden;">
+            ${p.image_url ? `<div style="height:150px; background:#000; position:relative;"><img src="${escapeHtml(p.image_url)}" style="width:100%; height:100%; object-fit:cover;" />${p.tag ? `<div style="position:absolute; top:8px; left:8px; background:rgba(255,69,58,0.85); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px;">${escapeHtml(p.tag)}</div>` : ''}</div>` : ''}
+            <div style="padding:12px 14px;">
+              <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '精品周边')}</div>
+              ${p.subtitle ? `<div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px; margin-bottom:8px;">${escapeHtml(p.subtitle)}</div>` : ''}
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                <div style="display:flex; align-items:baseline; gap:2px;">
+                  <span style="font-size:12px; font-weight:700; color:#ff453a;">¥</span>
+                  <span style="font-size:20px; font-weight:800; color:#ff453a;">${escapeHtml(p.price !== undefined ? p.price : '9.9')}</span>
+                  ${p.original_price ? `<span style="font-size:11px; color:rgba(255,255,255,0.35); text-decoration:line-through; margin-left:4px;">¥${escapeHtml(p.original_price)}</span>` : ''}
+                </div>
+                <div style="padding:6px 16px; background:var(--accent-gradient); border-radius:999px; font-size:11px; font-weight:700; color:#fff;">${escapeHtml(p.btn_text || '立即购买')}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'download_card') {
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:14px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              ${p.icon_url || p.image_url ? `<img src="${escapeHtml(p.icon_url || p.image_url)}" style="width:48px; height:48px; border-radius:12px; border:1px solid rgba(255,255,255,0.15); object-fit:cover;" />` : '<div style="width:48px; height:48px; border-radius:12px; background:rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; font-size:20px;">📦</div>'}
+              <div style="flex:1;">
+                <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.name || p.title || '官方客户端')}</div>
+                <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+                  ${p.version ? `<span style="font-size:10px; color:rgba(255,255,255,0.5);">v${escapeHtml(p.version)}</span>` : ''}
+                  ${p.size ? `<span style="font-size:10px; color:rgba(255,255,255,0.5);">${escapeHtml(p.size)}</span>` : ''}
+                  <span style="font-size:9px; color:#30d158; background:rgba(48,209,88,0.15); padding:1px 6px; border-radius:4px; font-weight:600;">${escapeHtml(p.platform || '通用')}</span>
+                </div>
+              </div>
+              <div style="padding:6px 18px; background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.2); border-radius:999px; font-size:12px; font-weight:700; color:#2997ff;">${escapeHtml(p.btn_text || '获取')}</div>
+            </div>
+            ${p.desc ? `<div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:8px; line-height:1.4;">${escapeHtml(p.desc)}</div>` : ''}
+          </div>
+        `;
+      }
+
+      if (b.type === 'result_table') {
+        const columns = Array.isArray(p.columns) ? p.columns : [{ title: '项目', key: 'name' }, { title: '数据', key: 'value' }];
+        const rows = Array.isArray(p.rows || p.data || p.items) ? (p.rows || p.data || p.items) : [
+          { name: '综合战力', value: '9,850' },
+          { name: '全区胜率', value: '78.2%' },
+          { name: '天梯等级', value: '传奇宗师' }
+        ];
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:16px; overflow:hidden;">
+            ${p.title ? `<div style="padding:12px 14px 8px; font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title)}</div>` : ''}
+            <div style="display:grid; grid-template-columns:repeat(${columns.length}, 1fr); padding:8px 12px; background:rgba(255,255,255,0.06); font-size:10px; font-weight:700; color:rgba(255,255,255,0.6);">
+              ${columns.map(c => `<div>${escapeHtml(c.title || c.label || '')}</div>`).join('')}
+            </div>
+            <div style="font-size:11px;">
+              ${rows.map((r, i) => `
+                <div style="display:grid; grid-template-columns:repeat(${columns.length}, 1fr); padding:9px 12px; border-top:1px solid rgba(255,255,255,0.04); background:${i % 2 === 1 ? 'rgba(255,255,255,0.02)' : 'transparent'}; color:#fff;">
+                  ${columns.map(c => `<div>${escapeHtml(r[c.key || c.dataIndex] !== undefined ? String(r[c.key || c.dataIndex]) : (r[c.title] || '--'))}</div>`).join('')}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'contact_card') {
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:14px; display:flex; align-items:center; gap:12px;">
+            ${p.avatar_url || p.icon_url ? `<img src="${escapeHtml(p.avatar_url || p.icon_url)}" style="width:44px; height:44px; border-radius:50%; object-fit:cover; border:1px solid rgba(255,255,255,0.2);" />` : '<div style="width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; font-size:20px;">💬</div>'}
+            <div style="flex:1;">
+              <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || p.name || '官方在线客服')}</div>
+              <div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:2px;">${escapeHtml(p.desc || p.subtitle || '工作时间 09:00 - 22:00 即时响应')}</div>
+            </div>
+            <div style="padding:6px 14px; background:var(--accent-gradient); border-radius:999px; font-size:11px; font-weight:700; color:#fff;">${escapeHtml(p.btn_text || '立即咨询')}</div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'map_card') {
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; overflow:hidden;">
+            <div style="height:110px; background:linear-gradient(135deg, #1c2331, #2e3a59); display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;">
+              <div style="font-size:28px;">📍</div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.7); margin-top:4px;">${escapeHtml(p.address || '高新科技园区核心大厦')}</div>
+            </div>
+            <div style="padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || '活动目的地')}</div>
+                <div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:2px;">${escapeHtml(p.subtitle || '距离当前位置 1.2km')}</div>
+              </div>
+              <div style="padding:6px 14px; background:linear-gradient(135deg,#0a84ff,#0071e3); border-radius:999px; font-size:11px; font-weight:700; color:#fff;">导航直达</div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'game_header') {
+        return `
+          <div style="position:relative; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); box-shadow:0 8px 24px rgba(0,0,0,0.5); background:#111;">
+            <div style="height:160px; background:linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.85) 100%), url('${escapeHtml(p.cover_url || p.banner_url || '')}') center/cover no-repeat; display:flex; flex-direction:column; justify-content:flex-end; padding:14px;">
+              <div style="display:flex; align-items:flex-end; gap:12px;">
+                ${p.logo_url ? `<img src="${escapeHtml(p.logo_url)}" style="width:52px; height:52px; border-radius:12px; border:2px solid rgba(255,255,255,0.4); object-fit:cover; box-shadow:0 4px 12px rgba(0,0,0,0.5);" />` : ''}
+                <div style="flex:1;">
+                  <div style="font-size:16px; font-weight:800; color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.6);">${escapeHtml(p.title || '史诗奇幻纪元')}</div>
+                  <div style="font-size:11px; color:rgba(255,255,255,0.75); margin-top:2px;">${escapeHtml(p.subtitle || '全平台公测火爆开启')}</div>
+                </div>
+                <div style="padding:6px 16px; background:linear-gradient(135deg,#30d158,#00c7be); border-radius:999px; font-size:12px; font-weight:800; color:#000;">${escapeHtml(p.btn_text || '立即开玩')}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'event_card') {
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; overflow:hidden;">
+            ${p.cover_url ? `<div style="height:120px; background:#000; position:relative;"><img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" /><div style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65); padding:2px 8px; border-radius:999px; font-size:10px; color:#ff9f0a; font-weight:700;">🔥 ${escapeHtml(p.badge || '进行中')}</div></div>` : ''}
+            <div style="padding:12px 14px;">
+              <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '狂欢庆典专属活动')}</div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:4px;">时间: ${escapeHtml(p.time_range || p.time || '2026-09-01 至 2026-09-15')}</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+                <div style="font-size:11px; color:#ff9f0a; font-weight:600;">${escapeHtml(p.reward || p.tag || '参与赢取限定徽章与道具')}</div>
+                <div style="padding:5px 14px; background:var(--accent-gradient); border-radius:999px; font-size:11px; font-weight:700; color:#fff;">${escapeHtml(p.btn_text || '参与活动')}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'poll') {
+        const options = Array.isArray(p.options) ? p.options : [
+          { id: '1', label: '天命战士', votes: 1240, percent: '62%' },
+          { id: '2', label: '秘法神使', votes: 760, percent: '38%' }
+        ];
+        return `
+          <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:14px;">
+            <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:4px;">📊 ${escapeHtml(p.title || '你最喜爱的新职业')}</div>
+            ${p.subtitle ? `<div style="font-size:10px; color:rgba(255,255,255,0.5); margin-bottom:10px;">${escapeHtml(p.subtitle)}</div>` : ''}
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+              ${options.map(opt => `
+                <div style="position:relative; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:8px 12px; overflow:hidden; display:flex; justify-content:space-between; align-items:center;">
+                  <div style="position:absolute; left:0; top:0; bottom:0; width:${escapeHtml(opt.percent || '50%')}; background:linear-gradient(90deg, rgba(255,159,10,0.25), rgba(255,69,58,0.25)); z-index:1;"></div>
+                  <span style="position:relative; z-index:2; font-size:11px; font-weight:600; color:#fff;">${escapeHtml(opt.label || opt.text || '')}</span>
+                  <span style="position:relative; z-index:2; font-size:10px; font-weight:700; color:#ff9f0a;">${escapeHtml(opt.percent || '')}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      if (b.type === 'feed_list') {
+        const feeds = Array.isArray(p.items || p.feeds) ? (p.items || p.feeds) : [
+          { author: '短剧先锋', time: '10分钟前', text: '最新剧集高能反转太精彩了！必看神作。', likes: 128 },
+          { author: '热词探索者', time: '1小时前', text: 'SDUI 动态积木更新后渲染速度极快，体验太棒了。', likes: 256 }
+        ];
+        return `
+          <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:14px;">
+            <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:10px;">💬 ${escapeHtml(p.title || '最新社区动态')}</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              ${feeds.map(f => `
+                <div style="padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <span style="font-size:11px; font-weight:700; color:#ff9f0a;">${escapeHtml(f.author || '匿名社友')}</span>
+                    <span style="font-size:9px; color:rgba(255,255,255,0.4);">${escapeHtml(f.time || '')}</span>
+                  </div>
+                  <div style="font-size:11px; color:rgba(255,255,255,0.75); line-height:1.4;">${escapeHtml(f.text || f.content || '')}</div>
+                  <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:4px; font-size:10px; color:rgba(255,255,255,0.45);">
+                    <span>👍 ${escapeHtml(f.likes !== undefined ? String(f.likes) : '0')}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      return `<div style="padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">积木: ${escapeHtml(b.type)}</div>`;
+    }
+
+    // 渲染 iPhone 12/13 Pro 真实同构模拟器
     function renderSimulator() {
       if (!currentDynamicPage) return;
 
-      document.getElementById('simNavTitle').innerText = currentDynamicPage.title || '精选剧场';
-      document.getElementById('simNavPill').innerText = `模式: ${currentDynamicPage.business_type || 'drama'}`;
+      document.getElementById('simNavTitle').innerText = currentDynamicPage.title || '精选页面';
+      document.getElementById('simNavPill').innerText = `模式: ${currentDynamicPage.business_type || 'custom'}`;
 
       const container = document.getElementById('simContentBody');
       const blocks = currentDynamicPage.blocks || [];
@@ -1871,142 +2907,55 @@
         return;
       }
 
-      container.innerHTML = blocks.map(b => {
-        const p = b.props || {};
-        if (b.type === 'media_hero') {
-          return `
-            <div style="background:#151518; border-radius:18px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
-              <div style="height:190px; background:#000; position:relative;">
-                ${p.cover_url ? `<img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35);">等待上传 COS 图片</div>'}
-                <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:3px 10px; border-radius:999px; font-size:10px; color:#fff;">🎬 精选热播</div>
-              </div>
-              <div style="padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '精彩短剧')}</div>
-                  <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:2px;">${escapeHtml(p.subtitle || '')}</div>
-                </div>
-                <div style="font-size:15px; font-weight:800; color:#ff9f0a;">★ ${escapeHtml(p.rating || '9.8')}</div>
-              </div>
-            </div>
-          `;
-        }
-
-        if (b.type === 'resource_card') {
-          return `
-            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px; backdrop-filter:blur(20px);">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <div style="background:linear-gradient(135deg,#ff9f0a,#ff453a); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px;">网盘全集</div>
-                <div style="font-size:13px; font-weight:700; color:#fff;">${escapeHtml(p.title || '网盘极速看全集')}</div>
-              </div>
-              <div style="font-size:11px; color:rgba(255,255,255,0.6); margin-bottom:12px;">${escapeHtml(p.desc || '高清未删减版 免费自取')}</div>
-              <div style="background:rgba(0,0,0,0.3); border-radius:12px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-size:11px; color:#ff9f0a; font-weight:600;">提取码: ${escapeHtml(p.fetch_code || '直接访问')}</div>
-                <div style="background:var(--accent-gradient); color:#fff; font-size:11px; font-weight:700; padding:5px 14px; border-radius:999px;">复制</div>
-              </div>
-            </div>
-          `;
-        }
-
-        if (b.type === 'action_button') {
-          return `
-            <div style="width:100%; height:46px; border-radius:999px; background:var(--accent-gradient); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; font-weight:700; box-shadow:0 6px 18px rgba(255,159,10,0.4); position:relative;">
-              <span>${escapeHtml(p.text || '立即前往')}</span>
-              ${p.badge ? `<span style="position:absolute; top:-6px; right:16px; background:#30d158; color:#fff; font-size:9px; padding:2px 8px; border-radius:999px;">${escapeHtml(p.badge)}</span>` : ''}
-            </div>
-          `;
-        }
-
-        if (b.type === 'notice') {
-          return `
-            <div style="background:rgba(255,159,10,0.15); border:1px solid rgba(255,159,10,0.3); border-radius:12px; padding:8px 12px; display:flex; align-items:center; gap:8px; font-size:11px; color:#ff9f0a;">
-              <span>📢</span>
-              <span>${escapeHtml(p.text || p.content || '')}</span>
-            </div>
-          `;
-        }
-
-        if (b.type === 'game_card') {
-          return `
-            <div style="background:#14161d; border-radius:18px; overflow:hidden; border:1px solid rgba(48,209,88,0.3); box-shadow:0 8px 20px rgba(0,0,0,0.5);">
-              <div style="height:150px; background:#000; position:relative;">
-                ${p.cover_url ? `<img src="${escapeHtml(p.cover_url)}" style="width:100%; height:100%; object-fit:cover;" />` : '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35);">等待上传 COS 图片</div>'}
-                <div style="position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.65); padding:3px 10px; border-radius:999px; font-size:10px; color:#30d158; font-weight:700;">🎮 官方公测</div>
-              </div>
-              <div style="padding:12px 14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                  <div style="font-size:14px; font-weight:700; color:#fff;">${escapeHtml(p.title || '游戏名称')}</div>
-                  <div style="font-size:10px; color:rgba(255,255,255,0.5);">${escapeHtml(p.version || '')}</div>
-                </div>
-                <div style="background:rgba(0,0,0,0.4); border-radius:10px; padding:8px 12px; border:1px dashed rgba(48,209,88,0.4); display:flex; justify-content:space-between; align-items:center;">
-                  <div>
-                    <div style="font-size:9px; color:rgba(255,255,255,0.4);">礼包码</div>
-                    <div style="font-size:14px; font-weight:800; color:#30d158; letter-spacing:1px;">${escapeHtml(p.redeem_code || 'VIP888')}</div>
-                  </div>
-                  <div style="background:linear-gradient(135deg,#30d158,#00c7be); color:#000; font-size:10px; font-weight:700; padding:4px 12px; border-radius:999px;">复制</div>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-
-        if (b.type === 'form') {
-          return `
-            <div style="background:rgba(26,26,30,0.8); border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:16px;">
-              <div style="font-size:14px; font-weight:700; color:#fff; margin-bottom:12px;">${escapeHtml(p.title || '信息查询')}</div>
-              <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:10px 12px; color:rgba(255,255,255,0.4); font-size:12px; margin-bottom:12px;">
-                ${escapeHtml(p.placeholder || '请输入查询内容')}
-              </div>
-              <div style="background:linear-gradient(135deg,#0a84ff,#5e5ce6); height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700;">
-                ${escapeHtml(p.btn_text || '立即查询')}
-              </div>
-            </div>
-          `;
-        }
-
-        if (b.type === 'episode_list') {
-          return `
-            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
-              <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '选集列表')} (全 ${escapeHtml(p.total_episodes || 80)} 集)</div>
-              <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;">
-                <span style="background:var(--accent); color:#000; font-weight:700; padding:4px 10px; border-radius:6px; font-size:11px;">1</span>
-                <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">2</span>
-                <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">3</span>
-                <span style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:6px; font-size:11px;">...</span>
-              </div>
-            </div>
-          `;
-        }
-
-        if (b.type === 'item_grid') {
-          return `
-            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
-              <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '推荐项目')}</div>
-              <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; font-size:11px; color:#fff;">
-                <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 1</div>
-                <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 2</div>
-                <div style="background:rgba(255,255,255,0.05); border-radius:8px; padding:10px; text-align:center;">卡片 3</div>
-              </div>
-            </div>
-          `;
-        }
-
-        if (b.type === 'timeline') {
-          return `
-            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px;">
-              <div style="font-size:13px; font-weight:700; color:#fff; margin-bottom:8px;">${escapeHtml(p.title || '时间线始末')}</div>
-              <div style="font-size:11px; color:rgba(255,255,255,0.6); padding-left:12px; border-left:2px solid var(--accent);">
-                <div>节点 1: 初始化动态</div>
-              </div>
-            </div>
-          `;
-        }
-
-        return `<div style="padding:10px; background:rgba(255,255,255,0.05); border-radius:8px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">积木: ${escapeHtml(b.type)}</div>`;
-      }).join('');
-
+      container.innerHTML = blocks.map(b => renderSimulatorNode(b, 0)).join('');
     }
 
-    // 5. 保存并同步到线上
+    // 5. 保存草稿至草稿箱 (不影响当前线上运行版本)
+    async function saveDraftWork() {
+      if (!currentDynamicPage) {
+        showToast('请先新建页面');
+        return;
+      }
+
+      const payload = {
+        app_id: currentAppId,
+        page_id: currentPageId,
+        title: currentDynamicPage.title,
+        business_type: currentDynamicPage.business_type,
+        intent: currentDynamicPage.intent || 'watch',
+        theme: currentDynamicPage.theme,
+        accent_color: currentDynamicPage.accent_color || '#FF9F0A',
+        require_auth: !!currentDynamicPage.require_auth,
+        share_config: typeof currentDynamicPage.share_config === 'string' ? currentDynamicPage.share_config : JSON.stringify(currentDynamicPage.share_config || {}),
+        blocks: JSON.stringify(currentDynamicPage.blocks || []),
+        status: 'draft',
+        publish: false,
+        expected_revision: currentDynamicPage.revision || 0
+      };
+
+      try {
+        const res = await adminFetch('/api/v1/admin/page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          if (json.data && json.data.revision) {
+            currentDynamicPage.revision = json.data.revision;
+            const revDisplay = document.getElementById('pageRevisionDisplay');
+            if (revDisplay) revDisplay.value = `v${json.data.revision}`;
+          }
+          showToast('💾 页面协议已成功保存至草稿箱！');
+        } else {
+          showToast('❌ 保存草稿失败: ' + json.msg);
+        }
+      } catch (err) {
+        showToast('❌ 网络错误: ' + err.message);
+      }
+    }
+
+    // 5.1 受控发布上线至小程序 (触发不可篡改快照沉淀与线上 0ms 即时热生效)
     async function saveCurrentWork() {
       if (!currentDynamicPage) {
         showToast('请先新建页面');
@@ -2021,10 +2970,14 @@
         intent: currentDynamicPage.intent || 'watch',
         theme: currentDynamicPage.theme,
         accent_color: currentDynamicPage.accent_color || '#FF9F0A',
-        require_auth: currentDynamicPage.require_auth,
+        require_auth: !!currentDynamicPage.require_auth,
         share_config: typeof currentDynamicPage.share_config === 'string' ? currentDynamicPage.share_config : JSON.stringify(currentDynamicPage.share_config || {}),
         blocks: JSON.stringify(currentDynamicPage.blocks || []),
-        status: 'published'
+        status: 'published',
+        publish: true,
+        confirmed: true,
+        expected_revision: currentDynamicPage.revision || 0,
+        remark: '管理后台可视化编排保存并发布'
       };
 
       try {
@@ -2035,9 +2988,17 @@
         });
         const json = await res.json();
         if (json.code === 0) {
-          showToast('⚡ SDUI 页面协议已成功保存并下发至小程序！');
+          if (json.data && json.data.revision) {
+            currentDynamicPage.revision = json.data.revision;
+            currentDynamicPage.status = 'published';
+            const revDisplay = document.getElementById('pageRevisionDisplay');
+            if (revDisplay) revDisplay.value = `v${json.data.revision}`;
+            const statusSelect = document.getElementById('pageStatus');
+            if (statusSelect) statusSelect.value = 'published';
+          }
+          showToast('⚡ SDUI 页面协议已成功发布并同步至线上小程序！');
         } else {
-          showToast('❌ 保存失败: ' + json.msg);
+          showToast('❌ 发布失败: ' + json.msg);
         }
       } catch (err) {
         showToast('❌ 网络错误: ' + err.message);
@@ -2071,18 +3032,27 @@
     async function openTemplateModal() {
       document.getElementById('templateModal').style.display = 'flex';
       try {
-        const res = await adminFetch('/api/v1/admin/templates');
+        const res = await adminFetch(`/api/v1/admin/templates?app_id=${encodeURIComponent(currentAppId)}`);
         const json = await res.json();
         if (json.code === 0 && json.data) {
           const container = document.getElementById('templateGridContainer');
-          container.innerHTML = json.data.map(tpl => `
+          container.innerHTML = json.data.map(tpl => {
+            const encodedTemplateId = encodeURIComponent(String(tpl.template_id || '')).replace(/'/g, '%27');
+            return `
             <div class="template-card" data-template-id="${escapeHtml(tpl.template_id)}" onclick="handleApplyTemplateClick(this)">
               <span class="tpl-tag">${escapeHtml(tpl.business_type || '')} · ${escapeHtml(tpl.intent || '')}</span>
               <div class="tpl-name">${escapeHtml(tpl.name || '')}</div>
               <div class="tpl-desc">${escapeHtml(tpl.description || '')}</div>
               <div style="font-size:11px; color:var(--accent); font-weight:700; margin-top:4px;">⚡ 点击一键套用</div>
+              ${tpl.builtin ? '<div style="font-size:11px; color:var(--text-sub);">内置只读模板</div>' : `
+                <div style="display:flex; gap:8px; margin-top:4px;">
+                  <button class="btn-ctrl" style="font-size:11px; flex:1;" onclick="event.stopPropagation(); saveCurrentAsTemplate(decodeURIComponent('${encodedTemplateId}'), ${Number(tpl.revision) || 0})">更新为当前页面</button>
+                  <button class="btn-ctrl danger" style="font-size:11px;" onclick="event.stopPropagation(); deleteCustomTemplate(decodeURIComponent('${encodedTemplateId}'), ${Number(tpl.revision) || 0})">删除</button>
+                </div>
+              `}
             </div>
-          `).join('');
+          `;
+          }).join('');
         }
       } catch (e) {
         console.error('加载行业模板失败:', e);
@@ -2124,6 +3094,70 @@
         }
       } catch (e) {
         alert('套用异常: ' + e.message);
+      }
+    }
+
+    // 将当前编辑中的页面协议保存为可复用用户模板；内容格式与 MCP sdui.template.save 完全一致。
+    async function saveCurrentAsTemplate(templateId = '', expectedRevision = 0) {
+      if (!currentDynamicPage) {
+        showToast('请先新建或加载页面');
+        return;
+      }
+      const targetTemplateId = templateId || prompt('模板标识（同一小程序内唯一）', `tpl_${currentPageId || 'custom'}`);
+      if (!targetTemplateId) return;
+      const name = prompt('模板名称', `${currentDynamicPage.title || currentPageId} 模板`);
+      if (!name) return;
+      const description = prompt('模板说明', '由当前页面编排保存') || '';
+      let share = currentDynamicPage.share_config || null;
+      if (typeof share === 'string') {
+        try { share = JSON.parse(share || 'null'); } catch (e) { share = null; }
+      }
+      const payload = {
+        app_id: currentAppId,
+        template_id: targetTemplateId.trim(),
+        name: name.trim(),
+        business_type: currentDynamicPage.business_type || 'custom',
+        intent: currentDynamicPage.intent || 'watch',
+        description: description.trim(),
+        default_theme: currentDynamicPage.theme || 'dark_glass',
+        default_accent_color: currentDynamicPage.accent_color || '#FF9F0A',
+        default_blocks: currentDynamicPage.blocks || [],
+        default_share: share,
+        expected_revision: expectedRevision
+      };
+      try {
+        const res = await adminFetch('/api/v1/admin/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.code === 0) {
+          showToast(expectedRevision ? '✅ 自定义模板已更新' : '✅ 当前页面已保存为模板');
+          if (document.getElementById('templateModal').style.display === 'flex') await openTemplateModal();
+        } else {
+          showToast('❌ 保存模板失败: ' + json.msg);
+        }
+      } catch (e) {
+        showToast('❌ 保存模板异常: ' + e.message);
+      }
+    }
+
+    // 删除当前小程序内的用户模板；内置模板会由服务端拒绝。
+    async function deleteCustomTemplate(templateId, expectedRevision) {
+      if (!confirm(`确认删除模板 ${templateId}？该操作不可恢复。`)) return;
+      try {
+        const url = `/api/v1/admin/templates/${encodeURIComponent(templateId)}?app_id=${encodeURIComponent(currentAppId)}&expected_revision=${encodeURIComponent(expectedRevision)}`;
+        const res = await adminFetch(url, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.code === 0) {
+          showToast('模板已删除');
+          await openTemplateModal();
+        } else {
+          showToast('❌ 删除模板失败: ' + json.msg);
+        }
+      } catch (e) {
+        showToast('❌ 删除模板异常: ' + e.message);
       }
     }
 
@@ -2521,7 +3555,13 @@
       const tool = document.getElementById('mcpToolSelect').value;
       const inp = document.getElementById('mcpArgsInput');
       if (tool === 'sdui.template.list') {
-        inp.value = JSON.stringify({ business_type: 'game' }, null, 2);
+        inp.value = JSON.stringify({ app_id: currentAppId, business_type: 'game' }, null, 2);
+	  } else if (tool === 'sdui.template.get') {
+		inp.value = JSON.stringify({ app_id: currentAppId, template_id: 'tpl_sdui_component_lab' }, null, 2);
+	  } else if (tool === 'sdui.template.save') {
+		inp.value = JSON.stringify({ app_id: currentAppId, expected_revision: 0, template: { template_id: 'tpl_my_page', name: '我的页面模板', business_type: 'custom', intent: 'watch', default_theme: 'dark_glass', default_accent_color: '#0A84FF', default_blocks: [] } }, null, 2);
+	  } else if (tool === 'sdui.template.delete') {
+		inp.value = JSON.stringify({ app_id: currentAppId, template_id: 'tpl_my_page', expected_revision: 1 }, null, 2);
       } else if (tool === 'sdui.app.list') {
         inp.value = '{}';
       } else if (tool === 'sdui.file.prepare_upload') {

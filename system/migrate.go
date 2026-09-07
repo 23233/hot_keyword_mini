@@ -27,6 +27,7 @@ func Migrate() error {
 		&models.DynamicPage{},
 		&models.DynamicPageDraft{},
 		&models.DynamicPageRevision{},
+		&models.DynamicPageTemplate{},
 		&models.UserSession{},
 		&models.GameRedeemPackage{},
 		&models.GameRedeemRecord{},

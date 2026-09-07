@@ -1,3 +1,4 @@
+// minifront/src/components/MotionLab/index.tsx
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { View, Text, Canvas } from '@tarojs/components'
 import Taro from '@tarojs/taro'

@@ -29,10 +29,11 @@ export const ItemGridBlock: React.FC<ItemGridBlockProps> = ({ block, onAction })
   const rawItems = props.items || []
   const items: GridItem[] = Array.isArray(rawItems) ? rawItems : []
 
-  const handleItemClick = (item: GridItem) => {
+  const handleItemClick = (item: GridItem, e?: any) => {
+    e?.stopPropagation?.()
     const actionToDispatch = item.action || block.action
-    if (actionToDispatch && onAction) {
-      onAction(actionToDispatch, { item })
+    if ((actionToDispatch || block.events?.tap) && onAction) {
+      onAction(actionToDispatch, { item, actionPayload: item })
     }
   }
 
@@ -65,7 +66,7 @@ export const ItemGridBlock: React.FC<ItemGridBlockProps> = ({ block, onAction })
         {items.map((item, idx) => (
           <View
             key={item.id || idx}
-            onClick={() => handleItemClick(item)}
+            onClick={(e) => handleItemClick(item, e)}
             style={{
               background: 'rgba(255, 255, 255, 0.04)',
               borderRadius: '20rpx',
@@ -75,13 +76,34 @@ export const ItemGridBlock: React.FC<ItemGridBlockProps> = ({ block, onAction })
               flexDirection: 'column'
             }}
           >
-            {item.image_url && (
-              <Image
-                src={item.image_url}
-                mode="aspectFill"
-                style={{ width: '100%', height: columns === 2 ? '220rpx' : '160rpx' }}
-              />
-            )}
+            <View style={{ position: 'relative' }}>
+              {item.image_url && (
+                <Image
+                  src={item.image_url}
+                  mode="aspectFill"
+                  style={{ width: '100%', height: columns === 2 ? '220rpx' : '160rpx', display: 'block' }}
+                />
+              )}
+              {item.badge && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: '8rpx',
+                    right: '8rpx',
+                    background: 'rgba(0, 0, 0, 0.65)',
+                    backdropFilter: 'blur(8px)',
+                    color: '#FF9F0A',
+                    fontSize: '18rpx',
+                    fontWeight: 700,
+                    padding: '2rpx 10rpx',
+                    borderRadius: '999rpx',
+                    border: '1px solid rgba(255, 159, 10, 0.4)'
+                  }}
+                >
+                  <Text>{item.badge}</Text>
+                </View>
+              )}
+            </View>
             <View style={{ padding: '16rpx' }}>
               <Text
                 style={{

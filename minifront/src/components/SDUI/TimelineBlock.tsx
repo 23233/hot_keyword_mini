@@ -4,7 +4,7 @@ import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface TimelineBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
   context?: any
 }
 
@@ -14,17 +14,25 @@ interface TimelineNode {
   content?: string
   tag?: string
   is_active?: boolean
+  action?: BlockAction
 }
 
 /**
  * 苹果 HIG 规范时间线流转积木 (TimelineBlock)
- * 支持热点吃瓜始末、剧情脉络、剧集更新历史、活动里程碑
+ * 支持热点吃瓜始末、剧情脉络、剧集更新历史、活动里程碑与单节点交互
  */
 export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
   const title = props.title || '剧情始末'
   const rawNodes = props.nodes || props.items || []
   const nodes: TimelineNode[] = Array.isArray(rawNodes) ? rawNodes : []
+
+  const handleNodeClick = (node: TimelineNode, index: number, e: any) => {
+    if (node.action && onAction) {
+      e.stopPropagation?.()
+      onAction(node.action, { item: node, node, index, actionPayload: node, title: node.title, time: node.time })
+    }
+  }
 
   return (
     <View
@@ -50,7 +58,16 @@ export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block, onAction })
         {nodes.map((node, index) => {
           const isLast = index === nodes.length - 1
           return (
-            <View key={index} style={{ display: 'flex', gap: '20rpx', position: 'relative' }}>
+            <View
+              key={index}
+              onClick={(e) => handleNodeClick(node, index, e)}
+              style={{
+                display: 'flex',
+                gap: '20rpx',
+                position: 'relative',
+                cursor: node.action ? 'pointer' : 'default'
+              }}
+            >
               {/* 左侧垂直线与时间圆点 */}
               <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '32rpx' }}>
                 <View

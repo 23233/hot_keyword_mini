@@ -9,9 +9,11 @@
     "framework": "react"
   },
   "scripts": {
-    "build:weapp": "taro build --type weapp",
+    "build:weapp": "taro build --type weapp && node scripts/copy-agent.mjs",
     "dev:weapp": "taro build --type weapp --watch",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:sdui": "node --test --experimental-strip-types tests/condition.test.ts",
+    "test:wechat-agent": "node --test tests/wechat-agent.acceptance.test.mjs"
   },
   "dependencies": {
     "@tarojs/components": "4.2.1",

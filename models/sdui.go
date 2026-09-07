@@ -31,7 +31,7 @@ type ActionTrack struct {
 
 // BlockAction 定义原子积木组件被触发时的标准动作行为
 type BlockAction struct {
-	// 动作类型: copy_text / navigate_page / open_channels_activity / open_mini_program / preview_image / open_webview / request_data / request_payment / require_auth / toast / refresh / share / subscribe_message
+	// 动作类型: copy_text / navigate_page / open_channels_activity / open_mini_program / preview_image / open_webview / request_data / request_payment / require_auth / toast / refresh / share / subscribe_message / set_state / toggle_state / reset_state / show_error_state / show_empty_state / show_loading_state / reset_block_state
 	Type string `json:"type"`
 	// 是否必须登录后方可触发
 	RequireAuth bool `json:"require_auth,omitempty"`
@@ -45,6 +45,10 @@ type BlockAction struct {
 	OnError []BlockAction `json:"on_error,omitempty"`
 	// 数据埋点上报配置
 	Track *ActionTrack `json:"track,omitempty"`
+	// 业务端点名称 (如 game.redeem, query.score，与前端及 Schema 对齐)
+	Endpoint string `json:"endpoint,omitempty"`
+	// 相对请求地址 (如 /api/v1/action/execute)
+	Url string `json:"url,omitempty"`
 	// 动作载荷参数字典
 	Payload map[string]interface{} `json:"payload,omitempty"`
 }
@@ -262,6 +266,46 @@ func (r *DynamicPageRevision) TableName() string {
 	return "dynamic_page_revisions"
 }
 
+// DynamicPageTemplate 表示可由管理员创建、编辑和复用的 SDUI 页面模板。
+// 内置行业模板不写入该表，避免部署升级覆盖用户自定义内容。
+type DynamicPageTemplate struct {
+	// 自增主键
+	ID int64 `gorm:"column:id;primaryKey;autoIncrement;comment:自增ID" json:"id"`
+	// 所属小程序 AppID，用户模板仅可在同一租户内复用
+	AppID string `gorm:"column:app_id;size:64;not null;uniqueIndex:idx_app_template;comment:小程序AppID" json:"app_id"`
+	// 模板唯一标识，同一小程序内唯一
+	TemplateID string `gorm:"column:template_id;size:96;not null;uniqueIndex:idx_app_template;comment:模板唯一标识" json:"template_id"`
+	// 模板修订版本，供编辑与删除时进行乐观锁校验
+	Revision int `gorm:"column:revision;not null;default:1;comment:模板修订版本" json:"revision"`
+	// 模板展示名称
+	Name string `gorm:"column:name;size:128;not null;comment:模板名称" json:"name"`
+	// 适用业务类型
+	BusinessType string `gorm:"column:business_type;size:64;not null;default:'custom';comment:业务类型" json:"business_type"`
+	// 适用用户意图
+	Intent string `gorm:"column:intent;size:64;not null;default:'watch';comment:用户意图" json:"intent"`
+	// 模板使用说明
+	Description string `gorm:"column:description;size:500;comment:模板说明" json:"description"`
+	// 默认主题风格
+	Theme string `gorm:"column:theme;size:64;not null;default:'dark_glass';comment:主题风格" json:"theme"`
+	// 默认高光色
+	AccentColor string `gorm:"column:accent_color;size:32;not null;default:'#FF9F0A';comment:强调色" json:"accent_color"`
+	// 原子积木组件树 JSON
+	Blocks string `gorm:"column:blocks;type:longtext;not null;comment:积木树JSON" json:"blocks"`
+	// 页面分享配置 JSON
+	ShareConfig string `gorm:"column:share_config;type:text;comment:分享配置JSON" json:"share_config"`
+	// 最后编辑操作人
+	UpdatedBy string `gorm:"column:updated_by;size:64;default:'admin';comment:最后编辑人" json:"updated_by"`
+	// 创建时间
+	CreatedAt time.Time `gorm:"column:created_at;comment:创建时间" json:"created_at"`
+	// 更新时间
+	UpdatedAt time.Time `gorm:"column:updated_at;comment:更新时间" json:"updated_at"`
+}
+
+// TableName 自定义 DynamicPageTemplate 模型的表名。
+func (t *DynamicPageTemplate) TableName() string {
+	return "dynamic_page_templates"
+}
+
 // EnvelopeCache 响应信封中的缓存策略
 type EnvelopeCache struct {
 	// 实体标签ETag (用于条件请求比对)
@@ -372,6 +416,10 @@ type BlockLayoutNode struct {
 	BoundingBox BoundingBox `json:"bounding_box"`
 	// 是否在当前状态与条件计算下可见
 	Visible bool `json:"visible"`
+	// 受控条件可见性求值表达式 (保留至客户端用于状态响应式动态显隐)
+	VisibleWhen interface{} `json:"visible_when,omitempty"`
+	// 列表循环展开配置
+	Repeat map[string]interface{} `json:"repeat,omitempty"`
 	// 垂直外边距(像素)
 	MarginY int `json:"margin_y"`
 	// 内边距(像素)

@@ -1,3 +1,4 @@
+// Package jwtToken hidAndJwtMiddleware.go
 package jwtToken
 
 import (

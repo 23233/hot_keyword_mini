@@ -1,3 +1,4 @@
+// minifront/src/components/EpisodeGridView/index.tsx
 import React, { useState } from 'react'
 import { View, Text, Image, ScrollView } from '@tarojs/components'
 import { DramaInfo, EpisodeItem } from '../../types/drama'

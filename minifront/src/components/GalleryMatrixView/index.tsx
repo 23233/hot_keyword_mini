@@ -1,3 +1,4 @@
+// minifront/src/components/GalleryMatrixView/index.tsx
 import React, { useState } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import { DramaInfo } from '../../types/drama'

@@ -3,6 +3,7 @@ package routers
 
 import (
 	"hot_keyword/jwtToken"
+	"hot_keyword/routers/middleware"
 	"hot_keyword/services"
 	"strings"
 
@@ -21,16 +22,17 @@ type ExecuteActionReq struct {
 
 // ExecuteActionHandler 受控动作执行统一入口 (杜绝开放网络代理)
 func ExecuteActionHandler(ctx iris.Context) {
-	appID := ctx.Values().GetString("app_id")
-	if appID == "" {
+	appID, err := middleware.RequireTenantAppID(ctx)
+	if err != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
-		_ = ctx.JSON(iris.Map{"code": 400, "msg": "无法识别当前小程序租户"})
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
 		return
 	}
 
 	var req ExecuteActionReq
 	if err := ctx.ReadJSON(&req); err != nil || req.Endpoint == "" {
-		ctx.JSON(iris.Map{"code": 400, "msg": "参数错误，endpoint 不能为空"})
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "参数错误，endpoint 不能为空"})
 		return
 	}
 
@@ -54,7 +56,7 @@ func ExecuteActionHandler(ctx iris.Context) {
 	// 敏感端点要求前置登录态校验
 	if req.Endpoint == "game.redeem" && openID == "" {
 		ctx.StatusCode(iris.StatusUnauthorized)
-		ctx.JSON(iris.Map{
+		_ = ctx.JSON(iris.Map{
 			"code": 401,
 			"msg":  "执行兑换动作前必须完成微信登录授权",
 		})
@@ -65,11 +67,19 @@ func ExecuteActionHandler(ctx iris.Context) {
 	res, err := actionService.ExecuteActionEndpoint(appID, openID, req.Endpoint, req.Payload, req.IdempotencyKey)
 
 	if err != nil {
-		ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
+		status := iris.StatusInternalServerError
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "授权登录") || strings.Contains(errMsg, "登录") {
+			status = iris.StatusUnauthorized
+		} else if strings.Contains(errMsg, "不存在") || strings.Contains(errMsg, "领完") || strings.Contains(errMsg, "不能为空") || strings.Contains(errMsg, "未登记") {
+			status = iris.StatusBadRequest
+		}
+		ctx.StatusCode(status)
+		_ = ctx.JSON(iris.Map{"code": status, "msg": errMsg})
 		return
 	}
 
-	ctx.JSON(iris.Map{
+	_ = ctx.JSON(iris.Map{
 		"code": 0,
 		"msg":  "操作成功",
 		"data": res,

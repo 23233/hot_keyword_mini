@@ -47,8 +47,9 @@ export const EmptyBlock: React.FC<StateBlockProps> = ({ block, onAction }) => {
   const desc = props.desc || props.message || defaultDesc
   const btnText = props.btn_text || props.action_text || ''
 
-  const handleClick = () => {
+  const handleClick = (e: any) => {
     if (block.action || block.events?.tap) {
+      e.stopPropagation?.()
       onAction?.(block.action)
     }
   }

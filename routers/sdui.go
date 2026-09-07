@@ -16,6 +16,8 @@ import (
 func RegisterSDUIRoutes(party iris.Party) {
 	pageParty := party.Party("/page")
 	{
+		// 获取默认主页 SDUI 统一响应信封 (面向无参数路径请求，优雅兜底至 home)
+		pageParty.Get("/", GetDynamicPageHandler)
 		// 获取指定页面的 SDUI 统一响应信封 (面向微信小程序客户端公开下发)
 		pageParty.Get("/{page_id:string}", GetDynamicPageHandler)
 	}
@@ -23,7 +25,21 @@ func RegisterSDUIRoutes(party iris.Party) {
 
 // GetDynamicPageHandler 服务端驱动页面协议下发控制器 (统一响应信封、ETag 缓存、草稿隔离与登录鉴权隔离)
 func GetDynamicPageHandler(ctx iris.Context) {
-	pageID := ctx.Params().Get("page_id")
+	clientVersion := strings.TrimSpace(ctx.GetHeader("X-SDUI-Version"))
+	if clientVersion != "" && clientVersion != "1.1" {
+		ctx.StatusCode(http.StatusUpgradeRequired)
+		_ = ctx.JSON(iris.Map{
+			"code":             http.StatusUpgradeRequired,
+			"msg":              "客户端 SDUI 协议版本不兼容，请升级至 1.1",
+			"protocol_version": "1.1",
+		})
+		return
+	}
+
+	pageID := strings.TrimSpace(ctx.Params().Get("page_id"))
+	if pageID == "" {
+		pageID = strings.TrimSpace(ctx.URLParam("page_id"))
+	}
 	if pageID == "" {
 		pageID = "home"
 	}
@@ -35,10 +51,12 @@ func GetDynamicPageHandler(ctx iris.Context) {
 		return
 	}
 
-	// 收集 URL Query 参数供受控绑定消费
+	// 收集 URL Query 参数供受控绑定消费；URLParams 只包含路径参数，不能替代 Query。
 	queryParams := make(map[string]string)
-	for k, v := range ctx.URLParams() {
-		queryParams[k] = v
+	for key, values := range ctx.Request().URL.Query() {
+		if len(values) > 0 {
+			queryParams[key] = values[0]
+		}
 	}
 
 	// 检查当前访问者是否携带有效登录凭证 (严格校验会话存活态与多租户隔离)
@@ -51,8 +69,9 @@ func GetDynamicPageHandler(ctx iris.Context) {
 		}
 	}
 
+	clientCaps := strings.TrimSpace(ctx.GetHeader("X-Client-Capabilities"))
 	srv := services.NewSDUIService()
-	envelope, err := srv.GetPublishedDynamicPageEnvelope(appID, pageID, queryParams, isAuthenticated)
+	envelope, err := srv.GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pageID, queryParams, isAuthenticated, clientCaps)
 	if err != nil {
 		logger.JM.Warnf("获取动态页面协议失败: %v", err)
 		ctx.StatusCode(http.StatusNotFound)
@@ -78,6 +97,8 @@ func GetDynamicPageHandler(ctx iris.Context) {
 	}
 
 	ctx.Header("ETag", envelope.Cache.ETag)
+	// 页面内容依赖租户与客户端能力协商，公共缓存必须按这两个请求头拆分变体。
+	ctx.Header("Vary", "X-WX-AppID, X-SDUI-Version, X-Client-Capabilities")
 	ctx.Header("Cache-Control", "public, max-age=30")
 
 	// 按照统一信封结构直接返回

@@ -1,4 +1,4 @@
-// minifront/src/pages/index/index.config.ts
+// minifront/src/pages/dynamic/index.config.ts
 export default definePageConfig({
   navigationBarTitleText: '热点精选',
   enableShareAppMessage: true,
@@ -6,3 +6,4 @@ export default definePageConfig({
   enablePullDownRefresh: true,
   navigationStyle: 'custom'
 })
+

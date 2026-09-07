@@ -2,6 +2,7 @@
 import React from 'react'
 import { View, Video } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { resolveRemoteUrl } from '../../config/env'
 
 interface VideoBlockProps {
   block: BlockItem
@@ -13,8 +14,8 @@ interface VideoBlockProps {
   */
 export const VideoBlock: React.FC<VideoBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
-  const videoUrl = props.video_url || props.src || ''
-  const poster = props.poster || props.cover_url || ''
+  const videoUrl = resolveRemoteUrl(props.video_url || props.src)
+  const poster = resolveRemoteUrl(props.poster || props.cover_url)
   const autoplay = props.autoplay === true
   const controls = props.controls !== false
   const loop = props.loop === true
@@ -30,11 +31,13 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({ block, onAction }) => {
   const handleEnded = () => {
     if (props.on_ended_action && onAction) {
       onAction(props.on_ended_action)
+    } else if (block.events?.ended && onAction) {
+      onAction(undefined, { __event: 'ended' })
     }
   }
 
   return (
-    <View className="sdui-video-block" style={containerStyle}>
+    <View className="sdui-video-block" style={containerStyle} onClick={(e) => e.stopPropagation?.()}>
       <Video
         src={videoUrl}
         poster={poster}

@@ -1,3 +1,4 @@
+// minifront/src/components/ModeSwitcher/index.tsx
 import React from 'react'
 import { View, Text } from '@tarojs/components'
 import { DisplayMode } from '../../types/drama'

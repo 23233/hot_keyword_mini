@@ -48,8 +48,14 @@ func TestValidation_AllStandardBlocksAndActions(t *testing.T) {
 			return map[string]interface{}{"target_app_id": "wx516563cfe994bbc6"}
 		case "subscribe_message":
 			return map[string]interface{}{"template_id": "tmpl_test"}
-		case "request_data":
+		case "request_data", "request":
 			return map[string]interface{}{"endpoint": "game.redeem"}
+		case "request_payment":
+			return map[string]interface{}{"sku": "product_sku_matrix"}
+		case "set_state", "toggle_state":
+			return map[string]interface{}{"key": "is_open", "value": true}
+		case "show_error_state", "show_empty_state", "show_loading_state", "reset_block_state":
+			return map[string]interface{}{"target": "matrix_target"}
 		default:
 			return map[string]interface{}{}
 		}
@@ -90,6 +96,24 @@ func TestValidation_AllStandardBlocksAndActions(t *testing.T) {
 	ir, err := BuildPageLayoutIR(page, DefaultDeviceParams(), "normal")
 	if err != nil || len(ir.Nodes) != len(blocks) {
 		t.Fatalf("全部标准 block 应进入 Layout IR: err=%v nodes=%d expected=%d", err, len(ir.Nodes), len(blocks))
+	}
+}
+
+// TestValidation_StateActionsRequireTargets 验证状态动作缺少目标字段时会在发布前被阻断。
+func TestValidation_StateActionsRequireTargets(t *testing.T) {
+	page := &models.DynamicPage{
+		AppID:        "wx_state_target",
+		PageID:       "state_target",
+		Title:        "状态动作校验",
+		BusinessType: "custom",
+		Blocks: `[
+			{"id":"set","type":"action_button","action":{"type":"set_state","payload":{"value":true}}},
+			{"id":"block","type":"action_button","action":{"type":"show_error_state","payload":{}}}
+		]`,
+	}
+	report := ValidateDynamicPage(page)
+	if report.IsValid || len(report.Errors) < 2 {
+		t.Fatalf("缺失状态目标必须阻断发布: %+v", report)
 	}
 }
 
@@ -185,6 +209,24 @@ func TestEnvelopeStructure(t *testing.T) {
 	}
 	if decoded.Fallback.PageID != "home" {
 		t.Fatalf("降级页面配置错误")
+	}
+}
+
+// TestRebuildEnvelopeLayoutIRUsesCurrentBlocks 验证能力协商后的积木树会同步生成 IR，避免小程序渲染旧布局。
+func TestRebuildEnvelopeLayoutIRUsesCurrentBlocks(t *testing.T) {
+	s := NewSDUIService()
+	page := &models.DynamicPage{
+		AppID: "wx_test", PageID: "capability_page", Revision: 1, Title: "能力协商", BusinessType: "custom",
+		Blocks: `[{"id":"old_block","type":"video"}]`,
+	}
+	envelope := &models.PageResponseEnvelope{
+		Page: models.DynamicPageDTO{Blocks: []models.BlockItem{{ID: "fallback_block", Type: "text", Props: map[string]interface{}{"text": "降级内容"}}}},
+		Data: map[string]interface{}{},
+	}
+
+	s.rebuildEnvelopeLayoutIR(page, envelope)
+	if envelope.LayoutIR == nil || len(envelope.LayoutIR.Nodes) != 1 || envelope.LayoutIR.Nodes[0].ID != "fallback_block" {
+		t.Fatalf("IR 必须与协商后的积木树一致: %+v", envelope.LayoutIR)
 	}
 }
 
@@ -287,6 +329,17 @@ func TestValidation_RequestDataSecurityURL(t *testing.T) {
 	safeReport := ValidateDynamicPage(safePage)
 	if !safeReport.IsValid {
 		t.Fatalf("合法的相对路径与受控 endpoint 校验应通过: %v", safeReport.Errors)
+	}
+}
+
+// TestValidation_RequestAliasSecurityURL 验证 request 别名与 request_data 使用同一 URL 安全规则。
+func TestValidation_RequestAliasSecurityURL(t *testing.T) {
+	page := &models.DynamicPage{
+		AppID: "wx_test_app", PageID: "request_alias_sec", Title: "安全校验", BusinessType: "custom",
+		Blocks: `[{"id":"btn","type":"action_button","action":{"type":"request","payload":{"url":"https://evil.example/steal"}}}]`,
+	}
+	if report := ValidateDynamicPage(page); report.IsValid {
+		t.Fatalf("request 别名包含外部 URL 时必须被拦截")
 	}
 }
 
@@ -660,4 +713,179 @@ func TestSaveDraft_CASConflict(t *testing.T) {
 
 	// 清理测试数据
 	db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).Delete(&models.DynamicPageDraft{})
+}
+
+// TestFilterBlocksByCapabilities 验证基于客户端能力集的积木协商过滤与 Fallback 优雅降级
+func TestFilterBlocksByCapabilities(t *testing.T) {
+	blocks := []models.BlockItem{
+		{
+			ID:   "block_1",
+			Type: "text",
+			Props: map[string]interface{}{
+				"text": "Hello World",
+			},
+		},
+		{
+			ID:   "block_2_unsupported_with_fallback",
+			Type: "unsupported_vr_3d_box",
+			Props: map[string]interface{}{
+				"title": "3D全息展示",
+			},
+			Fallback: &models.BlockItem{
+				ID:   "block_2_fallback",
+				Type: "image",
+				Props: map[string]interface{}{
+					"url": "https://cdn.example.com/fallback.jpg",
+				},
+			},
+		},
+		{
+			ID:   "block_3_unsupported_no_fallback",
+			Type: "unsupported_future_widget",
+			Props: map[string]interface{}{
+				"data": "xyz",
+			},
+		},
+		{
+			ID:   "block_4_container",
+			Type: "container",
+			Props: map[string]interface{}{
+				"children": []models.BlockItem{
+					{
+						ID:   "sub_1",
+						Type: "text",
+						Props: map[string]interface{}{
+							"text": "Sub Text",
+						},
+					},
+					{
+						ID:   "sub_2_unsupported",
+						Type: "unsupported_child_sensor",
+					},
+				},
+			},
+		},
+	}
+
+	// 1. 测试空能力集（默认全量放行）
+	rawList := FilterBlocksByCapabilities(blocks, "")
+	if len(rawList) != 4 {
+		t.Fatalf("空能力集应当全量放行全部积木，实际得到: %d", len(rawList))
+	}
+
+	// 2. 模拟客户端上报的能力集：仅支持 text, image, container
+	clientCaps := "text, image, container"
+	filtered := FilterBlocksByCapabilities(blocks, clientCaps)
+
+	// 预期结果：
+	// block_1 (text) -> 保留
+	// block_2 (unsupported) -> 降级为 block_2_fallback (image) 保留
+	// block_3 (unsupported, 无 fallback) -> 剔除
+	// block_4 (container) -> 保留，其 sub_1 保留，sub_2 被剔除
+	if len(filtered) != 3 {
+		t.Fatalf("预期过滤后剩余 3 个根积木，实际得到: %d", len(filtered))
+	}
+
+	if filtered[0].ID != "block_1" || filtered[0].Type != "text" {
+		t.Errorf("第一个积木应为 block_1 (text)，实际为: %+v", filtered[0])
+	}
+
+	if filtered[1].ID != "block_2_fallback" || filtered[1].Type != "image" {
+		t.Errorf("第二个积木应成功降级为 fallback (image)，实际为: %+v", filtered[1])
+	}
+
+	if filtered[2].ID != "block_4_container" {
+		t.Errorf("第三个积木应为 block_4_container，实际为: %+v", filtered[2])
+	}
+
+	// 验证容器内部子积木过滤
+	children, ok := filtered[2].Props["children"].([]models.BlockItem)
+	if !ok || len(children) != 1 {
+		t.Fatalf("容器内子积木预期过滤后仅保留 1 个支持的 sub_1，实际: %+v", filtered[2].Props["children"])
+	}
+	if children[0].ID != "sub_1" {
+		t.Errorf("容器保留的子积木 ID 错误: %s", children[0].ID)
+	}
+}
+
+// TestFilterBlocksByCapabilitiesInTabs 验证 Tabs 子树同样执行能力协商与 fallback 降级。
+func TestFilterBlocksByCapabilitiesInTabs(t *testing.T) {
+	blocks := []models.BlockItem{
+		{
+			ID:   "tabs_root",
+			Type: "tabs",
+			Props: map[string]interface{}{
+				"tabs": []interface{}{
+					map[string]interface{}{
+						"key": "main",
+						"blocks": []interface{}{
+							map[string]interface{}{"id": "tab_text", "type": "text", "props": map[string]interface{}{"text": "保留"}},
+							map[string]interface{}{
+								"id":       "tab_unknown_with_fallback",
+								"type":     "unsupported_block",
+								"fallback": map[string]interface{}{"id": "tab_fallback", "type": "text", "props": map[string]interface{}{"text": "降级"}},
+							},
+							map[string]interface{}{"id": "tab_unknown", "type": "unsupported_block"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	filtered := FilterBlocksByCapabilities(blocks, "tabs,text")
+	if len(filtered) != 1 {
+		t.Fatalf("Tabs 根积木应保留，实际为 %d", len(filtered))
+	}
+	tabs, ok := filtered[0].Props["tabs"].([]interface{})
+	if !ok || len(tabs) != 1 {
+		t.Fatalf("Tabs 配置结构丢失: %+v", filtered[0].Props["tabs"])
+	}
+	tab, ok := tabs[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Tab 配置类型异常: %+v", tabs[0])
+	}
+	tabBlocks, ok := tab["blocks"].([]interface{})
+	if !ok || len(tabBlocks) != 2 {
+		t.Fatalf("Tab 子块应保留 text 与 fallback，实际: %+v", tab["blocks"])
+	}
+	fallback, ok := tabBlocks[1].(map[string]interface{})
+	if !ok || fallback["id"] != "tab_fallback" || fallback["type"] != "text" {
+		t.Fatalf("Tab 子块 fallback 未正确替换: %+v", tabBlocks[1])
+	}
+}
+
+// TestFilterBlocksByCapabilitiesForNativeActions 验证缺少原生动作能力时，整块必须 fallback 或剔除。
+func TestFilterBlocksByCapabilitiesForNativeActions(t *testing.T) {
+	blocks := []models.BlockItem{
+		{
+			ID:   "subscribe_button",
+			Type: "action_button",
+			Action: &models.BlockAction{
+				Type:    "subscribe_message",
+				Payload: map[string]interface{}{"template_id": "tmpl_1"},
+				OnSuccess: []models.BlockAction{
+					{Type: "copy_text", Payload: map[string]interface{}{"text": "subscribed"}},
+				},
+			},
+			Fallback: &models.BlockItem{
+				ID:    "subscribe_fallback",
+				Type:  "text",
+				Props: map[string]interface{}{"text": "当前版本暂不支持订阅"},
+			},
+		},
+		{
+			ID:     "payment_button",
+			Type:   "action_button",
+			Action: &models.BlockAction{Type: "request_payment", Payload: map[string]interface{}{"sku": "sku_1"}},
+		},
+	}
+
+	filtered := FilterBlocksByCapabilities(blocks, "action_button,text")
+	if len(filtered) != 1 || filtered[0].ID != "subscribe_fallback" || filtered[0].Type != "text" {
+		t.Fatalf("不支持订阅能力时应使用 fallback，实际: %+v", filtered)
+	}
+	if supported := FilterBlocksByCapabilities(blocks, "action_button,text,clipboard,subscribe_message,request_payment"); len(supported) != 2 {
+		t.Fatalf("声明全部动作能力后应保留所有积木，实际: %+v", supported)
+	}
 }

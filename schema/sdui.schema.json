@@ -240,12 +240,20 @@
             "preview_image",
             "open_webview",
             "request_data",
+            "request",
             "request_payment",
             "require_auth",
             "toast",
             "refresh",
             "share",
-            "subscribe_message"
+            "subscribe_message",
+            "set_state",
+            "toggle_state",
+            "reset_state",
+            "show_error_state",
+            "show_empty_state",
+            "show_loading_state",
+            "reset_block_state"
           ]
         },
         "require_auth": {

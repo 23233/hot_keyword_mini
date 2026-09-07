@@ -1,4 +1,4 @@
-// File: routers/middleware/view_data.go
+// Package middleware view_data.go
 package middleware
 
 import (

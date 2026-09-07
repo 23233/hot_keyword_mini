@@ -1,4 +1,4 @@
-// env.ts
+// minifront/src/config/env.ts
 import Taro from '@tarojs/taro'
 
 /**
@@ -78,4 +78,10 @@ export function getBaseUrl(): string {
   }
 
   return LOCAL_DEV_URL
+}
+
+/** resolveRemoteUrl 将协议中的同源相对媒体地址解析到当前 API 服务。 */
+export function resolveRemoteUrl(value: unknown): string {
+  const url = String(value || '')
+  return url.startsWith('/') && !url.startsWith('//') ? `${getBaseUrl()}${url}` : url
 }

@@ -49,7 +49,7 @@ export default defineConfig(async (merge) => {
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
     },
     copy: {
-      patterns: [],
+      patterns: [{ from: 'src/agent', to: 'agent' }],
       options: {}
     },
     framework: 'react',

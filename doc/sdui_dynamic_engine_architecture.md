@@ -58,25 +58,27 @@
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.1 同一内核、模板化行业能力
+### 2.1 核心哲学：一切皆 Block，一切皆自由编排 (Custom by Default)
 
-短剧、游戏、查询、下载、交易、预约等不是多套引擎，而是同一个 SDUI 内核上的行业模板包：
+在 SDUI 动态引擎的第一性原理中，**整个系统天生就是 100% 自由拼装（Custom by default）的，根本不依赖特立独行的“custom”或“行业私有页面”**：
+- **没有特殊的行业页面，只有通用的原子积木编排**：无论承接短剧、游戏、查询还是下载，底层协议与渲染引擎完全统一，均由平权的通用原子积木列表 (`BlockItem[]`) 和原子动作 (`BlockAction`) 构成；
+- **行业包的真正定位是“快捷积木预设包 (Presets)”**：所谓的短剧模板、游戏模板、查询模板等，本质上只是面向高频运营场景预先搭好的一组 Block 拼装方案（宏模板），用于帮助操盘手一键生成初始积木树。生成之后即成为标准 `DynamicPage`，所有块均可自由增删、替换、调整样式与绑定动作；
+- **`business_type` 的纯粹性**：`business_type` 仅作为页面的业务领域分类标签（Tag / Metadata），用于管理后台筛选、搜索意图归因与转化数据分析，**绝不决定任何底层的特异渲染逻辑或协议私有分支**。
 
 ```text
-SDUI 内核
-  ├─ 协议解析、绑定、条件、状态、动作、分享、埋点、降级
-  ├─ 基础布局与内容块
-  └─ 行业模板包
-      ├─ drama：短剧主页、选集、播放、全集承接
-      ├─ game：游戏主页、游戏详情、兑换码、开服活动
-      ├─ query：查询表单、结果页、状态时间线
-      ├─ download：资源详情、版本选择、下载/复制
-      └─ custom：按块逐个编排的自定义页面
+统一通用 SDUI 引擎内核
+  ├─ 协议解析、数据绑定、受控条件、局部状态、万能动作、动态分享、降级保护
+  ├─ 正交平权原子积木库 (通用布局块、通用内容块、通用业务交互卡片)
+  └─ 快捷积木预设工厂 (Preset Templates)
+      ├─ 短剧爆款预设：媒体大卡片 + 网盘提取卡片 + 公众号防走丢按钮
+      ├─ 游戏礼包预设：公测通告 + 游戏卡片 + 独家兑换码核销 + 快捷复制
+      ├─ 查询结果预设：通告说明 + 受控输入表单 + 查询结果时间线
+      ├─ 软件下载预设：资源安装包介绍 + 多渠道网盘高速通道
+      └─ 通用自由编排预设：空白/自由搭积木起步模版
 ```
 
-行业模板包只提供页面结构、实体字段、允许块集合和常用动作的预设，不拥有独立渲染逻辑。后台或 AI 可以先选择模板快速生成页面，再对任意块的内容、顺序、条件、样式、请求和分享配置逐项修改；模板生成后的页面必须仍是标准 `DynamicPage`，不能产生模板专属私有协议。
+模板只负责提供初始积木树结构与默认属性，不拥有任何独立的渲染逻辑。页面在任何阶段都必须符合标准 `DynamicPage` 契约，绝不产生模板专属的私有协议。
 
-模板包需要声明 `template_id`、`template_version`、适用的 `business_type`、所需实体、默认块树、可覆盖字段和兼容的客户端版本。模板升级不得覆盖已发布页面，只能生成新草稿或由管理员明确迁移。
 
 ---
 
@@ -85,21 +87,39 @@ SDUI 内核
 为保证 Golang 后端与 Taro React 前端的完美对齐与类型安全，制定双端镜像结构：
 
 ### 3.1 动作协议 (`BlockAction`)
-定义任意按钮、卡片、图片被点击时的标准原子行为态（含跨小程序矩阵联动跳转）：
+定义任意按钮、卡片、图片被点击时的标准原子行为态（含跨小程序矩阵联动跳转、受控业务调用与支付），系统受控支持 13 种标准原子动作：
+- `copy_text`：复制文本至剪贴板（支持 `text` / `content` / `path` 与 `toast` 提示）
+- `navigate_page`：小程序内部页面路由跳转（支持 `page_id` / `id` / `query`）
+- `open_channels_activity`：直达微信视频号原生动态（支持 `feed_id` / `finder_user_name`）
+- `open_mini_program`：跨小程序矩阵互跳（支持 `target_app_id` / `target_path` / `extra_data`）
+- `preview_image`：全屏大图预览（支持 `current` / `urls`）
+- `open_webview`：微信原生 H5 容器打开（支持 `url` 换取一次性短期凭证）
+- `request_data`：受控业务数据请求与事务触发（支持 `endpoint` / `query` / `body` / `response.save_as`）
+- `request_payment`：创建商品订单并调起微信支付（支持 `sku` / `idempotency_key`）
+- `require_auth`：前置强制登录拦截
+- `toast`：轻量气泡提示（支持 `text` / `icon` / `duration`）
+- `refresh`：刷新当前页面或指定积木
+- `share`：唤起微信官方原生分享菜单
+- `subscribe_message`：调起微信消息订阅授权（支持 `tmpl_ids` 与单 `template_id`）
+
+标准协议载荷格式示例：
 ```json
 {
-  "type": "copy_text | navigate_page | open_channels_activity | open_mini_program | preview_image | open_webview | request_payment",
+  "type": "copy_text | navigate_page | open_channels_activity | open_mini_program | preview_image | open_webview | request_data | request_payment | require_auth | toast | refresh | share | subscribe_message",
   "require_auth": false,
+  "condition": { "eq": [{ "path": "$entity.is_locked" }, true] },
+  "confirm": { "title": "操作确认", "message": "确认执行该操作？" },
+  "on_success": [
+    { "type": "toast", "payload": { "text": "操作成功" } }
+  ],
   "payload": {
     "text": "网盘链接或口令",
     "toast": "链接已复制，请打开浏览器访问",
-    "page_id": "drama_detail",
+    "page_id": "home",
     "feed_id": "export/UzFoc...",
     "finder_user_name": "sph...",
     "target_app_id": "wx1234567890abcdef",
     "target_path": "pages/index/index?from=matrix_app_a",
-    "extra_data": { "channel": "hot_keyword" },
-    "env_version": "release",
     "sku": "product_sku_001",
     "idempotency_key": "order-request-001"
   }
@@ -109,26 +129,52 @@ SDUI 内核
 `request_payment` 仅提交商品 SKU 和可选幂等键。服务端按当前小程序 AppID 查询商品表金额和普通商户配置，创建 JSAPI 订单并返回 `wx.requestPayment` 参数；客户端支付回调后通过订单查询接口确认最终状态。客户端不得提交或覆盖金额。
 
 ### 3.2 原子积木定义 (`BlockItem`)
-每一个原子组件由 4 个要素构成：
+每一个原子组件由 4 个要素构成（ID、类型、属性、样式与动作），分为通用自由积木、基础内容块、基础布局块与业务预设块：
+
+#### 3.2.1 通用自由图文卡片 (`custom` / `custom_block`)
+整个 SDUI 引擎天生 100% 自由拼装，自由卡片支持标题、角标、图文与主按钮全维度灵活自适应：
 ```json
 {
-  "id": "block_hero_101",
-  "type": "media_hero",
+  "id": "block_custom_card_01",
+  "type": "custom",
   "props": {
-    "title": "猴王下山",
-    "subtitle": "第 1 集试看 · 全网爆火",
-    "cover_url": "https://.../cover.jpg",
-    "video_url": "https://.../video.mp4"
+    "title": "精选热门活动",
+    "subtitle": "全新上线 · 抢先体验",
+    "badge": "限时推荐",
+    "image_url": "https://.../banner.jpg",
+    "content": "自由卡片正文说明内容，支持任意图文信息承接与点击交互",
+    "btn_text": "立即参与"
   },
   "style": {
     "margin_y": "24rpx",
-    "border_radius": "32rpx",
-    "glass_blur": true,
-    "accent_color": "#FF9F0A"
+    "border_radius": "28rpx",
+    "glass_blur": true
   },
   "action": {
-    "type": "open_channels_activity",
-    "payload": { "feed_id": "...", "finder_user_name": "..." }
+    "type": "toast",
+    "payload": { "text": "感谢参与" }
+  }
+}
+```
+
+#### 3.2.2 受控查询表单积木 (`form`)
+专用于考分、物流、证件等受控搜索场景，输入内容自动注入后续请求动作：
+```json
+{
+  "id": "block_form_query",
+  "type": "form",
+  "props": {
+    "title": "官方成绩查询入口",
+    "input_label": "准考证号 / 身份证号",
+    "placeholder": "请输入 15 位准考证号或证件号",
+    "btn_text": "立即查询结果"
+  },
+  "action": {
+    "type": "request_data",
+    "payload": {
+      "endpoint": "query.score",
+      "body": { "query_value": "$item.query_value" }
+    }
   }
 }
 ```
@@ -190,18 +236,32 @@ SDUI 内核
 }
 ```
 
-客户端请求时携带 `X-SDUI-Version` 和 `X-Client-Capabilities`。服务端只下发客户端声明支持的块和动作；不支持时使用块级 `fallback`，不能因为一个新块导致整页白屏。
+客户端请求时携带 `X-SDUI-Version` 和 `X-Client-Capabilities`。小程序网络层必须完整申报所具备的全部原子积木与动作能力标识：
+```http
+X-SDUI-Version: 1.1
+X-Client-Capabilities: custom,custom_block,image,text,rich_text,container,stack,grid,tabs,carousel,spacer,empty,skeleton,media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,clipboard,video,request_payment
+```
+服务端只下发客户端声明支持的块和动作；不支持时使用块级 `fallback` 降级，杜绝因个别新积木导致整页白屏。
 
-### 3.5 数据绑定与数据源
+### 3.5 数据绑定与双端绝对同构求值
 
-块不能只依赖字符串替换。统一采用受控绑定路径，路径只读、可审计，不执行 JavaScript、SQL 或模板表达式：
+积木组件属性（props）禁止依赖任意 eval 或非受控模板引擎。统一采用受控绑定路径，路径只读、可审计，不执行 JavaScript、SQL 或模板表达式：
 
-- `$page.*`：页面元信息；
+- `$page.*`：页面元信息（标题、业务分类等）；
 - `$query.*`：URL 查询参数；
-- `$entity.*`：后端按业务类型装配的实体；
-- `$item.*`：列表循环项；
-- `$session.*`：当前登录态的非敏感字段；
+- `$entity.*`：后端按业务类型装配的实体数据；
+- `$item.*`：列表循环展开项局部数据；
+- `$state.*`：当前页面受控响应式状态；
+- `$result.*`：动作链中上一步执行结果（如接口返回数据或领取的兑换码）；
+- `$props.*`：当前积木计算后的属性上下文；
+- `$session.*`：当前登录态的非敏感安全字段；
 - `$tenant.*`：当前小程序的公开配置。
+
+**双端语法绝对同构与容错标准**：
+为杜绝模板编写中因习惯差异（带 `$` 或无 `$`）导致数据读取丢失，**Golang 后端与 Taro 前端求值引擎必须双端一致支持**：
+1. 显式作用域路径：`"$entity.title"`、`"$item.name"`、`"$result.code"`；
+2. 兼容省略路径：`"entity.title"`、`"item.name"`、`"result.code"` 自动映射至对应作用域；
+3. 对象路径语法：`{ "path": "$entity.title" }` 与 `{ "path": "entity.title" }` 具有完全等价的解析结果。
 
 数据源只允许后端注册的实体和查询方式，例如 `drama`、``、`score_result`、`download_resource`。协议只传 `entity`、`id`、`fields`、`filters`、`cursor`、`limit`，禁止传任意 SQL。敏感资源（网盘真实地址、兑换码、手机号等）必须由后端鉴权后单独返回，不能提前放在公开页面 JSON 中。product
 
@@ -459,6 +519,38 @@ AI 快速搭建的标准流程：
 - 关键点击目标有稳定尺寸，截图中的块 ID 可以映射回协议路径；
 - 发布前必须通过协议校验和截图审查，视觉报告与协议 revision 不一致时禁止发布。
 
+### 3.14 页面生命周期、草稿隔离与状态门禁契约
+
+页面配置具备严格的生命周期状态流转机制（`published` 已发布 与 `draft` 草稿）：
+
+1. **草稿物理门禁隔离**：
+   - 面向普通微信客户端的小程序公开接口 `GET /api/v1/page/:page_id` 实施强门禁拦截：仅对外下发 `status = 'published'` 的页面；
+   - 若客户端请求的页面处于 `draft` 或已下架状态，服务端拒绝下发草稿，并安全降级至该小程序已发布的 `home` 主页兜底；若主页亦不可用则返回明确错误，**绝不允许未发布的草稿内容被外部客户端匿名窃听或遍历探测**；
+2. **管理后台与 MCP 状态保存防覆盖**：
+   - 管理后台工作台与 MCP 编排工具的保存请求必须严格遵循操作者的显式状态设定（`status: currentDynamicPage.status || 'published'`），严禁在无意中将“保存草稿”强行篡改为已发布；
+3. **CAS 乐观锁防并发覆盖**：
+   - 所有草稿与发布保存均基于 `revision` 版本号实施乐观并发控制，防止多端或多人并发编辑产生数据覆盖丢失。
+
+### 3.15 全端业务中立文案与全端脱敏规范
+
+为彻底杜绝特异业务硬编码污染架构内核，全系统实施中立文案与脱敏规范：
+
+1. **小程序原生窗口全局标题脱敏**：
+   - 小程序全局配置 `app.config.ts` 中的 `navigationBarTitleText` 统一设定为通用中立文案 `'热点精选'`，彻底根除在网络延迟或动态协议加载前窗口闪烁旧业务私有字样（如特定短剧名）的问题；
+2. **动态承载页兜底脱敏**：
+   - 动态承载容器 `pages/dynamic/index.tsx` 中的微信好友分享、朋友圈分享以及导航栏页面标题，其兜底文案必须统一为通用的 `'精选推荐'`；
+3. **管理后台模拟器中立化**：
+   - iPhone 12/13 Pro 模拟器的导航栏标题和模式胶囊标签完全受当前页面配置动态驱动，未配置时统一兜底为 `'精选页面'` 与 `'custom'`，杜绝任何私有硬编码字样。
+
+### 3.16 RESTful 路径参数与多租户隔离契约
+
+系统在 API 路由与控制器层严格遵循 RESTful 与多租户安全规范：
+
+1. **RESTful 路径参数读取规范**：
+   - 带有命名路径占位符的路由端点（如 `/api/v1/payment/orders/{out_trade_no}`、`/api/v1/payment/notify/{app_id}`），后端控制器必须统一优先通过 `ctx.Params().Get(...)` 读取路径参数，并安全 fallback 至 Query String，杜绝参数读取为空；
+2. **多租户识别与受控动作执行**：
+   - 所有承接微信小程序业务请求的端点（如 `/api/v1/action/execute`、`/api/v1/page/:page_id`）统一通过 `middleware.RequireTenantAppID(ctx)` 获取当前小程序 AppID，对未带有效租户标识的非法请求坚决执行 400 阻断，杜绝租户越权与数据串房。
+
 ---
 
 ## 四、核心技术难点解决方案
@@ -647,15 +739,15 @@ export const dispatchAction = async (action?: BlockAction) => {
 
 ---
 
-## 八、指数词业务分支与通用漏斗
+## 八、指数词意图场景映射与通用转化漏斗
 
-指数词的共同打法不是“换一张海报”，而是把搜索意图映射到一条可配置漏斗：
+指数词的本质是承接用户的即时搜索意图。在通用 SDUI 体系中，**没有任何页面属于孤立的业务系统**，所有场景都是将搜索意图映射到一条由通用原子积木构建的可视化漏斗：
 
 ```text
-指数词/入口参数 -> 意图识别 -> 首屏结果 -> 详情或操作 -> 转化/留资 -> 分享与回访
+指数词/入口参数 -> 意图识别 (Intent) -> 首屏结果 (Blocks) -> 详情或操作 (Actions) -> 转化/留资 -> 动态分享与回访
 ```
 
-`DynamicPage` 增加以下上下文，页面模板不绑定具体行业：
+`DynamicPage` 包含以下分类与归因元数据，作为只读标签用于统计和埋点，不改变任何底层渲染契约：
 
 ```json
 {
@@ -668,20 +760,17 @@ export const dispatchAction = async (action?: BlockAction) => {
 }
 ```
 
-可复用的业务分支如下：
+典型意图场景与通用积木组合预设推荐：
 
-| 分支 | 典型指数词 | 首屏重点 | 主要动作 | 需要的业务块 |
+| 意图场景 | 典型指数词 | 首屏核心体验 | 核心动作 | 常用原子积木组合 (平权任意选用) |
 |---|---|---|---|---|
-| 内容/短剧 | 剧名、电影、动漫、综艺 | 播放入口、更新状态、目录 | 播放、选集、分享、获取全集 | `media_hero`、`episode_list`、`resource_card` |
-| 游戏/礼包 | 游戏名、新游、兑换码、攻略、开服 | 游戏入口、礼包状态、版本、活动 | 查看详情、领取、复制、进入游戏 | `game_card`、`game_header`、`redeem_code_card`、`server_status` |
-| 查询/结果 | 成绩查询、天气、物流、榜单 | 结果状态、更新时间、关键字段 | 查询、刷新、订阅提醒 | `form`、`result_table`、`timeline` |
-| 下载/资源 | 软件安装包、电子书、壁纸、游戏兑换码 | 版本、适用平台、资源大小 | 下载、复制口令、领取 | `resource_card`、`copy_list`、`download_card` |
-| 交易/优惠 | 商品名、优惠券、活动、价格 | 价格、库存、优惠截止时间 | 领券、跳转购买、分享 | `product_card`、`coupon_card`、`countdown` |
-| 服务/预约 | 医院、门店、客服电话、办事入口 | 地址、营业状态、服务时间 | 拨号、地图、预约、客服 | `contact_card`、`map_card`、`form` |
-| 活动/报名 | 演唱会、展会、考试报名、直播 | 时间、地点、名额、报名状态 | 报名、日历提醒、直播 | `event_card`、`form`、`countdown` |
-| 社区/互动 | 投票、问答、攻略、热点事件 | 观点摘要、热度、参与入口 | 投票、评论、收藏、举报 | `poll`、`feed_list`、`notice` |
+| 视听内容 (watch) | 剧名、电影、动漫、综艺 | 播放入口、更新状态、选集 | 播放、选集、分享、获取全集 | `media_hero`、`episode_list`、`resource_card`、`action_button` |
+| 游戏互动 (redeem) | 游戏名、新游、兑换码、开服 | 游戏介绍、礼包状态、版本 | 领取、复制兑换码、启动游戏 | `game_card`、`notice`、`action_button` |
+| 信息查询 (query) | 成绩查询、物流、榜单 | 结果状态、输入表单、时间线 | 查询、刷新、订阅提醒 | `form`、`notice`、`timeline`、`action_button` |
+| 资源下载 (download) | 软件安装包、电子书、壁纸 | 版本、适用平台、多网盘通道 | 复制口令、直达网盘、下载 | `media_hero`、`resource_card`、`action_button` |
+| 自由编排 (general) | 突发热点、任意自定义落地页 | 自定义图文、多列网格、卡片 | 任意 13 种组合动作 | `image`、`text`、`grid`、`container`、`action_button` |
 
-每个分支只新增后端实体装配器和少量业务块，不新增一套路由。统一保留以下通用能力：关键词及来源追踪、有效期、内容审核状态、分享参数、登录要求、转化事件埋点和失效后的兜底页。
+所有场景均由通用的原子积木树组装而成，无任何私有路由。全系统统一遵循：来源追踪、有效期与过期自动兜底、内容审核状态、动态分享配置、登录门禁拦截以及转化事件埋点。
 
 ### 8.1 游戏业务页面族
 

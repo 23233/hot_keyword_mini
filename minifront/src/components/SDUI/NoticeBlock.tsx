@@ -5,7 +5,7 @@ import { BlockItem, BlockAction } from '../../types/sdui'
 
 interface NoticeBlockProps {
   block: BlockItem
-  onAction?: (action?: BlockAction) => void
+  onAction?: (action?: BlockAction, extraContext?: Record<string, any>) => void
 }
 
 /**
@@ -16,9 +16,10 @@ export const NoticeBlock: React.FC<NoticeBlockProps> = ({ block, onAction }) => 
   const text = props.text || props.content || ''
   const icon = props.icon || '📢'
 
-  const handleClick = () => {
+  const handleClick = (e: any) => {
     if ((block.action || block.events?.tap) && onAction) {
-      onAction(block.action)
+      e.stopPropagation?.()
+      onAction(block.action, { item: props, actionPayload: props, text })
     }
   }
 
