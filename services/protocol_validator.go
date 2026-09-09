@@ -87,13 +87,13 @@ var allowedStyleUtilities = map[string]bool{
 	"layout/flat": true, "layout/card": true,
 	"surface/canvas": true, "surface/base": true, "surface/raised": true, "surface/ink": true,
 	"border/none": true, "border/subtle": true, "border/strong": true,
-	"radius/none": true, "radius/sm": true, "radius/md": true, "radius/lg": true, "radius/full": true,
+	"radius/none": true, "radius/sm": true, "radius/md": true, "radius/lg": true, "radius/xl": true, "radius/full": true,
 	"space/y-0": true, "space/y-2": true, "space/y-4": true, "space/y-6": true, "space/y-8": true, "space/y-10": true, "space/y-12": true,
-	"padding/none": true, "padding/0": true, "padding/2": true, "padding/4": true, "padding/6": true, "padding/8": true,
+	"padding/none": true, "padding/0": true, "padding/2": true, "padding/4": true, "padding/5": true, "padding/6": true, "padding/8": true,
 	"padding/x-4": true, "padding/x-5": true, "padding/x-6": true, "padding/y-4": true, "padding/y-6": true,
 	"gap/2": true, "gap/4": true, "gap/6": true, "gap/8": true,
 	"text/display": true, "text/section": true, "text/muted": true, "text/inverse": true,
-	"accent/blue": true, "accent/ink": true, "accent/amber": true,
+	"accent/blue": true, "accent/ink": true, "accent/amber": true, "accent/green": true,
 	"elevation/none": true, "elevation/sm": true, "elevation/md": true,
 	"media/rounded": true,
 }
@@ -593,6 +593,7 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 		report.Errors = append(report.Errors, "Schema 契约校验失败: page.blocks 字段不能为空")
 		return report
 	}
+	validateRawStyleFields(page.Blocks, &report)
 
 	var blocks []models.BlockItem
 	if err := json.Unmarshal([]byte(page.Blocks), &blocks); err != nil {
@@ -697,6 +698,47 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 	}
 
 	return report
+}
+
+// ValidateSDUIStyleJSON 在请求入口校验原始样式，避免模板解码丢弃非法字段。
+func ValidateSDUIStyleJSON(raw []byte) error {
+	report := ValidationReport{IsValid: true}
+	validateRawStyleFields(string(raw), &report)
+	if !report.IsValid {
+		return fmt.Errorf("样式不合规: %s", strings.Join(report.Errors, "; "))
+	}
+	return nil
+}
+
+// validateRawStyleFields 在反序列化前检查原始样式对象，避免未知字段被模型静默丢弃。
+func validateRawStyleFields(raw string, report *ValidationReport) {
+	var value interface{}
+	if json.Unmarshal([]byte(raw), &value) != nil {
+		return
+	}
+	var walk func(interface{}, string)
+	walk = func(current interface{}, path string) {
+		switch node := current.(type) {
+		case []interface{}:
+			for index, item := range node {
+				walk(item, fmt.Sprintf("%s[%d]", path, index))
+			}
+		case map[string]interface{}:
+			_, isBlock := node["type"].(string)
+			if style, ok := node["style"].(map[string]interface{}); ok && isBlock && node["id"] != nil {
+				for key := range style {
+					if key != "utilities" && key != "glass_blur" {
+						report.IsValid = false
+						report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s.style.%s 已废弃，请改用 utilities", path, key))
+					}
+				}
+			}
+			for key, item := range node {
+				walk(item, path+"."+key)
+			}
+		}
+	}
+	walk(value, "page.blocks")
 }
 
 // isValidCopyTextPayload 检查 copy_text 动作的载荷是否满足合规要求

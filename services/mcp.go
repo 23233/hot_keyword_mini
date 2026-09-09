@@ -669,6 +669,9 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, fmt.Errorf("模板参数序列化失败: %w", err)
 		}
 		var template SDUITemplate
+		if err := ValidateSDUIStyleJSON(templateBytes); err != nil {
+			return nil, err
+		}
 		if err := json.Unmarshal(templateBytes, &template); err != nil {
 			return nil, fmt.Errorf("模板参数格式无效: %w", err)
 		}
@@ -1602,7 +1605,7 @@ func mcpRulesResource() map[string]interface{} {
 		"block_item_shape": map[string]interface{}{
 			"required": []string{"id", "type"},
 			"fields":   []string{"id", "type", "props", "style", "action", "events", "visible_when", "repeat", "loading", "empty", "error", "fallback"},
-			"style":    map[string]interface{}{"utilities": "string[]，只能使用 style_utilities；margin_y/margin_x/padding/border_radius/background 为受控值", "glass_blur": "boolean", "accent_color": "主题色令牌"},
+			"style":    map[string]interface{}{"utilities": "string[]，只能使用 style_utilities", "glass_blur": "boolean"},
 			"events":   "对象，键为事件名（通常 tap/change/submit），值为 BlockAction[]；动作按数组顺序执行",
 			"states":   "loading/empty/error/fallback 均为完整 BlockItem，id 必须在页面树中全局唯一",
 		},

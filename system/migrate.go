@@ -267,10 +267,8 @@ func SeedMultiTenantAndSDUIData() error {
 					"hot_score": 998000
 				},
 				"style": {
-					"margin_y": "16rpx",
-					"border_radius": "28rpx",
-					"glass_blur": true,
-					"accent_color": "#FF9F0A"
+					"utilities": ["space/y-4", "radius/xl", "accent/amber"],
+					"glass_blur": true
 				},
 				"action": {
 					"type": "open_channels_activity",
@@ -292,8 +290,7 @@ func SeedMultiTenantAndSDUIData() error {
 					"content": "https://pan.quark.cn/s/monkey_king_full_888"
 				},
 				"style": {
-					"margin_y": "16rpx",
-					"border_radius": "24rpx",
+					"utilities": ["space/y-4", "radius/lg"],
 					"glass_blur": true
 				},
 				"action": {
@@ -312,9 +309,7 @@ func SeedMultiTenantAndSDUIData() error {
 					"badge": "免费无删减"
 				},
 				"style": {
-					"margin_y": "24rpx",
-					"border_radius": "999rpx",
-					"accent_color": "#FF9F0A"
+					"utilities": ["space/y-6", "radius/full", "accent/amber"]
 				},
 				"action": {
 					"type": "copy_text",

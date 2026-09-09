@@ -155,8 +155,7 @@
     "btn_text": "立即参与"
   },
   "style": {
-    "margin_y": "24rpx",
-    "border_radius": "28rpx",
+    "utilities": ["space/y-6", "radius/xl", "accent/amber"],
     "glass_blur": true
   },
   "action": {
@@ -590,7 +589,11 @@ AI 快速搭建的标准流程：
   - **圆角梯度**：直角(0)、轻微(16rpx)、标准(28rpx)、胶囊全圆(999rpx)；
   - **渐变微调**：苹果琥珀橙红渐变、科技青蓝渐变、高光白炽。
 
-每个积木在 `style.utilities` 中按需组合 `layout/flat`、`surface/*`、`border/*`、`radius/*`、`space/y-*`、`padding/*`、`gap/*`、`text/*`、`accent/*`、`elevation/*` 与 `media/rounded`。令牌必须同时通过后端协议校验和 Schema 枚举；小程序只将已校验令牌转换为预置工具类。`layout_ir` 是服务端验收与截图比对产物，不参与小程序的运行时积木重建，运行时唯一输入为 `page.blocks`。
+每个积木的 `style` 只允许 `utilities` 和 `glass_blur`。`utilities` 按需组合 `layout/flat`、`surface/*`、`border/*`、`radius/*`、`space/y-*`、`padding/*`、`gap/*`、`text/*`、`accent/*`、`elevation/*` 与 `media/rounded`；`margin_y`、`padding`、`border_radius`、`accent_color`、`background` 等任意数值样式字段均不再接受。令牌必须同时通过后端协议校验和 Schema 枚举；小程序只将已校验令牌转换为预置工具类。`layout_ir` 是服务端验收与截图比对产物，不参与小程序的运行时积木重建，运行时唯一输入为 `page.blocks`。
+
+验收入口为 `pnpm --dir minifront run test:sdui` 与设置 `WECHAT_IDE_REQUIRED=1` 后执行 `pnpm --dir minifront run test:wechat-agent`。组件实验模板为 21 种动作分别提供独立按钮；微信 MCP 逐项真实点击并断言状态、请求回写和导航。`query.score` 走真实本地后端；支付订单使用受控拒绝，订阅使用拒绝回调，其他原生能力使用 API 入参断言。以上不代表真实商户支付成功、真实订阅授权或跨小程序发布权限通过。所有测试替换均在 `finally` 恢复，测试不写入生产代码的微信 API。
+
+历史兼容边界：读取历史页面时忽略已废弃的块级样式字段，保持客户端原有默认样式；需要还原原先指定的数值时，应在草稿中改为对应工具令牌。补丁、模板写入和发布拒绝旧样式字段；回滚到不符合当前协议的历史版本会明确报错，不会直接上线不合规协议。内置模板和开发验收页已迁移，历史运营页面与版本快照不会被启动流程批量覆盖。
 - **效果**：无论后台如何排列组合，渲染出来永远是纯正高雅的苹果原生质感。
 
 ---

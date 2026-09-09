@@ -166,9 +166,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"badge":     "🎬 高清试看",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "28rpx",
-				GlassBlur:    true,
-				AccentColor:  "#FF9F0A",
+				Utilities: []string{"radius/xl", "accent/amber"},
+				GlassBlur: true,
 			},
 			Action: &models.BlockAction{
 				Type: "open_channels_activity",
@@ -188,8 +187,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"fetch_code": "hwxs88",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "24rpx",
-				GlassBlur:    true,
+				Utilities: []string{"radius/lg"},
+				GlassBlur: true,
 			},
 			Action: &models.BlockAction{
 				Type: "copy_text",
@@ -207,8 +206,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"badge": "免费未删减",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "999rpx",
-				AccentColor:  "#FF9F0A",
+				Utilities: []string{"radius/full", "accent/amber"},
 			},
 			Action: &models.BlockAction{
 				Type: "copy_text",
@@ -256,8 +254,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"remaining":    "仅剩 12% 剩余",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "28rpx",
-				GlassBlur:    true,
+				Utilities: []string{"radius/xl"},
+				GlassBlur: true,
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
@@ -291,8 +289,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"badge": "限量礼包",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "999rpx",
-				AccentColor:  "#30D158",
+				Utilities: []string{"radius/full", "accent/green"},
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
@@ -352,8 +349,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"btn_text":    "立即查询结果",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "24rpx",
-				GlassBlur:    true,
+				Utilities: []string{"radius/lg"},
+				GlassBlur: true,
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
@@ -404,8 +401,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"badge":     "⚡ 正版高速",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "28rpx",
-				GlassBlur:    true,
+				Utilities: []string{"radius/xl"},
+				GlassBlur: true,
 			},
 		},
 		{
@@ -418,8 +415,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"fetch_code": "apk888",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "24rpx",
-				GlassBlur:    true,
+				Utilities: []string{"radius/lg"},
+				GlassBlur: true,
 			},
 			Action: &models.BlockAction{
 				Type: "copy_text",
@@ -462,9 +459,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"rating":   9.8,
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "28rpx",
-				GlassBlur:    true,
-				AccentColor:  "#FF9F0A",
+				Utilities: []string{"radius/xl", "accent/amber"},
+				GlassBlur: true,
 			},
 		},
 		{
@@ -474,8 +470,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"text": "⚡ 立即参与 / 了解详情",
 			},
 			Style: &models.BlockStyle{
-				BorderRadius: "999rpx",
-				AccentColor:  "#FF9F0A",
+				Utilities: []string{"radius/full", "accent/amber"},
 			},
 			Action: &models.BlockAction{
 				Type: "toast",

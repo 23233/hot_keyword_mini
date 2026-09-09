@@ -157,6 +157,9 @@ func TestComponentLabTemplateCoverage(t *testing.T) {
 	var visitNavigate func([]models.BlockItem)
 	visitNavigate = func(items []models.BlockItem) {
 		for _, item := range items {
+			if item.Action != nil && item.Action.Type == "navigate_page" {
+				navigatePageID, _ = item.Action.Payload["page_id"].(string)
+			}
 			for _, actions := range item.Events {
 				for _, action := range actions {
 					if action.Type == "navigate_page" {
@@ -170,8 +173,20 @@ func TestComponentLabTemplateCoverage(t *testing.T) {
 		}
 	}
 	visitNavigate(blocks)
-	if navigatePageID != "component_lab" {
-		t.Fatalf("组件实验室 navigate_page 必须使用 page_id=component_lab，实际: %q", navigatePageID)
+	if navigatePageID != "home" {
+		t.Fatalf("组件实验室独立导航必须指向已发布首页，实际: %q", navigatePageID)
+	}
+	independent := componentLabActionBlocks()
+	for actionType := range allowedActionTypes {
+		found := false
+		for _, block := range independent {
+			if block.Action != nil && block.Action.Type == actionType {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("缺少独立动作验收入口: %s", actionType)
+		}
 	}
 }
 

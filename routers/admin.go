@@ -605,8 +605,19 @@ func RegisterAdminRoutes(party iris.Party) {
 
 	// 12.2 行业模板库: 新建或更新当前小程序的用户模板。
 	adminParty.Post("/templates", func(ctx iris.Context) {
+		var raw json.RawMessage
+		if err := ctx.ReadJSON(&raw); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "模板 JSON 无效"})
+			return
+		}
+		if err := services.ValidateSDUIStyleJSON(raw); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
 		var req SaveTemplateReq
-		if err := ctx.ReadJSON(&req); err != nil {
+		if err := json.Unmarshal(raw, &req); err != nil {
 			ctx.StatusCode(iris.StatusBadRequest)
 			ctx.JSON(iris.Map{"code": 400, "msg": "模板参数无效: " + err.Error()})
 			return

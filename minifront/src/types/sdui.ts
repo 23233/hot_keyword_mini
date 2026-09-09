@@ -76,20 +76,8 @@ export interface BlockAction {
 export interface BlockStyle {
   // 受控原子样式令牌，仅允许服务端白名单中的组合项，不执行任意 CSS。
   utilities?: string[]
-  // 垂直外边距
-  margin_y?: string
-  // 水平外边距
-  margin_x?: string
-  // 内边距
-  padding?: string
-  // 圆角梯度 (如 24rpx, 999rpx)
-  border_radius?: string
   // 是否启用苹果毛玻璃磨砂特效 (backdrop-filter: blur)
   glass_blur?: boolean
-  // 主题高光强调色
-  accent_color?: string
-  // 背景色/渐变
-  background?: string
 }
 
 // 原子积木组件核心数据结构

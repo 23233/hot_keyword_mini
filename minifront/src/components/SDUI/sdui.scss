@@ -1415,10 +1415,12 @@
 .u-radius-sm { border-radius: 8rpx !important; }
 .u-radius-md { border-radius: 16rpx !important; }
 .u-radius-lg { border-radius: 24rpx !important; }
+.u-radius-xl { border-radius: 28rpx !important; }
 .u-radius-full { border-radius: 999rpx !important; }
 .u-padding-none, .u-padding-0 { padding: 0 !important; }
 .u-padding-2 { padding: 8rpx !important; }
 .u-padding-4 { padding: 16rpx !important; }
+.u-padding-5 { padding: 20rpx !important; }
 .u-padding-6 { padding: 24rpx !important; }
 .u-padding-8 { padding: 32rpx !important; }
 .u-padding-x-4 { padding-left: 16rpx !important; padding-right: 16rpx !important; }
@@ -1437,6 +1439,7 @@
 .u-accent-blue { --sdui-accent: #1769e0; }
 .u-accent-ink { --sdui-accent: #17191d; }
 .u-accent-amber { --sdui-accent: #c06a00; }
+.u-accent-green { --sdui-accent: #30d158; }
 .u-elevation-none { box-shadow: none !important; }
 .u-elevation-sm { box-shadow: var(--sdui-shadow-sm, 0 8rpx 20rpx rgba(15,23,42,.07)) !important; }
 .u-elevation-md { box-shadow: var(--sdui-shadow-md, 0 16rpx 36rpx rgba(15,23,42,.11)) !important; }

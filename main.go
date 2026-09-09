@@ -56,7 +56,7 @@ func main() {
 	if err = system.EnsureAIBreakthroughData(); err != nil {
 		panic(err)
 	}
-	if !config.Pro {
+	if shouldEnsureSDUIAcceptanceData(config.Pro, config.Cfg) {
 		if err = system.EnsureSDUIAcceptanceData(); err != nil {
 			panic(err)
 		}
@@ -130,4 +130,9 @@ func main() {
 	if err != nil {
 		logger.JM.ErrorE(err, "服务器启动失败")
 	}
+}
+
+// shouldEnsureSDUIAcceptanceData 仅在非生产构建且非生产运行环境同步验收页面。
+func shouldEnsureSDUIAcceptanceData(pro bool, cfg *config.Config) bool {
+	return !pro && !cfg.IsProduction()
 }

@@ -57,20 +57,8 @@ type BlockAction struct {
 type BlockStyle struct {
 	// 受控原子样式令牌列表，由协议白名单校验后映射为客户端工具类，禁止任意 CSS。
 	Utilities []string `json:"utilities,omitempty"`
-	// 垂直外边距
-	MarginY string `json:"margin_y,omitempty"`
-	// 水平外边距
-	MarginX string `json:"margin_x,omitempty"`
-	// 内边距
-	Padding string `json:"padding,omitempty"`
-	// 圆角梯度
-	BorderRadius string `json:"border_radius,omitempty"`
 	// 是否开启苹果高斯模糊毛玻璃
 	GlassBlur bool `json:"glass_blur,omitempty"`
-	// 主题高光强调色
-	AccentColor string `json:"accent_color,omitempty"`
-	// 自定义背景色/渐变
-	Background string `json:"background,omitempty"`
 }
 
 // BlockItem 定义原子积木组件核心结构

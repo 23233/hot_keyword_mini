@@ -156,28 +156,12 @@ func buildComponentLabTemplate() *SDUITemplate {
 					},
 					{ID: "lab_spacer", Type: "spacer", Props: map[string]interface{}{"height": "32rpx"}},
 					{
-						ID:    "lab_native_actions",
-						Type:  "action_button",
-						Props: map[string]interface{}{"text": "动作协议覆盖"},
-						Events: map[string][]models.BlockAction{
-							"tap": {
-								{Type: "request", Payload: map[string]interface{}{"url": "/api/v1/action/execute", "method": "POST"}},
-								{Type: "navigate_page", Payload: map[string]interface{}{"page_id": "component_lab"}},
-								{Type: "open_webview", Payload: map[string]interface{}{"url": "https://example.com"}},
-								{Type: "open_mini_program", Payload: map[string]interface{}{"target_app_id": "wx0000000000000000"}},
-								{Type: "open_channels_activity", Payload: map[string]interface{}{"feed_id": "export/component-lab", "finder_user_name": "gh_component_lab"}},
-								{Type: "require_auth"},
-								{Type: "share"},
-								{Type: "refresh"},
-								{Type: "reset_state"},
-								{Type: "show_empty_state", Payload: map[string]interface{}{"target": "lab_state_target"}},
-								{Type: "show_error_state", Payload: map[string]interface{}{"target": "lab_state_target"}},
-							},
-						},
+						ID: "lab_native_actions", Type: "container",
+						Props: map[string]interface{}{"children": componentLabActionBlocks()},
 					},
 				},
 			},
-			Style: &models.BlockStyle{Padding: "20rpx", BorderRadius: "24rpx", GlassBlur: true, AccentColor: "#0A84FF"},
+			Style: &models.BlockStyle{Utilities: []string{"padding/5", "radius/lg", "accent/blue"}, GlassBlur: true},
 		},
 	}
 
@@ -192,4 +176,38 @@ func buildComponentLabTemplate() *SDUITemplate {
 		DefaultAccentColor: "#0A84FF",
 		DefaultBlocks:      blocks,
 	}
+}
+
+// componentLabActionBlocks 为每个协议动作提供独立入口，单项失败不会阻断其余验收。
+func componentLabActionBlocks() []models.BlockItem {
+	actions := []models.BlockAction{
+		{Type: "copy_text", Payload: map[string]interface{}{"text": "SDUI-COPY"}},
+		{Type: "toast", Payload: map[string]interface{}{"text": "SDUI-TOAST"}},
+		{Type: "set_state", Payload: map[string]interface{}{"key": "show_extended", "value": true}},
+		{Type: "toggle_state", Payload: map[string]interface{}{"key": "show_extended"}},
+		{Type: "reset_state"},
+		{Type: "show_loading_state", Payload: map[string]interface{}{"target": "lab_state_target"}},
+		{Type: "show_empty_state", Payload: map[string]interface{}{"target": "lab_state_target"}},
+		{Type: "show_error_state", Payload: map[string]interface{}{"target": "lab_state_target"}},
+		{Type: "reset_block_state", Payload: map[string]interface{}{"target": "lab_state_target"}},
+		{Type: "refresh", Payload: map[string]interface{}{"target": "lab_state_target"}},
+		{Type: "request", Payload: map[string]interface{}{"endpoint": "query.score", "body": map[string]interface{}{"query_value": "SDUI-QUERY"}, "response": map[string]interface{}{"save_as": "lab_request"}}},
+		{Type: "request_data", Payload: map[string]interface{}{"endpoint": "query.score", "body": map[string]interface{}{"query_value": "SDUI-QUERY"}, "response": map[string]interface{}{"save_as": "lab_request"}}},
+		{Type: "require_auth"},
+		{Type: "share"},
+		{Type: "preview_image", Payload: map[string]interface{}{"urls": []string{"/assets/sdui-component-lab.png"}}},
+		{Type: "open_mini_program", Payload: map[string]interface{}{"target_app_id": "wx0000000000000000"}},
+		{Type: "open_channels_activity", Payload: map[string]interface{}{"feed_id": "export/component-lab", "finder_user_name": "gh_component_lab"}},
+		{Type: "subscribe_message", Payload: map[string]interface{}{"template_id": "lab_notice_template"}},
+		{Type: "request_payment", Payload: map[string]interface{}{"sku": "sdui-lab-sku"}},
+		{Type: "navigate_page", Payload: map[string]interface{}{"page_id": "home"}},
+		{Type: "open_webview", Payload: map[string]interface{}{"url": "https://example.com"}},
+	}
+	blocks := []models.BlockItem{{ID: "lab_action_result", Type: "text", Props: map[string]interface{}{"content": "动作结果 {{$state.lab_action}} / 请求 {{$state.lab_request.status}}"}}}
+	for _, action := range actions {
+		action.OnSuccess = []models.BlockAction{{Type: "set_state", Payload: map[string]interface{}{"key": "lab_action", "value": "通过:" + action.Type}}}
+		action.OnError = []models.BlockAction{{Type: "set_state", Payload: map[string]interface{}{"key": "lab_action", "value": "失败:" + action.Type}}}
+		blocks = append(blocks, models.BlockItem{ID: "lab_action_" + action.Type, Type: "action_button", Props: map[string]interface{}{"text": "验收 " + action.Type}, Action: &action})
+	}
+	return blocks
 }

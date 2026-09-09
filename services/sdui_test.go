@@ -136,9 +136,8 @@ func TestSDUIBlockSerialization(t *testing.T) {
 			"subtitle": "全网爆火都市短剧",
 		},
 		Style: &models.BlockStyle{
-			BorderRadius: "28rpx",
-			GlassBlur:    true,
-			AccentColor:  "#FF9F0A",
+			Utilities: []string{"radius/xl", "accent/amber"},
+			GlassBlur: true,
 		},
 		Action: &action,
 	}
@@ -648,6 +647,24 @@ func TestValidatePageAgainstSchema_Deep(t *testing.T) {
 	}
 	if report := ValidatePageAgainstSchema(validPage); !report.IsValid {
 		t.Fatalf("合规页面校验应成功: %v", report.Errors)
+	}
+
+	legacyStylePage := &models.DynamicPage{
+		AppID: "wx_test", PageID: "legacy_style", Title: "旧样式", BusinessType: "drama", Intent: "watch", Theme: "dark_glass",
+		Blocks: `[{"id":"legacy","type":"text","style":{"border_radius":"28rpx"},"props":{"text":"旧字段"}}]`,
+	}
+	if report := ValidatePageAgainstSchema(legacyStylePage); report.IsValid {
+		t.Fatal("旧样式字段必须被 Schema 拦截")
+	}
+	var legacyBlocks []models.BlockItem
+	if err := json.Unmarshal([]byte(legacyStylePage.Blocks), &legacyBlocks); err != nil || len(legacyBlocks) != 1 {
+		t.Fatal("历史页面读取不应因已废弃样式字段变为空页")
+	}
+	if err := ValidateSDUIStyleJSON([]byte(`{"default_blocks":[{"id":"root","type":"container","props":{"children":[{"id":"child","type":"text","style":{"padding":"20rpx"}}]}}]}`)); err == nil {
+		t.Fatal("模板中的嵌套旧样式字段应在解码前拒绝")
+	}
+	if err := ValidateSDUIStyleJSON([]byte(`[{"id":"business","type":"text","props":{"record":{"style":{"name":"业务字段"}}}}]`)); err != nil {
+		t.Fatalf("业务数据中的 style 字段不能误判为积木样式: %v", err)
 	}
 }
 

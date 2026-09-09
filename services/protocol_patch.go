@@ -64,6 +64,15 @@ func PatchDynamicPageDraftWithRevisionBy(appID, pageID string, expectedRevision 
 
 	// 逐项应用补丁
 	for idx, op := range ops {
+		if op.Op == "add_block" || strings.HasPrefix(op.Path, "/blocks") {
+			raw, err := json.Marshal(op.Value)
+			if err != nil {
+				return nil, fmt.Errorf("补丁[%d] 无法编码: %w", idx, err)
+			}
+			if err := ValidateSDUIStyleJSON(raw); err != nil {
+				return nil, fmt.Errorf("补丁[%d]: %w", idx, err)
+			}
+		}
 		switch op.Op {
 		case "replace":
 			switch op.Path {

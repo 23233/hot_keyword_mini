@@ -93,6 +93,23 @@ func TestLayoutIR_DataBindingAndRepeat(t *testing.T) {
 	}
 }
 
+// TestResolveBlockPropsBindings_TabAndBusinessKeys 验证仅 Tab 描述对象保留结构键，业务字段仍可绑定。
+func TestResolveBlockPropsBindings_TabAndBusinessKeys(t *testing.T) {
+	props := map[string]interface{}{
+		"items": []interface{}{map[string]interface{}{"key": "$item.id", "id": "$item.id", "label": "$item.name"}},
+		"tabs":  []interface{}{map[string]interface{}{"key": "$item.id", "title": "结构 Tab", "blocks": []interface{}{}}},
+	}
+	resolved := ResolveBlockPropsBindings(props, map[string]interface{}{"item": map[string]interface{}{"id": "row-1", "name": "业务项"}})
+	item := resolved["items"].([]interface{})[0].(map[string]interface{})
+	if item["key"] != "row-1" || item["id"] != "row-1" || item["label"] != "业务项" {
+		t.Fatalf("业务 key/id 绑定未解析: %#v", item)
+	}
+	tab := resolved["tabs"].([]interface{})[0].(map[string]interface{})
+	if tab["key"] != "$item.id" {
+		t.Fatalf("Tab 结构 key 不应在父级提前解析: %#v", tab)
+	}
+}
+
 // TestLayoutIR_ConditionEvaluation 测试受控条件求值 visible_when
 func TestLayoutIR_ConditionEvaluation(t *testing.T) {
 	ctx := map[string]interface{}{
@@ -898,5 +915,24 @@ func TestLayoutIR_StyleUtilitiesKeepMetricsInSync(t *testing.T) {
 	}
 	if len(node.Children) != 2 || node.Children[1].BoundingBox.Y-node.Children[0].BoundingBox.Y < 8 {
 		t.Fatalf("容器 gap/4 未生效: %+v", node.Children)
+	}
+}
+
+// TestLayoutIR_AccentUtilities 验证父级强调色继承、局部覆盖和兄弟节点隔离。
+func TestLayoutIR_AccentUtilities(t *testing.T) {
+	page := &models.DynamicPage{PageID: "accent", Title: "强调色", Blocks: `[{"id":"parent","type":"container","style":{"utilities":["accent/blue","padding/5","radius/xl"]},"props":{"children":[{"id":"green","type":"container","style":{"utilities":["accent/green"]},"props":{"children":[{"id":"inherited","type":"text"}]}},{"id":"sibling","type":"text"}]}}]`}
+	ir, err := BuildPageLayoutIR(page, DefaultDeviceParams(), "normal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := ir.Nodes[0]
+	if root.Padding != 10 || root.BorderRadius != 14 || root.AccentColor != "#1769e0" {
+		t.Fatalf("根样式映射异常: %+v", root)
+	}
+	if root.Children[0].AccentColor != "#30d158" || root.Children[0].Children[0].AccentColor != "#30d158" {
+		t.Fatal("强调色覆盖或继承失效")
+	}
+	if root.Children[1].AccentColor != "#1769e0" {
+		t.Fatal("局部强调色污染了兄弟节点")
 	}
 }

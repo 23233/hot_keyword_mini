@@ -1,8 +1,9 @@
 // condition.test.ts
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { evaluateCondition } from '../src/utils/condition.ts'
-import { blockClassName, utilityClasses } from '../src/components/SDUI/style.ts'
+import { blockClassName, utilityClasses, SDUI_STYLE_TOKENS } from '../src/components/SDUI/style.ts'
 
 const context = {
   state: {
@@ -36,4 +37,12 @@ test('SDUI 条件简写与数组语法保持同一结果', () => {
 test('SDUI 工具令牌去重并保持安全类名', () => {
   assert.equal(utilityClasses(['space/y-6', 'space/y-6', 'radius/lg', 'bad token']), 'u-space-y-6 u-radius-lg')
   assert.equal(blockClassName('sdui-card', { utilities: ['layout/card'] }), 'sdui-card u-layout-card')
+})
+
+test('Schema、前端令牌与 CSS 工具类全量一致', () => {
+  const schema = JSON.parse(readFileSync(new URL('../../schema/sdui.schema.json', import.meta.url), 'utf8'))
+  const tokens = schema.definitions.BlockItem.properties.style.properties.utilities.items.enum
+  assert.deepEqual([...SDUI_STYLE_TOKENS].sort(), [...tokens].sort())
+  const css = readFileSync(new URL('../src/components/SDUI/sdui.scss', import.meta.url), 'utf8')
+  for (const token of tokens) assert.ok(css.includes(`.u-${token.replace('/', '-')}`), `缺少 CSS: ${token}`)
 })

@@ -12,7 +12,7 @@
     "build:weapp": "taro build --type weapp && node scripts/copy-agent.mjs",
     "dev:weapp": "taro build --type weapp --watch",
     "type-check": "tsc --noEmit",
-    "test:sdui": "node --test --experimental-strip-types tests/condition.test.ts",
+    "test:sdui": "node --test --experimental-strip-types tests/condition.test.ts tests/action.test.mjs",
     "test:wechat-agent": "node --test tests/wechat-agent.acceptance.test.mjs"
   },
   "dependencies": {

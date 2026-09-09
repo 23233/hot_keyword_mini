@@ -4,6 +4,7 @@ import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import test from 'node:test'
 import path from 'node:path'
+import ts from 'typescript'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const distRoot = path.join(projectRoot, 'dist')
@@ -127,6 +128,106 @@ function currentPageEventually(predicate) {
   return page
 }
 
+function evaluateRuntime(fn) {
+  const source = ts.transpileModule(`const fn = ${fn.toString()}`, { compilerOptions: { target: ts.ScriptTarget.ES2017 } }).outputText
+    .replace(/^const fn = /, '').replace(/;\s*$/, '').replace(/\r?\n/g, ' ')
+  const output = toolResult(runWechatIDE([
+    'automation_evaluate', '--project', wechatProjectRoot, '--fn-source', source
+  ]), 'automation_evaluate')
+  assert.equal(output.success, true)
+  return output.result.result
+}
+
+function tapAction(type) {
+  assert.equal(toolResult(runWechatIDE([
+    'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap',
+    '--selector', `#lab_action_${type} .capsule-btn`, '--wait', '1'
+  ]), 'automation_element_action').success, true)
+}
+
+function labDom() {
+  return String(toolResult(runWechatIDERead([
+    'automation_element_action', '--project', wechatProjectRoot, '--action', 'outerWxml', '--selector', '.sdui-container-block'
+  ]), 'automation_element_action'))
+}
+
+test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, async () => {
+  runWechatIDE(['open_project_window', '--project', wechatProjectRoot, '--window-mode', 'liteMode'])
+  const pageId = process.env.WECHAT_AGENT_PAGE_ID || 'component_lab_acceptance_20260907'
+  const backend = await fetch(`http://127.0.0.1:8080/api/v1/page/${pageId}`, { headers: { 'X-WX-AppID': 'wx516563cfe994bbc6' } }).then(response => response.json())
+  assert.ok(backend.page, '后端未返回验收页面')
+  runWechatIDE(['simulator_open_page', '--project', wechatProjectRoot, '--page', 'pages/dynamic/index', '--query', `page_id=${pageId}`])
+  assert.match(labDom(), /lab_action_request_payment/)
+  // 仅替换平台边界。SDUI 页面、真实点击、状态和 query.score 请求仍走生产实现。
+  evaluateRuntime(function () {
+    const app = getApp()
+    app.sduiAcceptance = { originals: {}, calls: [] }
+    for (const method of ['setClipboardData', 'showToast', 'showShareMenu', 'previewImage', 'navigateToMiniProgram', 'openChannelsActivity', 'requestSubscribeMessage']) {
+      app.sduiAcceptance.originals[method] = wx[method]
+      wx[method] = function (options) {
+        app.sduiAcceptance.calls.push({ method: method, options: JSON.parse(JSON.stringify(options)) })
+        const denied = method === 'requestSubscribeMessage'
+        const result = { errMsg: method + (denied ? ':fail 验收受控拒绝' : ':ok') }
+        if (denied && options.fail) options.fail(result)
+        if (!denied && options.success) options.success(result)
+        if (options.complete) options.complete(result)
+      }
+    }
+    app.sduiAcceptance.originals.request = wx.request
+    wx.request = function (options) {
+      if (options.url.indexOf('/api/v1/payment/orders') >= 0) {
+        app.sduiAcceptance.calls.push({ method: 'paymentOrder', options: JSON.parse(JSON.stringify(options)) })
+        options.success({ statusCode: 400, data: { code: 400, msg: '验收拒绝创建支付订单' } })
+        return { abort: function () {} }
+      }
+      return app.sduiAcceptance.originals.request.call(wx, options)
+    }
+    return true
+  })
+  try {
+    for (const type of ['copy_text', 'toast', 'set_state', 'toggle_state', 'set_state', 'reset_state', 'show_loading_state', 'show_empty_state', 'show_error_state', 'reset_block_state', 'show_error_state', 'refresh', 'request', 'request_data', 'require_auth', 'share', 'preview_image', 'open_mini_program', 'open_channels_activity', 'subscribe_message', 'request_payment']) {
+      tapAction(type)
+      const dom = labDom()
+      const denied = ['subscribe_message', 'request_payment'].includes(type)
+      assert.ok(dom.includes(`${denied ? '失败' : '通过'}:${type}`), `${type} 未完成对应成功/失败分支`)
+      if (type === 'set_state') assert.match(dom, /show_extended 已开启/)
+      if (type === 'toggle_state' || type === 'reset_state') assert.doesNotMatch(dom, /show_extended 已开启/)
+      if (type === 'show_empty_state') assert.match(dom, /暂无实验数据/)
+      if (type === 'show_error_state') assert.match(dom, /状态请求失败/)
+      if (type === 'reset_block_state' || type === 'refresh') assert.match(dom, /异步状态容器/)
+      if (type === 'request' || type === 'request_data') assert.match(dom, /请求 success/)
+    }
+    const calls = evaluateRuntime(function () { return getApp().sduiAcceptance.calls })
+    assert.equal(calls.find(call => call.method === 'setClipboardData').options.data, 'SDUI-COPY')
+    assert.equal(calls.find(call => call.method === 'navigateToMiniProgram').options.appId, 'wx0000000000000000')
+    assert.equal(calls.find(call => call.method === 'openChannelsActivity').options.feedId, 'export/component-lab')
+    assert.deepEqual(calls.find(call => call.method === 'requestSubscribeMessage').options.tmplIds, ['lab_notice_template'])
+    assert.equal(calls.find(call => call.method === 'paymentOrder').options.data.sku, 'sdui-lab-sku')
+    assert.ok(calls.some(call => call.method === 'showShareMenu'))
+    assert.match(calls.find(call => call.method === 'previewImage').options.urls[0], /assets\/sdui-component-lab.png$/)
+    const expected = await fetch('http://127.0.0.1:8080/api/v1/action/execute', {
+      method: 'POST', headers: { 'X-WX-AppID': 'wx516563cfe994bbc6', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: 'query.score', payload: { query_value: 'SDUI-QUERY' } })
+    }).then(response => response.json())
+    assert.equal(expected.data.status, 'success')
+  } finally {
+    evaluateRuntime(function () {
+      const app = getApp()
+      for (const method of Object.keys(app.sduiAcceptance.originals)) wx[method] = app.sduiAcceptance.originals[method]
+      delete app.sduiAcceptance
+      return true
+    })
+  }
+  tapAction('navigate_page')
+  assert.equal(currentPageEventually(page => page.path === 'pages/index/index').path, 'pages/index/index')
+  runWechatIDE(['simulator_open_page', '--project', wechatProjectRoot, '--page', 'pages/dynamic/index', '--query', `page_id=${pageId}`])
+  assert.match(labDom(), /lab_action_open_webview/)
+  tapAction('open_webview')
+  const webview = currentPageEventually(page => page.path === 'pages/webview/index')
+  assert.equal(webview.path, 'pages/webview/index')
+  assert.equal(decodeURIComponent(webview.query.url), 'https://example.com')
+})
+
 test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ideRequired }, () => {
   assert.ok(existsSync(cliPath), `未找到微信开发者工具 CLI: ${cliPath}`)
   assert.ok(existsSync(ideCliPath), `未找到 wechatide CLI: ${ideCliPath}`)
@@ -192,7 +293,7 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
 
   const stateTab = runWechatIDE([
     'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap',
-    '--selector', '.tab-key-state', '--wait', '1'
+    '--selector', '.tab-index-1', '--wait', '1'
   ])
   assert.equal(toolResult(stateTab, 'automation_element_action').success, true)
   const stateTabDom = String(toolResult(runWechatIDERead([
@@ -203,12 +304,12 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
 
   const layoutTab = runWechatIDE([
     'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap',
-    '--selector', '.tab-key-layout', '--wait', '1'
+    '--selector', '.tab-index-0', '--wait', '1'
   ])
   assert.equal(toolResult(layoutTab, 'automation_element_action').success, true)
 
   const click = runWechatIDE([
-    'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap', '--selector', '.capsule-btn', '--wait', '2'
+    'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap', '--selector', '#lab_state_actions .capsule-btn', '--wait', '2'
   ])
   assert.equal(toolResult(click, 'automation_element_action').success, true)
 

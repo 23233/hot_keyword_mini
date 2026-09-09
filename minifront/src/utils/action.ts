@@ -133,7 +133,7 @@ export function resolveObjectBindings(target: any, context?: ActionContext): any
 function resolveActionPayload(payload: Record<string, any>, context?: ActionContext): Record<string, any> {
   const resolved: Record<string, any> = {}
   Object.keys(payload || {}).forEach((key) => {
-    resolved[key] = key === 'on_success' || key === 'on_error'
+    resolved[key] = key === 'on_success' || key === 'on_error' || key === 'endpoint'
       ? payload[key]
       : resolveObjectBindings(payload[key], context)
   })
@@ -144,15 +144,21 @@ function resolveActionPayload(payload: Record<string, any>, context?: ActionCont
  * 解析 block 属性但保留嵌套子 block，避免父容器提前消费子项的 $item/$state 绑定。
  */
 export function resolveBlockPropsBindings(props: Record<string, any>, context?: ActionContext): Record<string, any> {
+  const isTabDescriptor = (value: Record<string, any>) => value.title !== undefined && (
+    value.blocks !== undefined || value.children !== undefined || value.child !== undefined
+  )
   const resolve = (value: any): any => {
     if (value == null) return value
     if (Array.isArray(value)) return value.map(resolve)
     if (typeof value === 'object') {
       if (typeof value.type === 'string') return value
+      if (Object.keys(value).length === 1 && typeof value.path === 'string' && isKnownScopedPath(value.path)) {
+        return resolveBindingValue(value.path, context)
+      }
       const result: Record<string, any> = {}
       Object.keys(value).forEach((key) => {
-        // key/id 是结构标识；例如 Tab 的 key="state" 不是 $state 数据绑定。
-        result[key] = key === 'key' || key === 'id' ? value[key] : resolve(value[key])
+        // Tab 描述对象的 key/id 是结构标识；其他业务属性仍允许 $item.id 等受控绑定。
+        result[key] = isTabDescriptor(value) && (key === 'key' || key === 'id') ? value[key] : resolve(value[key])
       })
       return result
     }
@@ -360,6 +366,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
     // 页面响应式状态重置
     case 'reset_state': {
       const stateKey = payload.key || payload.name || payload.target
+      const resetKeys = stateKey ? [stateKey] : Object.keys(context?.state || {})
       if (context) {
         if (stateKey) {
           context.state = { ...(context.state || {}), [stateKey]: undefined }
@@ -368,11 +375,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         }
       }
       if (context?.updateState) {
-        if (stateKey) {
-          context.updateState(stateKey, undefined)
-        } else if (context.state) {
-          Object.keys(context.state).forEach((k) => context.updateState!(k, undefined))
-        }
+        resetKeys.forEach((key) => context.updateState!(key, undefined))
       }
       actionResult = { reset: true }
       break

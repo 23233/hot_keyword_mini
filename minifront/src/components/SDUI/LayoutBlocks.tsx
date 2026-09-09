@@ -326,7 +326,7 @@ export const TabsBlock: React.FC<LayoutBlockProps> = ({ block, onAction, context
           return (
             <View
               key={key}
-              className={`tab-pill-item tab-key-${key} ${isActive ? 'is-active' : ''}`}
+              className={`tab-pill-item tab-index-${idx} ${isActive ? 'is-active' : ''}`}
               onClick={(e) => {
                 e?.stopPropagation?.()
                 handleTabSelect(key, tab)

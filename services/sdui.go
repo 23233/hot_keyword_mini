@@ -437,10 +437,8 @@ func (s *SDUIService) seedDefaultPage(appID string) error {
 				"hot_score": 998000
 			},
 			"style": {
-				"margin_y": "16rpx",
-				"border_radius": "28rpx",
-				"glass_blur": true,
-				"accent_color": "#FF9F0A"
+				"utilities": ["space/y-4", "radius/xl", "accent/amber"],
+				"glass_blur": true
 			},
 			"action": {
 				"type": "open_channels_activity",
@@ -462,8 +460,7 @@ func (s *SDUIService) seedDefaultPage(appID string) error {
 				"content": "https://pan.quark.cn/s/monkey_king_full_888"
 			},
 			"style": {
-				"margin_y": "16rpx",
-				"border_radius": "24rpx",
+				"utilities": ["space/y-4", "radius/lg"],
 				"glass_blur": true
 			},
 			"action": {
@@ -1005,6 +1002,10 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 		var targetRev models.DynamicPageRevision
 		if err := tx.Where("app_id = ? AND page_id = ? AND revision = ?", appID, pageID, targetRevision).First(&targetRev).Error; err != nil {
 			return fmt.Errorf("未找到版本 revision %d 的快照: %w", targetRevision, err)
+		}
+		report := ValidateDynamicPage(&models.DynamicPage{AppID: appID, PageID: pageID, Title: targetRev.Title, BusinessType: targetRev.BusinessType, Intent: targetRev.Intent, Theme: targetRev.Theme, Blocks: targetRev.Blocks})
+		if !report.IsValid {
+			return fmt.Errorf("历史版本不符合当前协议，请迁移为新草稿后发布: %s", strings.Join(report.Errors, "; "))
 		}
 
 		if err := tx.Where("app_id = ? AND page_id = ?", appID, pageID).First(&current).Error; err != nil {

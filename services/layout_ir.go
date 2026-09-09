@@ -141,14 +141,9 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 			borderRadius := 14
 			marginY := 8
 			glassBlur := true
-			accentColor := page.AccentColor
+			accentColor := resolveStyleAccent(targetBlock.Style, page.AccentColor)
 
-			if targetBlock.Style != nil {
-				marginY, padding, borderRadius, glassBlur = resolveStyleMetrics(targetBlock.Style, marginY, padding, borderRadius, glassBlur)
-				if targetBlock.Style.AccentColor != "" {
-					accentColor = targetBlock.Style.AccentColor
-				}
-			}
+			marginY, padding, borderRadius, glassBlur = resolveStyleMetrics(targetBlock.Style, marginY, padding, borderRadius, glassBlur)
 
 			// 6. 动态自适应排版高度与原生能力替身计算
 			blockHeight, nativeStub := CalculateAdaptiveBlockHeight(&targetBlock, targetBlock.Props, contentWidth)
@@ -506,6 +501,17 @@ func ResolveBlockPropsBindings(props map[string]interface{}, context map[string]
 	return resolved
 }
 
+// isTabDescriptor 判断对象是否为 Tabs 的结构描述，只有该结构的 key/id 不参与绑定求值。
+func isTabDescriptor(value map[string]interface{}) bool {
+	if _, hasTitle := value["title"]; !hasTitle {
+		return false
+	}
+	_, hasBlocks := value["blocks"]
+	_, hasChildren := value["children"]
+	_, hasChild := value["child"]
+	return hasBlocks || hasChildren || hasChild
+}
+
 func resolvePropsPreservingBlocks(value interface{}, context map[string]interface{}) interface{} {
 	if value == nil {
 		return nil
@@ -520,8 +526,8 @@ func resolvePropsPreservingBlocks(value interface{}, context map[string]interfac
 		}
 		result := make(map[string]interface{}, len(m))
 		for k, v := range m {
-			// key/id 是列表、Tab 和子积木的结构标识，即使值恰好等于 state 也不能当作数据绑定路径解析。
-			if k == "key" || k == "id" {
+			// Tab 描述对象的 key/id 是结构标识；其他业务属性仍允许 $item.id 等受控绑定。
+			if isTabDescriptor(m) && (k == "key" || k == "id") {
 				result[k] = v
 				continue
 			}
@@ -689,7 +695,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 				VisibleWhen: target.VisibleWhen, Repeat: target.Repeat,
 				BoundingBox: BoundingBox{X: cellX, Y: cellY + marginY, Width: cellWidth, Height: h},
 				MarginY:     marginY, Padding: padding, BorderRadius: radius, GlassBlur: glass,
-				AccentColor: accentColor, TextSummary: extractTextSummary(&target, props),
+				AccentColor: resolveStyleAccent(target.Style, accentColor), TextSummary: extractTextSummary(&target, props),
 				Action: target.Action, Events: target.Events, NativeStub: stub,
 				Loading: target.Loading, Empty: target.Empty, Error: target.Error, Fallback: target.Fallback,
 			}
@@ -699,7 +705,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 
 			if nested := extractNestedBlocks(props); len(nested) > 0 {
 				var childH int
-				child.Children, childH = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, accentColor, stateFixture, cellX+padding, child.BoundingBox.Y+padding, cellWidth-padding*2, depth+1)
+				child.Children, childH = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, child.AccentColor, stateFixture, cellX+padding, child.BoundingBox.Y+padding, cellWidth-padding*2, depth+1)
 				if childH+padding*2 > child.BoundingBox.Height {
 					child.BoundingBox.Height = childH + padding*2
 				}
@@ -832,7 +838,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 				VisibleWhen: t.target.VisibleWhen, Repeat: t.target.Repeat,
 				BoundingBox: BoundingBox{X: childX, Y: childY, Width: t.width, Height: t.height},
 				MarginY:     t.marginY, Padding: t.padding, BorderRadius: t.radius, GlassBlur: t.glass,
-				AccentColor: accentColor, TextSummary: extractTextSummary(&t.target, t.props),
+				AccentColor: resolveStyleAccent(t.target.Style, accentColor), TextSummary: extractTextSummary(&t.target, t.props),
 				Action: t.target.Action, Events: t.target.Events, NativeStub: t.stub,
 				Loading: t.target.Loading, Empty: t.target.Empty, Error: t.target.Error, Fallback: t.target.Fallback,
 			}
@@ -842,7 +848,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 
 			if len(t.nested) > 0 {
 				var childH int
-				child.Children, childH = buildNestedLayoutNodesForParent(&t.target, t.nested, t.nodeCtx, device, accentColor, stateFixture, childX+t.padding, child.BoundingBox.Y+t.padding, t.width-t.padding*2, depth+1)
+				child.Children, childH = buildNestedLayoutNodesForParent(&t.target, t.nested, t.nodeCtx, device, child.AccentColor, stateFixture, childX+t.padding, child.BoundingBox.Y+t.padding, t.width-t.padding*2, depth+1)
 				if childH+t.padding*2 > child.BoundingBox.Height {
 					child.BoundingBox.Height = childH + t.padding*2
 				}
@@ -910,7 +916,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 				VisibleWhen: target.VisibleWhen, Repeat: target.Repeat,
 				BoundingBox: BoundingBox{X: currentX, Y: y + marginY, Width: itemW, Height: h},
 				MarginY:     marginY, Padding: padding, BorderRadius: radius, GlassBlur: glass,
-				AccentColor: accentColor, TextSummary: extractTextSummary(&target, props),
+				AccentColor: resolveStyleAccent(target.Style, accentColor), TextSummary: extractTextSummary(&target, props),
 				Action: target.Action, Events: target.Events, NativeStub: stub,
 				Loading: target.Loading, Empty: target.Empty, Error: target.Error, Fallback: target.Fallback,
 			}
@@ -920,7 +926,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 
 			if nested := extractNestedBlocks(props); len(nested) > 0 {
 				var childH int
-				child.Children, childH = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, accentColor, stateFixture, currentX+padding, child.BoundingBox.Y+padding, itemW-padding*2, depth+1)
+				child.Children, childH = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, child.AccentColor, stateFixture, currentX+padding, child.BoundingBox.Y+padding, itemW-padding*2, depth+1)
 				if childH+padding*2 > child.BoundingBox.Height {
 					child.BoundingBox.Height = childH + padding*2
 				}
@@ -970,7 +976,7 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 				VisibleWhen: target.VisibleWhen, Repeat: target.Repeat,
 				BoundingBox: BoundingBox{X: x, Y: currentY + marginY, Width: width, Height: height},
 				MarginY:     marginY, Padding: padding, BorderRadius: radius, GlassBlur: glass,
-				AccentColor: accentColor, TextSummary: extractTextSummary(&target, props),
+				AccentColor: resolveStyleAccent(target.Style, accentColor), TextSummary: extractTextSummary(&target, props),
 				Action: target.Action, Events: target.Events, NativeStub: nativeStub,
 				Loading: target.Loading, Empty: target.Empty, Error: target.Error, Fallback: target.Fallback,
 			}
@@ -983,7 +989,7 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 				if target.Type == "tabs" {
 					headerOffset = 46
 				}
-				child.Children, childHeight = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, accentColor, stateFixture, x+padding, child.BoundingBox.Y+padding+headerOffset, width-padding*2, depth+1)
+				child.Children, childHeight = buildNestedLayoutNodesForParent(&target, nested, nodeCtx, device, child.AccentColor, stateFixture, x+padding, child.BoundingBox.Y+padding+headerOffset, width-padding*2, depth+1)
 				if childHeight+padding*2+headerOffset > child.BoundingBox.Height {
 					child.BoundingBox.Height = childHeight + padding*2 + headerOffset
 				}
@@ -1533,15 +1539,6 @@ func resolveStyleMetrics(style *models.BlockStyle, marginY, padding, radius int,
 	if style == nil {
 		return marginY, padding, radius, glass
 	}
-	if style.MarginY != "" {
-		marginY = parsePixelValue(style.MarginY, marginY)
-	}
-	if style.Padding != "" {
-		padding = parsePixelValue(style.Padding, padding)
-	}
-	if style.BorderRadius != "" {
-		radius = parsePixelValue(style.BorderRadius, radius)
-	}
 	if style.GlassBlur {
 		glass = true
 	}
@@ -1571,12 +1568,12 @@ func resolveStyleMetrics(style *models.BlockStyle, marginY, padding, radius int,
 			padding = 4
 		case "padding/4", "padding/x-4", "padding/y-4":
 			padding = 8
+		case "padding/5", "padding/x-5":
+			padding = 10
 		case "padding/6", "padding/y-6":
 			padding = 12
 		case "padding/8":
 			padding = 16
-		case "padding/x-5":
-			padding = 10
 		case "padding/x-6":
 			padding = 12
 		case "radius/none":
@@ -1587,11 +1584,27 @@ func resolveStyleMetrics(style *models.BlockStyle, marginY, padding, radius int,
 			radius = 8
 		case "radius/lg":
 			radius = 12
+		case "radius/xl":
+			radius = 14
 		case "radius/full":
 			radius = 499
 		}
 	}
 	return marginY, padding, radius, glass
+}
+
+// resolveStyleAccent 使用与前端工具类相同的强调色值。
+func resolveStyleAccent(style *models.BlockStyle, fallback string) string {
+	if style == nil {
+		return fallback
+	}
+	colors := map[string]string{"accent/blue": "#1769e0", "accent/ink": "#17191d", "accent/amber": "#c06a00", "accent/green": "#30d158"}
+	for _, token := range style.Utilities {
+		if color, ok := colors[token]; ok {
+			fallback = color
+		}
+	}
+	return fallback
 }
 
 // resolveStyleGap 读取容器的 gap 属性或对应工具令牌。

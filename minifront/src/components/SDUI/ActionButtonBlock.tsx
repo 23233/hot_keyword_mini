@@ -25,7 +25,7 @@ export const ActionButtonBlock: React.FC<ActionButtonBlockProps> = ({ block, onA
   }
 
   return (
-    <View className={blockClassName(`sdui-action-btn-block variant-${variant}`, block.style)}>
+    <View id={block.id} className={blockClassName(`sdui-action-btn-block variant-${variant}`, block.style)}>
       <View
         className="capsule-btn"
         onClick={handleClick}
