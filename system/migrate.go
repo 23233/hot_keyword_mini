@@ -154,6 +154,47 @@ func EnsureAIBreakthroughData() error {
 	return ensureAIBreakthroughPage(appID, "membership", "tpl_ai_breakthrough_membership", "AI 破甲会员中心")
 }
 
+// EnsureSDUIAcceptanceData 在开发环境同步固定的 SDUI 全量验收页面。
+// 该页面只用于微信开发者工具验收，不覆盖运营页面，也不会在生产环境调用。
+func EnsureSDUIAcceptanceData() error {
+	if db.Mysql == nil {
+		return nil
+	}
+
+	const (
+		appID      = "wx516563cfe994bbc6"
+		pageID     = "component_lab_acceptance_20260907"
+		templateID = "tpl_sdui_component_lab"
+		title      = "SDUI 全量组件验收"
+	)
+
+	service := services.NewSDUIService()
+	existing, err := service.GetRawPage(appID, pageID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) && !strings.Contains(err.Error(), "页面不存在") {
+		return err
+	}
+
+	page, err := services.NewTemplateService().ApplyTemplateToPage(templateID, appID, pageID, title)
+	if err != nil {
+		return err
+	}
+	page.Status = "published"
+	page.RequireAuth = false
+
+	if existing != nil {
+		// 验收页由模板唯一维护；只有协议内容或发布元数据变化时才创建新快照。
+		if existing.Status == page.Status && existing.Title == page.Title && existing.BusinessType == page.BusinessType &&
+			existing.Intent == page.Intent && existing.Theme == page.Theme && existing.AccentColor == page.AccentColor &&
+			existing.RequireAuth == page.RequireAuth && existing.Blocks == page.Blocks && existing.ShareConfig == page.ShareConfig &&
+			existing.CampaignID == page.CampaignID {
+			return nil
+		}
+		page.Revision = existing.Revision
+	}
+
+	return service.SavePageWithAudit(page, "system", "同步 SDUI 全量组件验收模板", 0)
+}
+
 func ensureAIBreakthroughPage(appID, pageID, templateID, title string) error {
 	existingRevision := 0
 	if existing, err := services.NewSDUIService().GetRawPage(appID, pageID); err == nil {

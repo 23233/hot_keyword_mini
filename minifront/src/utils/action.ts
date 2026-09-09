@@ -151,7 +151,8 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context?: 
       if (typeof value.type === 'string') return value
       const result: Record<string, any> = {}
       Object.keys(value).forEach((key) => {
-        result[key] = resolve(value[key])
+        // key/id 是结构标识；例如 Tab 的 key="state" 不是 $state 数据绑定。
+        result[key] = key === 'key' || key === 'id' ? value[key] : resolve(value[key])
       })
       return result
     }

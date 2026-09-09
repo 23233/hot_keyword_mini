@@ -520,6 +520,11 @@ func resolvePropsPreservingBlocks(value interface{}, context map[string]interfac
 		}
 		result := make(map[string]interface{}, len(m))
 		for k, v := range m {
+			// key/id 是列表、Tab 和子积木的结构标识，即使值恰好等于 state 也不能当作数据绑定路径解析。
+			if k == "key" || k == "id" {
+				result[k] = v
+				continue
+			}
 			result[k] = resolvePropsPreservingBlocks(v, context)
 		}
 		return result

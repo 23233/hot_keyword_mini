@@ -56,6 +56,11 @@ func main() {
 	if err = system.EnsureAIBreakthroughData(); err != nil {
 		panic(err)
 	}
+	if !config.Pro {
+		if err = system.EnsureSDUIAcceptanceData(); err != nil {
+			panic(err)
+		}
+	}
 
 	app := iris.New()
 	app.Use(iris.Compression)

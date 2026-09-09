@@ -171,12 +171,10 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
     'category_nav', 'article_feed', 'article_detail', 'membership_plan_list', 'comment_thread', 'collection_nav',
     'content_feed', 'content_detail', 'offer_list', 'discussion_thread', 'custom', 'custom_block'
   ]
-  // empty/skeleton 属于状态分支，在 normal fixture 中不会同时显示；其专用状态由后续状态断言覆盖。
-  const renderedBlockTypes = registeredBlocks.filter((type) => !['empty', 'skeleton'].includes(type) && new RegExp(`type-${type}|sdui-${type.replaceAll('_', '-')}`).test(domResult))
-  assert.ok(renderedBlockTypes.length >= 25, `组件实验室实际渲染 Block 数量过少: ${renderedBlockTypes.length}`)
-  for (const blockType of renderedBlockTypes) {
-    assert.match(domResult, new RegExp(`type-${blockType}|sdui-${blockType.replaceAll('_', '-')}`), `真实 WXML 未渲染 Block: ${blockType}`)
-  }
+  // empty/skeleton 属于状态分支，custom_block 属于条件分支，分别在后续真实交互中验收。
+  const normalBlockTypes = registeredBlocks.filter((type) => !['empty', 'skeleton', 'custom_block'].includes(type))
+  const missingNormalBlocks = normalBlockTypes.filter((blockType) => !new RegExp(`type-${blockType}|sdui-${blockType.replaceAll('_', '-')}`).test(domResult))
+  assert.deepEqual(missingNormalBlocks, [], `普通态真实 WXML 缺少 Block: ${missingNormalBlocks.join(', ')}`)
   assert.match(domResult, /http:\/\/127\.0\.0\.1:8080\/assets\/sdui-component-lab\.png/, '图片组件未复用本地 HTTP 静态资源')
   assert.doesNotMatch(domResult, /暂无图片内容/, '图片组件加载失败并降级为占位态')
 
@@ -192,6 +190,23 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
   const appConsole = removeWechatIDEInternalErrors(consoleResult)
   assert.doesNotMatch(appConsole, /error|exception|failed/i, '模拟器 console 出现运行时错误')
 
+  const stateTab = runWechatIDE([
+    'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap',
+    '--selector', '.tab-key-state', '--wait', '1'
+  ])
+  assert.equal(toolResult(stateTab, 'automation_element_action').success, true)
+  const stateTabDom = String(toolResult(runWechatIDERead([
+    'automation_element_action', '--project', wechatProjectRoot, '--action', 'outerWxml', '--selector', '.tabs-content-body'
+  ]), 'automation_element_action'))
+  assert.match(stateTabDom, /type-empty/, '状态 Tab 未渲染 empty Block')
+  assert.match(stateTabDom, /type-skeleton/, '状态 Tab 未渲染 skeleton Block')
+
+  const layoutTab = runWechatIDE([
+    'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap',
+    '--selector', '.tab-key-layout', '--wait', '1'
+  ])
+  assert.equal(toolResult(layoutTab, 'automation_element_action').success, true)
+
   const click = runWechatIDE([
     'automation_element_action', '--project', wechatProjectRoot, '--action', 'tap', '--selector', '.capsule-btn', '--wait', '2'
   ])
@@ -205,7 +220,9 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
   const stateDom = runWechatIDE([
     'automation_element_action', '--project', wechatProjectRoot, '--action', 'outerWxml', '--selector', '.sdui-container-block'
   ])
-  assert.match(String(toolResult(stateDom, 'automation_element_action')), /show_extended 已开启/, '点击后条件渲染状态未生效')
+  const stateDomResult = String(toolResult(stateDom, 'automation_element_action'))
+  assert.match(stateDomResult, /show_extended 已开启/, '点击后条件渲染状态未生效')
+  assert.match(stateDomResult, /type-custom_block/, '点击后未渲染 custom_block 条件分支')
 
   const stateScreenshotPath = path.join(process.env.TEMP || process.cwd(), 'wechat-mcp-sdui-after-click.png')
   const stateScreenshot = runWechatIDE([

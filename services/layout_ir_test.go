@@ -732,6 +732,31 @@ func TestLayoutIR_TabsUseConfiguredActiveTab(t *testing.T) {
 	}
 }
 
+// TestLayoutIR_TabStateKeyIsStructural 验证 Tab 的 state key 不会被误解析为 $state 作用域。
+func TestLayoutIR_TabStateKeyIsStructural(t *testing.T) {
+	page := &models.DynamicPage{
+		PageID: "tabs_state_key",
+		Title:  "标签结构标识",
+		Blocks: `[{"id":"tabs","type":"tabs","props":{"tabs":[{"key":"layout","title":"布局","blocks":[]},{"key":"state","title":"状态","blocks":[{"id":"state_text","type":"text","props":{"text":"状态内容"}}]}]}}]`,
+	}
+
+	ir, err := BuildPageLayoutIRWithContext(page, DefaultDeviceParams(), "normal", map[string]interface{}{"state": map[string]interface{}{"enabled": true}})
+	if err != nil {
+		t.Fatalf("生成 Tabs IR 失败: %v", err)
+	}
+	if len(ir.Nodes) != 1 {
+		t.Fatalf("Tabs IR 节点数量异常: %d", len(ir.Nodes))
+	}
+	tabs, ok := ir.Nodes[0].Props["tabs"].([]interface{})
+	if !ok || len(tabs) != 2 {
+		t.Fatalf("Tabs 配置丢失: %#v", ir.Nodes[0].Props["tabs"])
+	}
+	stateTab, ok := tabs[1].(map[string]interface{})
+	if !ok || stateTab["key"] != "state" {
+		t.Fatalf("Tab state key 被错误解析: %#v", tabs[1])
+	}
+}
+
 // TestLayoutIR_InlineInterpolation 验证字符串内嵌 {{...}} 插值解析与数据流转
 func TestLayoutIR_InlineInterpolation(t *testing.T) {
 	ctx := map[string]interface{}{
