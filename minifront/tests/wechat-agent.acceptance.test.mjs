@@ -159,7 +159,8 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
   runWechatIDE(['simulator_open_page', '--project', wechatProjectRoot, '--page', 'pages/dynamic/index', '--query', `page_id=${pageId}`])
   assert.match(labDom(), /lab_action_request_payment/)
   // 仅替换平台边界。SDUI 页面、真实点击、状态和 query.score 请求仍走生产实现。
-  evaluateRuntime(function () {
+  try {
+    evaluateRuntime(function () {
     const app = getApp()
     app.sduiAcceptance = { originals: {}, calls: [] }
     for (const method of ['setClipboardData', 'showToast', 'showShareMenu', 'previewImage', 'navigateToMiniProgram', 'openChannelsActivity', 'requestSubscribeMessage']) {
@@ -183,8 +184,7 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
       return app.sduiAcceptance.originals.request.call(wx, options)
     }
     return true
-  })
-  try {
+    })
     for (const type of ['copy_text', 'toast', 'set_state', 'toggle_state', 'set_state', 'reset_state', 'show_loading_state', 'show_empty_state', 'show_error_state', 'reset_block_state', 'show_error_state', 'refresh', 'request', 'request_data', 'require_auth', 'share', 'preview_image', 'open_mini_program', 'open_channels_activity', 'subscribe_message', 'request_payment']) {
       tapAction(type)
       const dom = labDom()
@@ -213,6 +213,7 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
   } finally {
     evaluateRuntime(function () {
       const app = getApp()
+      if (!app.sduiAcceptance) return true
       for (const method of Object.keys(app.sduiAcceptance.originals)) wx[method] = app.sduiAcceptance.originals[method]
       delete app.sduiAcceptance
       return true

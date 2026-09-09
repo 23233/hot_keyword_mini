@@ -258,7 +258,6 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 			}
 		}
 	}
-
 	// 4. 递归审计所有嵌套 block、状态分支、fallback 与事件链，避免子树绕过发布校验。
 	for idx := range blocks {
 		validateNestedBlockContracts(&blocks[idx], fmt.Sprintf("blocks[%d]", idx), idMap, &report)
@@ -277,12 +276,43 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 	return report
 }
 
+// validateRawNestedBlocks 校验原始嵌套节点，避免非法子节点在模型反序列化时被静默跳过。
+func validateRawNestedBlocks(raw, path string, report *ValidationReport) {
+	var value interface{}
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return
+	}
+	var walk func(interface{}, string)
+	walk = func(current interface{}, currentPath string) {
+		switch node := current.(type) {
+		case []interface{}:
+			for index, item := range node {
+				walk(item, fmt.Sprintf("%s[%d]", currentPath, index))
+			}
+		case map[string]interface{}:
+			if _, hasType := node["type"]; hasType {
+				encoded, _ := json.Marshal(node)
+				var block models.BlockItem
+				if err := json.Unmarshal(encoded, &block); err != nil {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s 嵌套 Block 无法解析: %v", currentPath, err))
+				}
+			}
+			for key, item := range node {
+				walk(item, currentPath+"."+key)
+			}
+		}
+	}
+	walk(value, path)
+}
+
 // validateNestedBlockContracts 递归检查嵌套 block 的 ID、类型、动作和状态分支。
 func validateNestedBlockContracts(block *models.BlockItem, path string, idMap map[string]int, report *ValidationReport) {
 	if block == nil {
 		return
 	}
 	validateStyleUtilities(block.Style, path+".style", report)
+	validateVisibleWhen(block.VisibleWhen, path, report)
 	// 校验当前 block 自身绑定的单一动作
 	validateNestedActionContracts(block.Action, path+".action", report)
 	// 校验当前 block 绑定的多事件流动作列表
@@ -330,6 +360,36 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 		}
 		childCopy := child
 		validateNestedBlockContracts(&childCopy, childPath, idMap, report)
+	}
+}
+
+// validateVisibleWhen 校验任意层级 Block 的受控条件作用域。
+func validateVisibleWhen(condition map[string]interface{}, path string, report *ValidationReport) {
+	if condition == nil {
+		return
+	}
+	for key, raw := range condition {
+		switch child := raw.(type) {
+		case map[string]interface{}:
+			validateVisibleWhen(child, path+"."+key, report)
+		case []interface{}:
+			for index, item := range child {
+				if nested, ok := item.(map[string]interface{}); ok {
+					validateVisibleWhen(nested, fmt.Sprintf("%s.%s[%d]", path, key, index), report)
+				}
+			}
+		}
+	}
+	value, _ := condition["path"].(string)
+	if value == "" {
+		return
+	}
+	trimmed := strings.TrimPrefix(strings.TrimSpace(value), "$")
+	root := strings.Split(trimmed, ".")[0]
+	allowed := map[string]bool{"entity": true, "query": true, "item": true, "state": true, "result": true, "page": true, "session": true, "tenant": true, "props": true}
+	if !allowed[root] {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("%s.visible_when.path '%s' 不属于受控作用域", path, value))
 	}
 }
 
@@ -594,6 +654,7 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 		return report
 	}
 	validateRawStyleFields(page.Blocks, &report)
+	validateRawNestedBlocks(page.Blocks, "page.blocks", &report)
 
 	var blocks []models.BlockItem
 	if err := json.Unmarshal([]byte(page.Blocks), &blocks); err != nil {
@@ -672,25 +733,7 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 			}
 		}
 
-		// 检查 visible_when 条件表达式规范 (支持显式 $ 作用域或兼容省略 $ 的受控作用域路径)
-		if b.VisibleWhen != nil {
-			pathVal, _ := b.VisibleWhen["path"].(string)
-			if pathVal != "" {
-				trimmed := strings.TrimSpace(pathVal)
-				if strings.HasPrefix(trimmed, "$") {
-					trimmed = trimmed[1:]
-				}
-				parts := strings.Split(trimmed, ".")
-				validScopes := map[string]bool{
-					"entity": true, "query": true, "item": true, "state": true,
-					"result": true, "page": true, "session": true, "tenant": true, "props": true,
-				}
-				if len(parts) == 0 || !validScopes[parts[0]] {
-					report.IsValid = false
-					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s.visible_when.path '%s' 必须属于受控状态或实体作用域 (如 $entity.title 或 entity.title)", bPath, pathVal))
-				}
-			}
-		}
+		validateVisibleWhen(b.VisibleWhen, bPath, &report)
 	}
 
 	if len(report.Errors) > 0 {

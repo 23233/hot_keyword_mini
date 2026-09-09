@@ -161,7 +161,7 @@ func buildComponentLabTemplate() *SDUITemplate {
 					},
 				},
 			},
-			Style: &models.BlockStyle{Utilities: []string{"padding/5", "radius/lg", "accent/blue"}, GlassBlur: true},
+			Style: &models.BlockStyle{Utilities: []string{"padding/5", "radius/lg", "accent/blue"}, GlassBlur: models.Bool(true)},
 		},
 	}
 

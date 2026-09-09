@@ -137,7 +137,7 @@ func TestSDUIBlockSerialization(t *testing.T) {
 		},
 		Style: &models.BlockStyle{
 			Utilities: []string{"radius/xl", "accent/amber"},
-			GlassBlur: true,
+			GlassBlur: models.Bool(true),
 		},
 		Action: &action,
 	}
@@ -158,7 +158,7 @@ func TestSDUIBlockSerialization(t *testing.T) {
 	if decoded.Action == nil || decoded.Action.Type != "open_channels_activity" {
 		t.Fatalf("动作协议反序列化异常")
 	}
-	if decoded.Style == nil || !decoded.Style.GlassBlur {
+	if decoded.Style == nil || decoded.Style.GlassBlur == nil || !*decoded.Style.GlassBlur {
 		t.Fatalf("样式属性反序列化异常")
 	}
 }
@@ -665,6 +665,47 @@ func TestValidatePageAgainstSchema_Deep(t *testing.T) {
 	}
 	if err := ValidateSDUIStyleJSON([]byte(`[{"id":"business","type":"text","props":{"record":{"style":{"name":"业务字段"}}}}]`)); err != nil {
 		t.Fatalf("业务数据中的 style 字段不能误判为积木样式: %v", err)
+	}
+	nestedInvalid := &models.DynamicPage{AppID: "wx_test", PageID: "nested_invalid", Title: "嵌套非法", BusinessType: "custom", Blocks: `[{"id":"root","type":"container","props":{"children":[{"id":"child","type":"text","visible_when":{"path":"$evil.value"}}]}}]`}
+	if report := ValidateDynamicPage(nestedInvalid); report.IsValid {
+		t.Fatal("嵌套 Block 的非法 visible_when 必须被拦截")
+	}
+	for _, invalid := range []string{
+		`{"style":{"utilities":"padding/4"}}`,
+		`{"action":{"type":"copy_text","payload":123}}`,
+		`{"visible_when":{"and":[{"eq":[{"path":"$evil.value"},true]}]}}`,
+	} {
+		var child map[string]interface{}
+		_ = json.Unmarshal([]byte(invalid), &child)
+		child["id"], child["type"] = "child", "text"
+		raw, _ := json.Marshal([]interface{}{map[string]interface{}{"id": "root", "type": "container", "props": map[string]interface{}{"children": []interface{}{child}}}})
+		nestedInvalid.Blocks = string(raw)
+		if report := ValidateDynamicPage(nestedInvalid); report.IsValid {
+			t.Fatalf("非法嵌套节点不能通过发布校验: %s", invalid)
+		}
+	}
+}
+
+// TestGlassBlurFalseRoundTrip 验证显式关闭毛玻璃在信封序列化及后端 IR 中保持关闭。
+func TestGlassBlurFalseRoundTrip(t *testing.T) {
+	page := &models.DynamicPage{AppID: "wx_test", PageID: "glass_false", Title: "显式关闭毛玻璃", BusinessType: "custom", Blocks: `[{"id":"card","type":"custom","style":{"glass_blur":false}}]`}
+	envelope, err := NewSDUIService().AssembleEnvelope(page, nil, "normal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(envelope.Page.Blocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"glass_blur":false`) {
+		t.Fatalf("显式 false 在序列化时丢失: %s", raw)
+	}
+	ir, err := BuildPageLayoutIR(page, DefaultDeviceParams(), "normal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ir.Nodes[0].GlassBlur {
+		t.Fatal("IR 未关闭毛玻璃")
 	}
 }
 

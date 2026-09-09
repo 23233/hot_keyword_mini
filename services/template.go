@@ -167,7 +167,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/xl", "accent/amber"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 			Action: &models.BlockAction{
 				Type: "open_channels_activity",
@@ -188,7 +188,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/lg"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 			Action: &models.BlockAction{
 				Type: "copy_text",
@@ -255,7 +255,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/xl"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
@@ -350,7 +350,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/lg"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
@@ -402,7 +402,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/xl"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 		},
 		{
@@ -416,7 +416,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/lg"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 			Action: &models.BlockAction{
 				Type: "copy_text",
@@ -460,7 +460,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Style: &models.BlockStyle{
 				Utilities: []string{"radius/xl", "accent/amber"},
-				GlassBlur: true,
+				GlassBlur: models.Bool(true),
 			},
 		},
 		{

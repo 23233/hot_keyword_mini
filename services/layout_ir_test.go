@@ -99,7 +99,7 @@ func TestResolveBlockPropsBindings_TabAndBusinessKeys(t *testing.T) {
 		"items": []interface{}{map[string]interface{}{"key": "$item.id", "id": "$item.id", "label": "$item.name"}},
 		"tabs":  []interface{}{map[string]interface{}{"key": "$item.id", "title": "结构 Tab", "blocks": []interface{}{}}},
 	}
-	resolved := ResolveBlockPropsBindings(props, map[string]interface{}{"item": map[string]interface{}{"id": "row-1", "name": "业务项"}})
+	resolved := ResolveBlockPropsBindings(props, map[string]interface{}{"item": map[string]interface{}{"id": "row-1", "name": "业务项"}}, "tabs")
 	item := resolved["items"].([]interface{})[0].(map[string]interface{})
 	if item["key"] != "row-1" || item["id"] != "row-1" || item["label"] != "业务项" {
 		t.Fatalf("业务 key/id 绑定未解析: %#v", item)
@@ -107,6 +107,14 @@ func TestResolveBlockPropsBindings_TabAndBusinessKeys(t *testing.T) {
 	tab := resolved["tabs"].([]interface{})[0].(map[string]interface{})
 	if tab["key"] != "$item.id" {
 		t.Fatalf("Tab 结构 key 不应在父级提前解析: %#v", tab)
+	}
+	props["record"] = map[string]interface{}{"id": "$item.id", "title": "业务树", "children": []interface{}{}}
+	resolved = ResolveBlockPropsBindings(props, map[string]interface{}{"item": map[string]interface{}{"id": "row-1"}}, "custom")
+	if resolved["record"].(map[string]interface{})["id"] != "row-1" {
+		t.Fatal("普通业务树 id 被误识别为 Tab 结构字段")
+	}
+	if resolved["tabs"].([]interface{})[0].(map[string]interface{})["key"] != "row-1" {
+		t.Fatal("非 tabs 块的 tabs 字段不应保留结构 key")
 	}
 }
 

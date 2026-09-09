@@ -6,10 +6,10 @@ import test from 'node:test'
 import ts from 'typescript'
 
 // 编译实际源码，仅替换平台依赖；不复制绑定或动作实现。
-function loadActions() {
+function loadActions(overrides = {}) {
   const cache = new Map()
   const calls = []
-  const taro = new Proxy({ ENV_TYPE: { WEAPP: 'WEAPP' }, getEnv: () => 'WEAPP' }, {
+  const taro = new Proxy({ ENV_TYPE: { WEAPP: 'WEAPP' }, getEnv: () => 'WEAPP', ...overrides.taro }, {
     get(target, key) { return target[key] || (async (options) => { calls.push({ method: key, options }); return {} }) }
   })
   const load = (name) => {
@@ -19,11 +19,11 @@ function loadActions() {
     const source = readFileSync(new URL(`../src/utils/${name}.ts`, import.meta.url), 'utf8')
     const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
     vm.runInNewContext(js, {
-      exports, console, setTimeout, wx: {},
+      exports, console, setTimeout, wx: overrides.wx || {},
       require: (id) => {
         if (id === '@tarojs/taro') return { default: taro }
         if (id === './auth') return { ensureSession: async () => true }
-        if (id === './request') return { request: async (options) => { calls.push({ method: 'request', options }); return { status: 'success' } } }
+        if (id === './request') return { request: async (options) => { calls.push({ method: 'request', options }); return overrides.request ? overrides.request(options) : { status: 'success' } } }
         if (id === '../config/env') return { resolveRemoteUrl: value => value }
         if (id === './condition') return load('condition')
         throw new Error(`未声明的测试依赖: ${id}`)
@@ -41,7 +41,7 @@ test('业务 key/id 和对象绑定解析，子积木与 Tab 标识保留', () =
     bound: { path: '$item.id' },
     tabs: [{ key: 'state', title: '状态', blocks: [] }],
     children: [{ id: 'child', type: 'text', props: { text: '$item.name' } }]
-  }, { item: { id: 'row-1', name: '业务项' }, state: {} })
+  }, { item: { id: 'row-1', name: '业务项' }, state: {} }, 'tabs')
   assert.equal(result.items[0].id, 'row-1')
   assert.equal(result.bound, 'row-1')
   assert.equal(result.items[0].key, 'row-1')
@@ -79,4 +79,64 @@ test('事件序列使用最新状态和结果，失败时终止后续动作', as
   assert.equal(state.enabled, false)
   await dispatchEvents({ tap: [ { type: 'unknown' }, { type: 'toast', payload: { text: '不应执行' } } ] })
   assert.ok(!calls.some(call => call.options?.title === '不应执行'))
+})
+
+test('缺少支付参数时拒绝调起微信支付', async () => {
+  const { dispatchAction, calls } = loadActions()
+  assert.equal(await dispatchAction({ type: 'request_payment', payload: { sku: 'sku-test' } }), false)
+  assert.equal(calls.filter(call => call.method === 'requestPayment').length, 0)
+})
+
+test('普通业务树不因 title/children 或 tabs 字段保留绑定', () => {
+  const { resolveBlockPropsBindings } = loadActions()
+  const record = { id: '$item.id', key: '$item.id', title: '部门', children: [] }
+  const resolved = resolveBlockPropsBindings({ record, tabs: [record] }, { item: { id: '部门一' } }, 'custom')
+  assert.equal(resolved.record.id, '部门一')
+  assert.equal(resolved.tabs[0].key, '部门一')
+  const tabs = resolveBlockPropsBindings({ items: [{ ...record, child: { id: 'child', type: 'text' } }] }, {}, 'tabs')
+  assert.equal(tabs.items[0].id, '$item.id')
+})
+
+test('复制等待平台回调，失败只执行失败链并阻断后续事件', async () => {
+  let pending
+  const { dispatchEvents, calls } = loadActions({ taro: { setClipboardData: () => new Promise((_resolve, reject) => { pending = reject }) } })
+  const promise = dispatchEvents({ tap: [{ type: 'copy_text', payload: { text: '复制内容' },
+    on_success: [{ type: 'toast', payload: { text: '不应成功' } }],
+    on_error: [{ type: 'toast', payload: { text: '已处理失败' } }]
+  }, { type: 'toast', payload: { text: '不应继续' } }] })
+  assert.equal(calls.length, 0)
+  pending(new Error('平台拒绝'))
+  assert.equal(await promise, false)
+  assert.deepEqual(calls.filter(call => call.method === 'showToast').map(call => call.options.title), ['已处理失败'])
+})
+
+test('视频号和跨小程序拒绝时执行失败链', async () => {
+  const { dispatchAction, calls } = loadActions({
+    wx: { openChannelsActivity: options => options.fail({ errMsg: '视频号拒绝' }) },
+    taro: { navigateToMiniProgram: async () => { throw new Error('跨小程序拒绝') } }
+  })
+  for (const action of [
+    { type: 'open_channels_activity', payload: { feed_id: 'feed', finder_user_name: 'finder' } },
+    { type: 'open_mini_program', payload: { target_app_id: 'wx-test' } }
+  ]) {
+    assert.equal(await dispatchAction({ ...action,
+      on_success: [{ type: 'toast', payload: { text: '不应成功' } }],
+      on_error: [{ type: 'toast', payload: { text: '失败:' + action.type } }]
+    }), false)
+  }
+  assert.deepEqual(calls.map(call => call.options.title), ['失败:open_channels_activity', '失败:open_mini_program'])
+})
+
+test('通用、请求和订阅成功子链均在失败处停止', async () => {
+  const { dispatchAction, calls } = loadActions()
+  for (const parent of [
+    { type: 'toast', payload: { text: '父动作' } },
+    { type: 'request_data', payload: { endpoint: 'query.score' } },
+    { type: 'subscribe_message', payload: { template_id: 'template' } }
+  ]) {
+    assert.equal(await dispatchAction({ ...parent, on_success: [
+      { type: 'unknown' }, { type: 'toast', payload: { text: '不应继续' } }
+    ] }), false)
+  }
+  assert.ok(!calls.some(call => call.options?.title === '不应继续'))
 })

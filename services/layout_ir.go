@@ -123,7 +123,7 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 			targetBlock := resolveBlockStateVariant(itemBlock, stateFixture)
 
 			// 3. 执行受控数据绑定深度求值 (解析 $entity.*, $query.*, $item.*, $state.* 等)
-			resolvedProps := ResolveBlockPropsBindings(targetBlock.Props, nodeCtx)
+			resolvedProps := ResolveBlockPropsBindings(targetBlock.Props, nodeCtx, targetBlock.Type)
 			targetBlock.Props = resolvedProps
 
 			// 4. 真实受控条件可见性计算 (执行 eq/neq/in/exists/gt/gte/lt/lte/and/or/not)
@@ -326,7 +326,7 @@ func ExpandBlockRepeat(block models.BlockItem, context map[string]interface{}) [
 		itemCtx["$item"] = itemData
 		itemCtx["item"] = itemData
 
-		resolvedProps := ResolveBlockPropsBindings(clonedProps, itemCtx)
+		resolvedProps := ResolveBlockPropsBindings(clonedProps, itemCtx, block.Type)
 		cloned.Props = resolvedProps
 		results = append(results, cloned)
 	}
@@ -490,29 +490,22 @@ func ResolveObjectBindings(target interface{}, context map[string]interface{}) i
 }
 
 // ResolveBlockPropsBindings 解析 block 自身属性，同时保留嵌套子 block 的绑定直到子节点渲染阶段。
-func ResolveBlockPropsBindings(props map[string]interface{}, context map[string]interface{}) map[string]interface{} {
+func ResolveBlockPropsBindings(props map[string]interface{}, context map[string]interface{}, blockType string) map[string]interface{} {
 	if props == nil {
 		return map[string]interface{}{}
 	}
-	resolved, ok := resolvePropsPreservingBlocks(props, context).(map[string]interface{})
-	if !ok {
-		return props
+	tabField := "items"
+	if _, ok := props["tabs"].([]interface{}); ok {
+		tabField = "tabs"
+	}
+	resolved := make(map[string]interface{}, len(props))
+	for key, value := range props {
+		resolved[key] = resolvePropsPreservingBlocks(value, context, blockType == "tabs" && key == tabField)
 	}
 	return resolved
 }
 
-// isTabDescriptor 判断对象是否为 Tabs 的结构描述，只有该结构的 key/id 不参与绑定求值。
-func isTabDescriptor(value map[string]interface{}) bool {
-	if _, hasTitle := value["title"]; !hasTitle {
-		return false
-	}
-	_, hasBlocks := value["blocks"]
-	_, hasChildren := value["children"]
-	_, hasChild := value["child"]
-	return hasBlocks || hasChildren || hasChild
-}
-
-func resolvePropsPreservingBlocks(value interface{}, context map[string]interface{}) interface{} {
+func resolvePropsPreservingBlocks(value interface{}, context map[string]interface{}, preserveIdentity bool) interface{} {
 	if value == nil {
 		return nil
 	}
@@ -527,18 +520,18 @@ func resolvePropsPreservingBlocks(value interface{}, context map[string]interfac
 		result := make(map[string]interface{}, len(m))
 		for k, v := range m {
 			// Tab 描述对象的 key/id 是结构标识；其他业务属性仍允许 $item.id 等受控绑定。
-			if isTabDescriptor(m) && (k == "key" || k == "id") {
+			if preserveIdentity && (k == "key" || k == "id") {
 				result[k] = v
 				continue
 			}
-			result[k] = resolvePropsPreservingBlocks(v, context)
+			result[k] = resolvePropsPreservingBlocks(v, context, false)
 		}
 		return result
 	}
 	if list, ok := value.([]interface{}); ok {
 		result := make([]interface{}, len(list))
 		for i, item := range list {
-			result[i] = resolvePropsPreservingBlocks(item, context)
+			result[i] = resolvePropsPreservingBlocks(item, context, preserveIdentity)
 		}
 		return result
 	}
@@ -672,7 +665,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 		for idx, item := range flatItems {
 			nodeCtx := contextForBlock(context, item)
 			target := resolveBlockStateVariant(item, stateFixture)
-			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx, target.Type)
 			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
 
 			colIdx := idx % cols
@@ -754,7 +747,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 		for _, item := range flatItems {
 			nodeCtx := contextForBlock(context, item)
 			target := resolveBlockStateVariant(item, stateFixture)
-			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx, target.Type)
 			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
 
 			childW := width
@@ -897,7 +890,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 		for _, item := range flatItems {
 			nodeCtx := contextForBlock(context, item)
 			target := resolveBlockStateVariant(item, stateFixture)
-			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx, target.Type)
 			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
 
 			itemW := colWidth
@@ -964,7 +957,7 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 		for _, expanded := range ExpandBlockRepeat(block, context) {
 			nodeCtx := contextForBlock(context, expanded)
 			target := resolveBlockStateVariant(expanded, stateFixture)
-			props := ResolveBlockPropsBindings(target.Props, nodeCtx)
+			props := ResolveBlockPropsBindings(target.Props, nodeCtx, target.Type)
 			visible := target.VisibleWhen == nil || EvaluateCondition(target.VisibleWhen, nodeCtx)
 			height, nativeStub := CalculateAdaptiveBlockHeight(&target, props, width)
 			marginY, padding, radius, glass := 8, 14, 14, true
@@ -1539,8 +1532,8 @@ func resolveStyleMetrics(style *models.BlockStyle, marginY, padding, radius int,
 	if style == nil {
 		return marginY, padding, radius, glass
 	}
-	if style.GlassBlur {
-		glass = true
+	if style.GlassBlur != nil {
+		glass = *style.GlassBlur
 	}
 	for _, token := range style.Utilities {
 		switch token {

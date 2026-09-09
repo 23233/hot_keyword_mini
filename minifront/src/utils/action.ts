@@ -143,13 +143,11 @@ function resolveActionPayload(payload: Record<string, any>, context?: ActionCont
 /**
  * 解析 block 属性但保留嵌套子 block，避免父容器提前消费子项的 $item/$state 绑定。
  */
-export function resolveBlockPropsBindings(props: Record<string, any>, context?: ActionContext): Record<string, any> {
-  const isTabDescriptor = (value: Record<string, any>) => value.title !== undefined && (
-    value.blocks !== undefined || value.children !== undefined || value.child !== undefined
-  )
-  const resolve = (value: any): any => {
+export function resolveBlockPropsBindings(props: Record<string, any>, context: ActionContext | undefined, blockType: string): Record<string, any> {
+  const tabField = Array.isArray(props.tabs) ? 'tabs' : 'items'
+  const resolve = (value: any, preserveIdentity = false): any => {
     if (value == null) return value
-    if (Array.isArray(value)) return value.map(resolve)
+    if (Array.isArray(value)) return value.map(item => resolve(item, preserveIdentity))
     if (typeof value === 'object') {
       if (typeof value.type === 'string') return value
       if (Object.keys(value).length === 1 && typeof value.path === 'string' && isKnownScopedPath(value.path)) {
@@ -157,8 +155,10 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context?: 
       }
       const result: Record<string, any> = {}
       Object.keys(value).forEach((key) => {
-        // Tab 描述对象的 key/id 是结构标识；其他业务属性仍允许 $item.id 等受控绑定。
-        result[key] = isTabDescriptor(value) && (key === 'key' || key === 'id') ? value[key] : resolve(value[key])
+        // 只有 tabs 块直接选项列表的 key/id 属于结构字段。
+        result[key] = preserveIdentity && (key === 'key' || key === 'id')
+          ? value[key]
+          : resolve(value[key], value === props && blockType === 'tabs' && key === tabField)
       })
       return result
     }
@@ -287,22 +287,10 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       }
 
       actionResult = textToCopy
-      Taro.setClipboardData({
-        data: String(textToCopy),
-        success: () => {
-          Taro.vibrateShort({ type: 'medium' })
-          const toastText = payload.toast || `已成功复制: ${textToCopy}`
-          Taro.showToast({
-            title: toastText,
-            icon: 'none',
-            duration: 2500
-          })
-        },
-        fail: (err) => {
-          console.error('复制文本失败:', err)
-          Taro.showToast({ title: '复制失败，请重试', icon: 'none' })
-        }
-      })
+      await Taro.setClipboardData({ data: String(textToCopy) })
+      Taro.vibrateShort({ type: 'medium' })
+      const toastText = payload.toast || `已成功复制: ${textToCopy}`
+      Taro.showToast({ title: toastText, icon: 'none', duration: 2500 })
       break
     }
 
@@ -475,19 +463,15 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
 
       const isWeapp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP
       if (isWeapp && typeof (wx as any) !== 'undefined' && typeof (wx as any).openChannelsActivity === 'function') {
-        ;(wx as any).openChannelsActivity({
-          feedId,
-          finderUserName,
-          fail: (err: any) => {
-            console.warn('拉起微信视频号失败:', err)
-            Taro.showToast({ title: '拉起视频号失败，请稍后重试', icon: 'none' })
-          }
+        await new Promise<void>((resolve, reject) => {
+          ;(wx as any).openChannelsActivity({
+            feedId, finderUserName,
+            success: () => resolve(),
+            fail: (err: any) => reject(new Error(err?.errMsg || '拉起视频号失败'))
+          })
         })
       } else {
-        Taro.showToast({
-          title: `[模拟器] 调起视频号: ${finderUserName}`,
-          icon: 'none'
-        })
+        throw new Error('当前环境不支持视频号动态')
       }
       break
     }
@@ -503,21 +487,14 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
 
       const isWeapp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP
       if (isWeapp) {
-        Taro.navigateToMiniProgram({
+        await Taro.navigateToMiniProgram({
           appId: targetAppId,
           path: payload.target_path || payload.path || '',
           extraData: payload.extra_data || {},
-          envVersion: payload.env_version || 'release',
-          fail: (err) => {
-            console.warn('跳转小程序失败:', err)
-            Taro.showToast({ title: '跳转小程序失败', icon: 'none' })
-          }
+          envVersion: payload.env_version || 'release'
         })
       } else {
-        Taro.showToast({
-          title: `[模拟跳转] AppID: ${targetAppId}`,
-          icon: 'none'
-        })
+        throw new Error('当前环境不支持跨小程序跳转')
       }
       break
     }
@@ -709,9 +686,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
           : payload.on_success
         if (Array.isArray(successActions) && successActions.length > 0) {
           successChainHandled = true
-          for (const subAction of successActions) {
-            await dispatchAction(subAction, nextContext)
-          }
+          if ((await dispatchEvents({ tap: successActions }, 'tap', nextContext)) === false) actionSuccess = false
         } else {
           // 默认成功反馈
           if (extractedData && extractedData.code) {
@@ -744,9 +719,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         } as any
         const errorActions = Array.isArray(action.on_error) && action.on_error.length > 0 ? action.on_error : payload.on_error
         if (Array.isArray(errorActions) && errorActions.length > 0) {
-          for (const errAction of errorActions) {
-            await dispatchAction(errAction, errorContext)
-          }
+          await dispatchEvents({ tap: errorActions }, 'tap', errorContext)
         } else {
           Taro.showToast({
             title: err.message || '操作未完成，请重试',
@@ -781,6 +754,11 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       const result = await request<any>({ url: '/api/v1/payment/orders', method: 'POST', data: { sku, idempotency_key: idem } })
       actionResult = result
       const payment = result?.payment || result
+      if (!payment || !['timeStamp', 'nonceStr', 'package', 'paySign'].every(key =>
+        (typeof payment[key] === 'string' || (key === 'timeStamp' && typeof payment[key] === 'number')) && String(payment[key]).trim() !== ''
+      )) {
+        throw new Error('服务端返回的支付参数不完整')
+      }
       await Taro.requestPayment({
         timeStamp: String(payment.timeStamp),
         nonceStr: String(payment.nonceStr),
@@ -866,9 +844,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
             : payload.on_success
           if (Array.isArray(successActions) && successActions.length > 0) {
             successChainHandled = true
-            for (const nextAction of successActions) {
-              await dispatchAction(nextAction, subContext)
-            }
+            if ((await dispatchEvents({ tap: successActions }, 'tap', subContext)) === false) actionSuccess = false
           } else {
             Taro.showToast({
               title: payload.toast || '订阅完成',
@@ -883,9 +859,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
           } as any
           const errorActions = Array.isArray(action.on_error) && action.on_error.length > 0 ? action.on_error : payload.on_error
           if (Array.isArray(errorActions) && errorActions.length > 0) {
-            for (const failAction of errorActions) {
-              await dispatchAction(failAction, errContext)
-            }
+            await dispatchEvents({ tap: errorActions }, 'tap', errContext)
           } else {
             console.error('订阅消息失败:', err)
             Taro.showToast({
@@ -912,9 +886,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
     actionSuccess = false
     console.error(`动作 ${action.type} 执行异常:`, err)
     if (Array.isArray(action.on_error) && action.on_error.length > 0) {
-      for (const errAct of action.on_error) {
-        await dispatchAction(errAct, { ...context, result: err })
-      }
+      await dispatchEvents({ tap: action.on_error }, 'tap', { ...context, result: err })
     } else {
       Taro.showToast({ title: err?.message || '操作执行失败', icon: 'none' })
     }
@@ -932,9 +904,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       ...context,
       result: actionResult !== undefined ? actionResult : context?.result
     }
-    for (const succAct of successActions) {
-      await dispatchAction(succAct, successContext)
-    }
+    if ((await dispatchEvents({ tap: successActions }, 'tap', successContext)) === false) return false
   }
 
   return actionSuccess ? (actionResult !== undefined ? actionResult : context?.result) : false

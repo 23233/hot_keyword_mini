@@ -58,8 +58,11 @@ type BlockStyle struct {
 	// 受控原子样式令牌列表，由协议白名单校验后映射为客户端工具类，禁止任意 CSS。
 	Utilities []string `json:"utilities,omitempty"`
 	// 是否开启苹果高斯模糊毛玻璃
-	GlassBlur bool `json:"glass_blur,omitempty"`
+	GlassBlur *bool `json:"glass_blur,omitempty"`
 }
+
+// Bool 返回布尔指针，便于构造需要区分未设置与显式 false 的协议样式。
+func Bool(value bool) *bool { return &value }
 
 // BlockItem 定义原子积木组件核心结构
 type BlockItem struct {

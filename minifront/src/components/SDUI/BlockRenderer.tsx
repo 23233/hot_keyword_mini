@@ -51,7 +51,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
     ...(injectedItem !== undefined ? { item: injectedItem, $item: injectedItem, index: injectedIndex } : {}),
     props: block.props || {}
   }
-  const resolvedProps = resolveBlockPropsBindings(block.props || {}, rawBlockContext)
+  const resolvedProps = resolveBlockPropsBindings(block.props || {}, rawBlockContext, block.type)
   const blockContext: Record<string, any> = { ...rawBlockContext, props: resolvedProps }
 
   // 1.1 检查块级局部状态多态 (loading, empty, error，覆盖库存不足、过期、离线等场景并提供优雅兜底)
@@ -220,6 +220,8 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   // 5. 递归求值解析积木 props 中的全部受控数据绑定表达式 ($entity.*, $query.*, $item.*, $state.*)
   const resolvedBlock: BlockItem = {
     ...block,
+    // 协议样式只在外层 Wrapper 应用一次，内部组件保留自身静态样式。
+    style: undefined,
     props: resolvedProps
   }
 
