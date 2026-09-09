@@ -67,7 +67,6 @@ export const FormBlock: React.FC<FormBlockProps> = ({ block, onAction }) => {
   return (
     <View
       className={blockClassName('sdui-form-block', block.style)}
-      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       <Text className="form-title">{title}</Text>
       {inputLabel && (

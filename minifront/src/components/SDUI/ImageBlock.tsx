@@ -42,7 +42,6 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onAction }) => {
 
   // 计算宽高比样式
   const containerStyle: React.CSSProperties = {
-    ...(block.style?.border_radius || props.border_radius ? { borderRadius: block.style?.border_radius || props.border_radius } : {}),
     overflow: 'hidden',
     position: 'relative'
   }

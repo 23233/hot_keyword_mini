@@ -29,7 +29,6 @@ export const ActionButtonBlock: React.FC<ActionButtonBlockProps> = ({ block, onA
       <View
         className="capsule-btn"
         onClick={handleClick}
-        style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
       >
         <Text className="btn-text">{text}</Text>
         {badge && (

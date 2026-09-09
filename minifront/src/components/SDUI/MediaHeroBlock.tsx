@@ -40,10 +40,6 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
     <View
       className={blockClassName('sdui-media-hero', block.style)}
       onClick={handleClick}
-      style={block.style?.border_radius || block.style?.background ? {
-        ...(block.style.border_radius ? { borderRadius: block.style.border_radius } : {}),
-        ...(block.style.background ? { backgroundColor: block.style.background } : {})
-      } : undefined}
     >
       <View
         className="media-player-box"

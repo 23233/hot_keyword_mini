@@ -41,7 +41,7 @@ export const ItemGridBlock: React.FC<ItemGridBlockProps> = ({ block, onAction })
   const gridTemplateColumns = `repeat(${columns}, 1fr)`
 
   return (
-    <View className={blockClassName('sdui-item-grid-block', block.style)} style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}>
+    <View className={blockClassName('sdui-item-grid-block', block.style)}>
       {title && (
         <View className="sdui-grid-heading">
           <Text className="sdui-grid-title">{title}</Text>

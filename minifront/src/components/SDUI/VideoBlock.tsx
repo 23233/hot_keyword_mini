@@ -22,7 +22,6 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({ block, onAction }) => {
   const loop = props.loop === true
 
   const containerStyle: React.CSSProperties = {
-    ...(block.style?.border_radius ? { borderRadius: block.style.border_radius } : {}),
     overflow: 'hidden',
     position: 'relative',
     width: '100%',

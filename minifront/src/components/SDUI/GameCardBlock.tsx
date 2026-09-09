@@ -55,9 +55,6 @@ export const GameCardBlock: React.FC<GameCardBlockProps> = ({ block, onAction })
     <View
       className="sdui-game-card"
       onClick={handleCardClick}
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx'
-      }}
     >
       <View className="game-banner">
         {coverUrl ? <Image src={coverUrl} mode="aspectFill" className="banner-img" /> : null}

@@ -81,7 +81,6 @@ export const ResourceCardBlock: React.FC<ResourceCardBlockProps> = ({ block, onA
   return (
     <View
       className={blockClassName('sdui-resource-card', block.style)}
-      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       <View className="resource-header">
         <View className="pan-icon-chip">

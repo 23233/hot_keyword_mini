@@ -214,16 +214,8 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   )
 
   // 嵌套子积木上下外边距默认归零，完全遵循父级容器 (Flex/Grid) 的 gap 布局规范，杜绝双重叠加破坏排版
-  const defaultMarginBottom = (isNested || isSpacer) ? '0' : '24rpx'
   const wrapperClass = `sdui-block-wrapper type-${block.type} ${utilityClasses(style.utilities)} ${shouldApplyGlass ? 'is-glass' : ''} ${isNested ? 'is-nested' : ''}`
-  const wrapperStyle: any = {
-    ...(style.margin_y ? { marginTop: style.margin_y } : {}),
-    marginBottom: isNested ? (style.margin_y || defaultMarginBottom) : (style.margin_y !== undefined ? style.margin_y : defaultMarginBottom),
-    ...(style.margin_x ? { marginLeft: style.margin_x, marginRight: style.margin_x } : {}),
-    ...(style.padding ? { padding: style.padding } : {}),
-    ...(style.border_radius ? { borderRadius: style.border_radius } : {}),
-    // 颜色和背景只由受控 utility token 决定，避免协议注入任意 CSS。
-  }
+  const wrapperStyle: any = undefined
 
   // 5. 递归求值解析积木 props 中的全部受控数据绑定表达式 ($entity.*, $query.*, $item.*, $state.*)
   const resolvedBlock: BlockItem = {

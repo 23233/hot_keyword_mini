@@ -55,7 +55,6 @@ export const EpisodeListBlock: React.FC<EpisodeListBlockProps> = ({ block, onAct
   return (
     <View
       className={blockClassName('sdui-episode-list-block', block.style)}
-      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       <View className="sdui-episode-heading">
         <Text className="sdui-episode-title">{title}</Text>

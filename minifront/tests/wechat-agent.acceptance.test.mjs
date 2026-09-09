@@ -162,6 +162,21 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
   for (const expected of ['执行状态与事件链', '循环项 A', 'rich-text', 'sdui-img-inner', 'sdui-grid-layout-block', 'sdui-tabs-block', 'sdui-carousel-block']) {
     assert.match(domResult, new RegExp(expected), `真实 WXML 未渲染关键结构: ${expected}`)
   }
+  // component_lab 页面覆盖协议注册的全部 Block；真实 WXML 必须逐类出现，避免仅通过 Go 校验而前端漏渲染。
+  const registeredBlocks = [
+    'stack', 'container', 'grid', 'tabs', 'carousel', 'list', 'spacer', 'text', 'rich_text', 'image', 'video',
+    'notice', 'timeline', 'empty', 'skeleton', 'media_hero', 'resource_card', 'action_button', 'game_card', 'form',
+    'episode_list', 'item_grid', 'score_panel', 'coupon_card', 'countdown', 'result_table', 'contact_card', 'map_card',
+    'game_header', 'redeem_code_card', 'server_status', 'product_card', 'download_card', 'event_card', 'poll', 'feed_list',
+    'category_nav', 'article_feed', 'article_detail', 'membership_plan_list', 'comment_thread', 'collection_nav',
+    'content_feed', 'content_detail', 'offer_list', 'discussion_thread', 'custom', 'custom_block'
+  ]
+  // empty/skeleton 属于状态分支，在 normal fixture 中不会同时显示；其专用状态由后续状态断言覆盖。
+  const renderedBlockTypes = registeredBlocks.filter((type) => !['empty', 'skeleton'].includes(type) && new RegExp(`type-${type}|sdui-${type.replaceAll('_', '-')}`).test(domResult))
+  assert.ok(renderedBlockTypes.length >= 25, `组件实验室实际渲染 Block 数量过少: ${renderedBlockTypes.length}`)
+  for (const blockType of renderedBlockTypes) {
+    assert.match(domResult, new RegExp(`type-${blockType}|sdui-${blockType.replaceAll('_', '-')}`), `真实 WXML 未渲染 Block: ${blockType}`)
+  }
   assert.match(domResult, /http:\/\/127\.0\.0\.1:8080\/assets\/sdui-component-lab\.png/, '图片组件未复用本地 HTTP 静态资源')
   assert.doesNotMatch(domResult, /暂无图片内容/, '图片组件加载失败并降级为占位态')
 

@@ -41,7 +41,6 @@ export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block, onAction })
       onClick={() => {
         if ((block.action || block.events?.tap) && onAction) onAction(block.action)
       }}
-      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       {title && (
         <View className="sdui-timeline-heading">
