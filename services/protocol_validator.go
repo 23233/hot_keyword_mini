@@ -45,31 +45,57 @@ var allowedBlockTypes = map[string]bool{
 	"skeleton":  true,
 
 	// 3. 业务功能块
-	"media_hero":       true,
-	"resource_card":    true,
-	"action_button":    true,
-	"game_card":        true,
-	"form":             true,
-	"episode_list":     true,
-	"item_grid":        true,
-	"score_panel":      true,
-	"coupon_card":      true,
-	"countdown":        true,
-	"result_table":     true,
-	"contact_card":     true,
-	"map_card":         true,
-	"game_header":      true,
-	"redeem_code_card": true,
-	"server_status":    true,
-	"product_card":     true,
-	"download_card":    true,
-	"event_card":       true,
-	"poll":             true,
-	"feed_list":        true,
+	"media_hero":           true,
+	"resource_card":        true,
+	"action_button":        true,
+	"game_card":            true,
+	"form":                 true,
+	"episode_list":         true,
+	"item_grid":            true,
+	"score_panel":          true,
+	"coupon_card":          true,
+	"countdown":            true,
+	"result_table":         true,
+	"contact_card":         true,
+	"map_card":             true,
+	"game_header":          true,
+	"redeem_code_card":     true,
+	"server_status":        true,
+	"product_card":         true,
+	"download_card":        true,
+	"event_card":           true,
+	"poll":                 true,
+	"feed_list":            true,
+	"category_nav":         true,
+	"article_feed":         true,
+	"article_detail":       true,
+	"membership_plan_list": true,
+	"comment_thread":       true,
+	"collection_nav":       true,
+	"content_feed":         true,
+	"content_detail":       true,
+	"offer_list":           true,
+	"discussion_thread":    true,
 
 	// 4. 通用自由编排/自定义卡片积木
 	"custom":       true,
 	"custom_block": true,
+}
+
+// 合法原子样式令牌白名单。客户端只将这些标记翻译为固定工具类，不接受任意 CSS。
+var allowedStyleUtilities = map[string]bool{
+	"layout/flat": true, "layout/card": true,
+	"surface/canvas": true, "surface/base": true, "surface/raised": true, "surface/ink": true,
+	"border/none": true, "border/subtle": true, "border/strong": true,
+	"radius/none": true, "radius/sm": true, "radius/md": true, "radius/lg": true, "radius/full": true,
+	"space/y-0": true, "space/y-2": true, "space/y-4": true, "space/y-6": true, "space/y-8": true, "space/y-10": true, "space/y-12": true,
+	"padding/none": true, "padding/0": true, "padding/2": true, "padding/4": true, "padding/6": true, "padding/8": true,
+	"padding/x-4": true, "padding/x-5": true, "padding/x-6": true, "padding/y-4": true, "padding/y-6": true,
+	"gap/2": true, "gap/4": true, "gap/6": true, "gap/8": true,
+	"text/display": true, "text/section": true, "text/muted": true, "text/inverse": true,
+	"accent/blue": true, "accent/ink": true, "accent/amber": true,
+	"elevation/none": true, "elevation/sm": true, "elevation/md": true,
+	"media/rounded": true,
 }
 
 // 合法原子动作类型白名单 (严格与 doc/sdui_dynamic_engine_architecture.md 和 schema 对齐)
@@ -168,6 +194,7 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 		if !allowedBlockTypes[block.Type] {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("%s 使用了未知积木类型 '%s'，客户端将执行降级占位", pathPrefix, block.Type))
 		}
+		validateStyleUtilities(block.Style, pathPrefix+".style", &report)
 
 		// 检查积木绑定的交互动作合法性
 		if block.Action != nil && block.Action.Type != "" {
@@ -255,6 +282,7 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 	if block == nil {
 		return
 	}
+	validateStyleUtilities(block.Style, path+".style", report)
 	// 校验当前 block 自身绑定的单一动作
 	validateNestedActionContracts(block.Action, path+".action", report)
 	// 校验当前 block 绑定的多事件流动作列表
@@ -302,6 +330,19 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 		}
 		childCopy := child
 		validateNestedBlockContracts(&childCopy, childPath, idMap, report)
+	}
+}
+
+// validateStyleUtilities 校验样式令牌，拒绝未知令牌以保证 MCP 和 HTTP 一致的受控渲染边界。
+func validateStyleUtilities(style *models.BlockStyle, path string, report *ValidationReport) {
+	if style == nil {
+		return
+	}
+	for _, utility := range style.Utilities {
+		if !allowedStyleUtilities[utility] {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s.utilities 包含未注册样式令牌 '%s'", path, utility))
+		}
 	}
 }
 
@@ -440,6 +481,10 @@ func collectNestedBlocks(value interface{}) []models.BlockItem {
 		switch v := current.(type) {
 		case map[string]interface{}:
 			if _, ok := v["type"]; ok {
+				// props 中的动作对象同样包含 type，但通过 payload/endpoint/url 可识别，不应当按积木校验。
+				if _, isAction := v["payload"]; isAction {
+					return
+				}
 				if raw, err := json.Marshal(v); err == nil {
 					var child models.BlockItem
 					if json.Unmarshal(raw, &child) == nil && child.Type != "" {
@@ -505,7 +550,7 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 	}
 
 	// 3. 枚举有效性强校验 (严格对齐 sdui.schema.json definitions)
-	validBusinessTypes := map[string]bool{"drama": true, "game": true, "query": true, "download": true, "custom": true}
+	validBusinessTypes := map[string]bool{"drama": true, "game": true, "query": true, "download": true, "custom": true, "ai_breakthrough": true, "ai_article": true}
 	if page.BusinessType != "" && !validBusinessTypes[page.BusinessType] {
 		report.IsValid = false
 		report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: page.business_type '%s' 超出合法枚举定义", page.BusinessType))

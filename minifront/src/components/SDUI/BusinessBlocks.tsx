@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface BusinessBlockProps {
   block: BlockItem
@@ -243,16 +244,16 @@ export const ServerStatusBlock: React.FC<BusinessBlockProps> = ({ block, onActio
   const notice = props.notice || ''
   const btnText = props.btn_text || '切换节点'
 
-  let statusColor = '#30d158'
   let statusText = '运行流畅'
+  let statusTone = 'healthy'
   if (status === 'busy' || status === 'crowded') {
-    statusColor = '#ff9f0a'
+    statusTone = 'busy'
     statusText = '服务繁忙'
   } else if (status === 'full') {
-    statusColor = '#ff453a'
+    statusTone = 'full'
     statusText = '已爆满'
   } else if (status === 'maintenance' || status === 'offline') {
-    statusColor = '#8e8e93'
+    statusTone = 'offline'
     statusText = '停服维护'
   }
 
@@ -264,15 +265,15 @@ export const ServerStatusBlock: React.FC<BusinessBlockProps> = ({ block, onActio
   }
 
   return (
-    <View className="sdui-server-status-block" onClick={handleClick}>
+    <View className={blockClassName('sdui-server-status-block', block.style)} onClick={handleClick}>
       <View className="server-main-info">
         <View className="server-title-row">
-          <View className="status-breath-dot" style={{ background: statusColor, boxShadow: `0 0 10rpx ${statusColor}` }} />
+          <View className={`status-breath-dot tone-${statusTone}`} />
           <Text className="server-name">{String(serverName)}</Text>
           <Text className="server-region-tag">{String(region)}</Text>
         </View>
         <View className="server-meta-row">
-          <Text className="server-status-label" style={{ color: statusColor }}>{statusText}</Text>
+          <Text className={`server-status-label tone-${statusTone}`}>{statusText}</Text>
           <Text className="server-meta-divider">·</Text>
           <Text className="server-latency">延迟 {String(latency)}</Text>
         </View>

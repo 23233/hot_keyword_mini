@@ -3,6 +3,7 @@ package services
 
 import (
 	"encoding/json"
+	"hot_keyword/models"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,42 @@ func TestMCPToolDefinitions(t *testing.T) {
 			t.Fatalf("缺失受控工具: %s", name)
 		}
 	}
+	for _, tool := range tools {
+		if strings.TrimSpace(tool.Description) == "" || tool.InputSchema["type"] != "object" {
+			t.Fatalf("工具 %s 缺少描述或 object inputSchema", tool.Name)
+		}
+		if tool.RequiredScope == "" {
+			t.Fatalf("工具 %s 缺少 requiredScope 权限契约", tool.Name)
+		}
+		if tool.Annotations == nil {
+			t.Fatalf("工具 %s 缺少 MCP annotations", tool.Name)
+		}
+		if tool.Annotations["requiredScope"] != tool.RequiredScope {
+			t.Fatalf("工具 %s 的 annotations.requiredScope 与工具契约不一致", tool.Name)
+		}
+	}
+}
+
+// TestMCPToolDispatchCoverage 确认 tools/list 暴露的每个工具都存在执行分支。
+func TestMCPToolDispatchCoverage(t *testing.T) {
+	service := NewMCPService()
+	for _, tool := range service.GetToolDefinitions() {
+		_, err := service.ExecuteToolWithContext("coverage", "", []string{"read", "write:draft", "release"}, tool.Name, map[string]interface{}{})
+		if err != nil && strings.Contains(err.Error(), "未知 MCP 工具") {
+			t.Fatalf("工具 %s 已声明但没有执行分支: %v", tool.Name, err)
+		}
+	}
+}
+
+// TestMCPToolScopeContract 验证工具声明的最小权限与真实执行门禁一致。
+func TestMCPToolScopeContract(t *testing.T) {
+	service := NewMCPService()
+	for _, tool := range service.GetToolDefinitions() {
+		_, err := service.ExecuteToolWithContext("scope_test", "", nil, tool.Name, map[string]interface{}{})
+		if err == nil || !strings.Contains(err.Error(), tool.RequiredScope) {
+			t.Fatalf("工具 %s 未按 requiredScope=%s 拒绝调用: %v", tool.Name, tool.RequiredScope, err)
+		}
+	}
 }
 
 // TestMCPInitializeAndList 测试标准 JSON-RPC 初始化与工具列表
@@ -78,6 +115,26 @@ func TestMCPInitializeAndList(t *testing.T) {
 	_ = json.Unmarshal(listRespBytes, &listResp)
 	if listResp.Error != nil {
 		t.Fatalf("tools/list 不应报错: %v", listResp.Error)
+	}
+}
+
+// TestMCPProtocolMethods 验证 MCP 基础 ping、通知和非法请求行为符合 JSON-RPC 约定。
+func TestMCPProtocolMethods(t *testing.T) {
+	service := NewMCPService()
+	if response, err := service.HandleJSONRPC([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)); err != nil || !strings.Contains(string(response), `"result"`) {
+		t.Fatalf("ping 响应无效: %s err=%v", response, err)
+	}
+	if response, err := service.HandleJSONRPC([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)); err != nil || response != nil {
+		t.Fatalf("通知不应返回响应: %s err=%v", response, err)
+	}
+	if response, err := service.HandleJSONRPC([]byte(`{"jsonrpc":"1.0","id":1,"method":"ping"}`)); err != nil || !strings.Contains(string(response), `-32600`) {
+		t.Fatalf("非法 JSON-RPC 版本未被拒绝: %s err=%v", response, err)
+	}
+	for _, invalid := range []string{`[]`, `null`} {
+		response, err := service.HandleJSONRPC([]byte(invalid))
+		if err != nil || !strings.Contains(string(response), `"code":-32600`) || !strings.Contains(string(response), `"id":null`) {
+			t.Fatalf("非对象 JSON-RPC 请求未返回 Invalid Request/id=null: %s", response)
+		}
 	}
 }
 
@@ -116,7 +173,7 @@ func TestMCPRulesMirrorValidator(t *testing.T) {
 // TestMCPInitializeInstructions 验证初始化响应包含先读规则的强制引导。
 func TestMCPInitializeInstructions(t *testing.T) {
 	response, err := NewMCPService().HandleJSONRPC([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
-	if err != nil || !strings.Contains(string(response), "resources/read") || !strings.Contains(string(response), "sdui://rules") {
+	if err != nil || !strings.Contains(string(response), "resources/read") || !strings.Contains(string(response), "sdui://rules") || !strings.Contains(string(response), "expected_revision") {
 		t.Fatalf("initialize 未提供规则读取引导: %s", response)
 	}
 }
@@ -124,6 +181,18 @@ func TestMCPInitializeInstructions(t *testing.T) {
 // TestMCPCoverageResource 验证资源说明明确区分已覆盖和禁止开放的系统行为。
 func TestMCPCoverageResource(t *testing.T) {
 	api := mcpAPIResource(NewMCPService().GetToolDefinitions())
+	transport, ok := api["transports"].(map[string]interface{})
+	if !ok || transport["http"] == nil || transport["stdio"] == nil {
+		t.Fatalf("MCP API 资源未同时声明 HTTP 与 Stdio 传输契约")
+	}
+	jsonrpc, ok := api["jsonrpc"].(map[string]interface{})
+	if !ok || jsonrpc["version"] != "2.0" || jsonrpc["success_response"] == nil || jsonrpc["error_response"] == nil {
+		t.Fatalf("MCP API 资源缺少标准 JSON-RPC 响应契约")
+	}
+	toolResponse, ok := api["tool_response"].(map[string]interface{})
+	if !ok || toolResponse["success"] == nil || toolResponse["error"] == nil {
+		t.Fatalf("MCP API 资源缺少 tools/call 响应信封契约")
+	}
 	coverage, ok := api["coverage"].(map[string]string)
 	if !ok || coverage["draft_creation"] != "sdui.page.create" || coverage["image_upload"] != "sdui.file.prepare_upload" {
 		t.Fatalf("MCP 覆盖矩阵缺少核心页面和图片行为")
@@ -131,6 +200,75 @@ func TestMCPCoverageResource(t *testing.T) {
 	unsupported, ok := api["unsupported_or_admin_only"].([]string)
 	if !ok || len(unsupported) == 0 {
 		t.Fatalf("MCP 未声明系统级未覆盖边界")
+	}
+	if _, ok := api["ai_breakthrough_http"].(map[string]interface{}); !ok {
+		t.Fatal("MCP 未声明 AI 破甲业务 HTTP 数据流")
+	}
+	rules, ok := mcpRulesResource()["block_contracts"].(map[string]interface{})
+	if !ok || len(rules) != len(allowedBlockTypes) {
+		t.Fatalf("MCP 规则未覆盖全部积木契约: got=%d want=%d", len(rules), len(allowedBlockTypes))
+	}
+	actions, ok := mcpRulesResource()["action_contracts"].(map[string]interface{})
+	if !ok || len(actions) != len(allowedActionTypes) {
+		t.Fatalf("MCP 规则未覆盖全部动作契约: got=%d want=%d", len(actions), len(allowedActionTypes))
+	}
+	for blockType, raw := range rules {
+		contract, ok := raw.(map[string]interface{})
+		if !ok || strings.TrimSpace(contract["purpose"].(string)) == "" || len(contract["props"].([]string)) == 0 || contract["example"] == nil {
+			t.Fatalf("积木 %s 的契约缺少 purpose/props/example", blockType)
+		}
+	}
+	for actionType, raw := range actions {
+		contract, ok := raw.(map[string]interface{})
+		if !ok || strings.TrimSpace(contract["purpose"].(string)) == "" || contract["payload"] == nil {
+			t.Fatalf("动作 %s 的契约缺少 purpose/payload", actionType)
+		}
+	}
+}
+
+// TestMCPStructuredError 验证工具失败返回机器可读恢复建议。
+func TestMCPStructuredError(t *testing.T) {
+	response, err := NewMCPService().HandleJSONRPC([]byte(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"sdui.page.patch","arguments":{"app_id":"wx_test","page_id":"home","ops":[]}}}`))
+	if err != nil || !strings.Contains(string(response), "structuredContent") || !strings.Contains(string(response), "INVALID_ARGUMENT") {
+		t.Fatalf("工具错误未返回结构化修复信息: %s", response)
+	}
+}
+
+// TestMCPArgumentSchema 验证工具调用会执行 tools/list 暴露的必填、类型和枚举约束。
+func TestMCPArgumentSchema(t *testing.T) {
+	tools := NewMCPService().GetToolDefinitions()
+	if err := validateMCPArguments("sdui.page.patch", map[string]interface{}{"app_id": "wx", "page_id": "home", "ops": []interface{}{}}, tools); err == nil {
+		t.Fatal("缺少 expected_revision 应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.file.prepare_upload", map[string]interface{}{"app_id": "wx", "file_name": "a.png", "file_size": "1024", "content_type": "image/png"}, tools); err == nil {
+		t.Fatal("file_size 字符串应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.file.prepare_upload", map[string]interface{}{"app_id": "wx", "file_name": "a.png", "file_size": float64(10485761), "content_type": "image/png"}, tools); err == nil {
+		t.Fatal("超过 maximum 的 file_size 应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.page.patch", map[string]interface{}{"app_id": "wx", "page_id": "home", "expected_revision": float64(1), "ops": []interface{}{}}, tools); err == nil {
+		t.Fatal("少于 minItems 的 ops 应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.page.patch", map[string]interface{}{"app_id": "wx", "page_id": "home", "expected_revision": float64(1), "ops": []interface{}{map[string]interface{}{"op": "replace", "value": "标题"}}}, tools); err == nil {
+		t.Fatal("replace 缺少 path 应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.page.patch", map[string]interface{}{"app_id": "wx", "page_id": "home", "expected_revision": float64(1), "ops": []interface{}{map[string]interface{}{"op": "unknown", "value": "标题"}}}, tools); err == nil {
+		t.Fatal("未知 patch op 应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.template.list", map[string]interface{}{"business_type": "unknown"}, tools); err == nil {
+		t.Fatal("business_type 未知枚举应被拒绝")
+	}
+}
+
+// TestMCPProtocolShape 验证 page 协议对象的数组字段可供 AI 直接修改。
+func TestMCPProtocolShape(t *testing.T) {
+	page := &models.DynamicPage{AppID: "wx_test", PageID: "home", Blocks: `[{"id":"a","type":"text","props":{"text":"A"}}]`, ShareConfig: `{"friend":{"enabled":true}}`}
+	value := mcpPageProtocol(page)
+	if _, ok := value["blocks"].([]interface{}); !ok {
+		t.Fatalf("blocks 应返回数组而不是 JSON 字符串: %#v", value["blocks"])
+	}
+	if _, ok := value["share_config"].(map[string]interface{}); !ok {
+		t.Fatalf("share_config 应返回对象而不是 JSON 字符串: %#v", value["share_config"])
 	}
 }
 

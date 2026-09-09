@@ -25,9 +25,9 @@ export const TextBlock: React.FC<TextBlockProps> = ({ block, onAction }) => {
   }
 
   const textStyle: React.CSSProperties = {
-    fontSize: props.font_size ? (typeof props.font_size === 'number' ? `${props.font_size}px` : props.font_size) : undefined,
-    fontWeight: props.font_weight || undefined,
-    color: props.color || undefined,
+    ...(props.font_size ? { fontSize: typeof props.font_size === 'number' ? `${props.font_size}px` : props.font_size } : {}),
+    ...(props.font_weight ? { fontWeight: props.font_weight } : {}),
+    ...(props.color ? { color: props.color } : {}),
     textAlign: props.align || props.text_align || 'left',
     lineHeight: props.line_height || 1.6
   }
@@ -35,8 +35,10 @@ export const TextBlock: React.FC<TextBlockProps> = ({ block, onAction }) => {
   const maxLines = Number(props.max_lines) || 0
   const clampClass = maxLines > 0 ? `sdui-text-clamp-${maxLines}` : ''
 
+  const customClass = props.class_name ? String(props.class_name) : ''
+
   return (
-    <View className={`sdui-text-block ${clampClass}`} style={textStyle} onClick={handleClick}>
+    <View className={`sdui-text-block ${clampClass} ${customClass}`.trim()} style={textStyle} onClick={handleClick}>
       {richNodes ? (
         <RichText nodes={richNodes} />
       ) : (

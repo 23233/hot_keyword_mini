@@ -5,9 +5,37 @@ import (
 	"encoding/json"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"strings"
 	"testing"
 	"time"
 )
+
+// TestAIBreakthroughTemplateIsComposable 验证资讯首页由可编辑 SDUI 块生成且不泄露设计提示语。
+func TestAIBreakthroughTemplateIsComposable(t *testing.T) {
+	service := NewTemplateService()
+	template, err := service.GetTemplate("", "tpl_ai_breakthrough_portal")
+	if err != nil {
+		t.Fatalf("读取 AI 破甲模板失败: %v", err)
+	}
+	if template.TemplateVersion != "3.1.0" || len(template.DefaultBlocks) != 4 {
+		t.Fatalf("AI 破甲模板版本或积木数量异常: version=%s blocks=%d", template.TemplateVersion, len(template.DefaultBlocks))
+	}
+	raw, _ := json.Marshal(template.DefaultBlocks)
+	if strings.Contains(string(raw), "今天发生了什么") || strings.Contains(string(raw), "可验证资讯导航") {
+		t.Fatalf("首页模板不得包含面向开发的提示词: %s", raw)
+	}
+
+	page, err := service.ApplyTemplateToPage(template.TemplateID, "wx_ai_template_test", "ai_home", "ai破甲")
+	if err != nil {
+		t.Fatalf("从 AI 破甲模板派生页面失败: %v", err)
+	}
+	if report := ValidateDynamicPage(page); !report.IsValid {
+		t.Fatalf("AI 破甲页面协议校验失败: %v", report.Errors)
+	}
+	if report := ValidatePageAgainstSchema(page); !report.IsValid {
+		t.Fatalf("AI 破甲页面 Schema 校验失败: %v", report.Errors)
+	}
+}
 
 // TestTemplateRegistryList 测试行业模板注册与查询
 func TestTemplateRegistryList(t *testing.T) {

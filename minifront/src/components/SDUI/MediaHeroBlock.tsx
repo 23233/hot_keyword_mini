@@ -2,6 +2,7 @@
 import React from 'react'
 import { View, Text, Image, Video } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface MediaHeroBlockProps {
   block: BlockItem
@@ -37,12 +38,12 @@ export const MediaHeroBlock: React.FC<MediaHeroBlockProps> = ({ block, onAction 
 
   return (
     <View
-      className="sdui-media-hero"
+      className={blockClassName('sdui-media-hero', block.style)}
       onClick={handleClick}
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx',
-        backgroundColor: block.style?.background || '#151518'
-      }}
+      style={block.style?.border_radius || block.style?.background ? {
+        ...(block.style.border_radius ? { borderRadius: block.style.border_radius } : {}),
+        ...(block.style.background ? { backgroundColor: block.style.background } : {})
+      } : undefined}
     >
       <View
         className="media-player-box"

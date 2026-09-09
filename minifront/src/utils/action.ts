@@ -247,6 +247,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
 
   const payload = resolveActionPayload(action.payload || {}, context)
   let actionSuccess = true
+  let successChainHandled = false
   let actionResult: any = undefined
 
   try {
@@ -703,6 +704,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
           ? action.on_success
           : payload.on_success
         if (Array.isArray(successActions) && successActions.length > 0) {
+          successChainHandled = true
           for (const subAction of successActions) {
             await dispatchAction(subAction, nextContext)
           }
@@ -859,6 +861,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
             ? action.on_success
             : payload.on_success
           if (Array.isArray(successActions) && successActions.length > 0) {
+            successChainHandled = true
             for (const nextAction of successActions) {
               await dispatchAction(nextAction, subContext)
             }
@@ -920,7 +923,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       ? payload.on_success
       : null)
 
-  if (actionSuccess && successActions && successActions.length > 0) {
+  if (actionSuccess && !successChainHandled && successActions && successActions.length > 0) {
     const successContext: ActionContext = {
       ...context,
       result: actionResult !== undefined ? actionResult : context?.result

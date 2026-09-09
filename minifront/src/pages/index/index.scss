@@ -9,13 +9,13 @@
     .announcement-banner {
       margin: 0 32rpx 16rpx 32rpx;
       padding: 14rpx 24rpx;
-      background: rgba(255, 159, 10, 0.12);
-      border: 1px solid rgba(255, 159, 10, 0.25);
+      background: var(--sdui-accent-bg, rgba(23, 105, 224, 0.1));
+      border: 1px solid var(--sdui-accent-soft, rgba(23, 105, 224, 0.25));
       border-radius: 16rpx;
 
       .announcement-text {
         font-size: 22rpx;
-        color: #ff9f0a;
+        color: var(--sdui-accent, #1769e0);
         font-weight: 500;
       }
     }
@@ -170,6 +170,13 @@
     }
   }
 }
+
+.index-page-container.theme-light_clean {
+  background: #f9f9f9;
+  color: #1d1d1f;
+}
+
+.index-page-container.theme-light_clean .apple-navbar-container { background: rgba(249,249,249,.96); border-bottom-color: #e6e6e6; }
 
 @keyframes floatPulse {
   0%, 100% {

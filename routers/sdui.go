@@ -61,17 +61,19 @@ func GetDynamicPageHandler(ctx iris.Context) {
 
 	// 检查当前访问者是否携带有效登录凭证 (严格校验会话存活态与多租户隔离)
 	isAuthenticated := false
+	viewerUserID := int64(0)
 	authHeader := ctx.GetHeader("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-		if _, _, _, err := jwtToken.ValidateTokenSessionAndTenant(tokenStr, appID); err == nil {
+		if _, user, _, err := jwtToken.ValidateTokenSessionAndTenant(tokenStr, appID); err == nil && user != nil {
 			isAuthenticated = true
+			viewerUserID = user.ID
 		}
 	}
 
 	clientCaps := strings.TrimSpace(ctx.GetHeader("X-Client-Capabilities"))
 	srv := services.NewSDUIService()
-	envelope, err := srv.GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pageID, queryParams, isAuthenticated, clientCaps)
+	envelope, err := srv.GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(appID, pageID, queryParams, isAuthenticated, clientCaps, viewerUserID)
 	if err != nil {
 		logger.JM.Warnf("获取动态页面协议失败: %v", err)
 		ctx.StatusCode(http.StatusNotFound)

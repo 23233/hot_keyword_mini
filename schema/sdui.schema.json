@@ -61,7 +61,7 @@
         "business_type": {
           "type": "string",
           "description": "业务领域类型",
-          "enum": ["drama", "game", "query", "download", "custom"]
+      "enum": ["drama", "game", "query", "download", "custom", "ai_breakthrough", "ai_article"]
         },
         "intent": {
           "type": "string",
@@ -179,8 +179,27 @@
         },
         "style": {
           "type": "object",
-          "properties": {
-            "border_radius": { "type": "string" },
+            "properties": {
+              "utilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "layout/flat", "layout/card",
+                    "surface/canvas", "surface/base", "surface/raised", "surface/ink",
+                    "border/none", "border/subtle", "border/strong",
+                    "radius/none", "radius/sm", "radius/md", "radius/lg", "radius/full",
+                    "space/y-0", "space/y-2", "space/y-4", "space/y-6", "space/y-8", "space/y-10", "space/y-12",
+                    "padding/none", "padding/0", "padding/2", "padding/4", "padding/6", "padding/8", "padding/x-4", "padding/x-5", "padding/x-6", "padding/y-4", "padding/y-6",
+                    "gap/2", "gap/4", "gap/6", "gap/8",
+                    "text/display", "text/section", "text/muted", "text/inverse",
+                    "accent/blue", "accent/ink", "accent/amber",
+                    "elevation/none", "elevation/sm", "elevation/md", "media/rounded"
+                  ]
+                },
+                "description": "受控原子样式令牌列表；组合语义与 Tailwind 相同，但仅允许此白名单"
+              },
+              "border_radius": { "type": "string" },
             "accent_color": { "type": "string" },
             "margin_y": { "type": "string" },
             "margin_x": { "type": "string" },

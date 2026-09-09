@@ -2,6 +2,7 @@
 import React from 'react'
 import { View, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface ActionButtonBlockProps {
   block: BlockItem
@@ -13,26 +14,22 @@ interface ActionButtonBlockProps {
  */
 export const ActionButtonBlock: React.FC<ActionButtonBlockProps> = ({ block, onAction }) => {
   const props = block.props || {}
-  const text = props.text || '立即前往'
-  const badge = props.badge || ''
+  const text = String(props.text || '立即前往')
+  const badge = props.badge ? String(props.badge) : ''
+  const variant = String(props.variant || 'primary')
 
   const targetAction = block.action || props.action || props.btn_action
-  const handleClick = (e: any) => {
-    e?.stopPropagation?.()
-    if ((targetAction || block.events?.tap || props.events?.tap) && onAction) {
-      onAction(targetAction, { item: props, actionPayload: props, btn_text: text, badge })
-    }
+  const handleClick = () => {
+    if (!onAction || (!targetAction && !block.events?.tap && !props.events?.tap)) return
+    onAction(targetAction, { item: props, actionPayload: props, btn_text: text, badge })
   }
 
   return (
-    <View className="sdui-action-btn-block">
+    <View className={blockClassName(`sdui-action-btn-block variant-${variant}`, block.style)}>
       <View
         className="capsule-btn"
         onClick={handleClick}
-        style={{
-          borderRadius: block.style?.border_radius || '999rpx',
-          background: block.style?.background || undefined
-        }}
+        style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
       >
         <Text className="btn-text">{text}</Text>
         {badge && (

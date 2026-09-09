@@ -1,6 +1,7 @@
 // TimelineBlock.tsx
 import { View, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface TimelineBlockProps {
   block: BlockItem
@@ -36,84 +37,50 @@ export const TimelineBlock: React.FC<TimelineBlockProps> = ({ block, onAction })
 
   return (
     <View
-      className="sdui-timeline-block"
+      className={blockClassName('sdui-timeline-block', block.style)}
       onClick={() => {
         if ((block.action || block.events?.tap) && onAction) onAction(block.action)
       }}
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx',
-        padding: '28rpx',
-        background: 'rgba(255, 255, 255, 0.05)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)'
-      }}
+      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       {title && (
-        <View style={{ marginBottom: '24rpx' }}>
-          <Text style={{ fontSize: '30rpx', fontWeight: 600, color: '#fff' }}>{title}</Text>
+        <View className="sdui-timeline-heading">
+          <Text className="sdui-timeline-title">{title}</Text>
         </View>
       )}
 
-      <View style={{ display: 'flex', flexDirection: 'column', gap: '24rpx' }}>
+      <View className="sdui-timeline-nodes">
         {nodes.map((node, index) => {
           const isLast = index === nodes.length - 1
           return (
             <View
               key={index}
               onClick={(e) => handleNodeClick(node, index, e)}
-              style={{
-                display: 'flex',
-                gap: '20rpx',
-                position: 'relative',
-                cursor: node.action ? 'pointer' : 'default'
-              }}
+              className={`sdui-timeline-node ${node.action ? 'is-actionable' : ''}`}
             >
               {/* 左侧垂直线与时间圆点 */}
-              <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '32rpx' }}>
-                <View
-                  style={{
-                    width: '18rpx',
-                    height: '18rpx',
-                    borderRadius: '50%',
-                    background: node.is_active ? '#FF9F0A' : 'rgba(255, 255, 255, 0.4)',
-                    boxShadow: node.is_active ? '0 0 12rpx rgba(255, 159, 10, 0.8)' : 'none',
-                    marginTop: '8rpx'
-                  }}
-                />
+              <View className="sdui-timeline-rail">
+                <View className={`sdui-timeline-dot ${node.is_active ? 'is-active' : ''}`} />
                 {!isLast && (
-                  <View
-                    style={{
-                      flex: 1,
-                      width: '2rpx',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      margin: '8rpx 0'
-                    }}
-                  />
+                  <View className="sdui-timeline-line" />
                 )}
               </View>
 
               {/* 右侧节点信息 */}
-              <View style={{ flex: 1, paddingBottom: isLast ? '0' : '16rpx' }}>
-                <View style={{ display: 'flex', alignItems: 'center', gap: '12rpx' }}>
-                  <Text style={{ fontSize: '22rpx', color: 'rgba(255, 255, 255, 0.45)' }}>{node.time}</Text>
+              <View className={`sdui-timeline-copy ${isLast ? 'is-last' : ''}`}>
+                <View className="sdui-timeline-meta">
+                  <Text className="sdui-timeline-time">{node.time}</Text>
                   {node.tag && (
-                    <View
-                      style={{
-                        padding: '2rpx 10rpx',
-                        borderRadius: '8rpx',
-                        background: 'rgba(255, 159, 10, 0.15)',
-                        border: '1px solid rgba(255, 159, 10, 0.3)'
-                      }}
-                    >
-                      <Text style={{ fontSize: '18rpx', color: '#FF9F0A' }}>{node.tag}</Text>
+                    <View className="sdui-timeline-tag">
+                      <Text>{node.tag}</Text>
                     </View>
                   )}
                 </View>
-                <Text style={{ fontSize: '26rpx', fontWeight: 600, color: '#fff', marginTop: '6rpx', display: 'block' }}>
+                <Text className="sdui-timeline-node-title">
                   {node.title}
                 </Text>
                 {node.content && (
-                  <Text style={{ fontSize: '22rpx', color: 'rgba(255, 255, 255, 0.6)', marginTop: '6rpx', display: 'block', lineHeight: 1.5 }}>
+                  <Text className="sdui-timeline-node-content">
                     {node.content}
                   </Text>
                 )}

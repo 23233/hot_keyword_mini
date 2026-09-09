@@ -45,6 +45,13 @@
   }
 }
 
+.apple-navbar-container.theme-light_clean {
+  background: rgba(249, 249, 249, 0.96);
+  border-bottom-color: #e6e6e6;
+  .apple-navbar-content .nav-title-group .nav-title { color: #1a1a1a !important; }
+  .apple-navbar-content .nav-title-group .nav-subtitle { color: #727680 !important; }
+}
+
 .apple-navbar-placeholder {
   width: 100%;
   flex-shrink: 0;

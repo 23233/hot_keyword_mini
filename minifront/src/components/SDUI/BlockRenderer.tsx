@@ -3,6 +3,7 @@ import { View, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
 import { MediaHeroBlock } from './MediaHeroBlock'
 import { ResourceCardBlock } from './ResourceCardBlock'
+import { TextBlock } from './TextBlock'
 import { ActionButtonBlock } from './ActionButtonBlock'
 import { NoticeBlock } from './NoticeBlock'
 import { GameCardBlock } from './GameCardBlock'
@@ -11,7 +12,6 @@ import { EpisodeListBlock } from './EpisodeListBlock'
 import { ItemGridBlock } from './ItemGridBlock'
 import { TimelineBlock } from './TimelineBlock'
 import { ImageBlock } from './ImageBlock'
-import { TextBlock } from './TextBlock'
 import { VideoBlock } from './VideoBlock'
 import { ContainerBlock, GridBlock, TabsBlock, CarouselBlock, SpacerBlock } from './LayoutBlocks'
 import { EmptyBlock, SkeletonBlock } from './StateBlocks'
@@ -24,8 +24,10 @@ import {
   ProductCardBlock,
   DownloadCardBlock
 } from './BusinessBlocks'
+import { CollectionNavBlock, ContentFeedBlock, ContentDetailBlock, DiscussionThreadBlock, OfferListBlock } from './ContentBlocks'
 import { evaluateCondition } from '../../utils/condition'
 import { resolveBindingValue, resolveBlockPropsBindings } from '../../utils/action'
+import { utilityClasses } from './style'
 import './sdui.scss'
 
 interface BlockRendererProps {
@@ -52,14 +54,6 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   const resolvedProps = resolveBlockPropsBindings(block.props || {}, rawBlockContext)
   const blockContext: Record<string, any> = { ...rawBlockContext, props: resolvedProps }
 
-  // 1. 检查受控条件可见性 (visible_when 多运算符受控求值)
-  if (block.visible_when !== undefined) {
-    const isVisible = evaluateCondition(block.visible_when, blockContext)
-    if (!isVisible) {
-      return null
-    }
-  }
-
   // 1.1 检查块级局部状态多态 (loading, empty, error，覆盖库存不足、过期、离线等场景并提供优雅兜底)
   const blockState = context?.blockStates?.[block.id] || (block.props as any)?._state
   if (blockState === 'loading') {
@@ -67,7 +61,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       return <BlockRenderer block={block.loading} onAction={onAction} context={blockContext} />
     }
     return (
-      <View className="sdui-block-wrapper is-glass" style={{ marginBottom: '24rpx', padding: '24rpx' }}>
+      <View className="sdui-block-wrapper is-glass u-space-y-6 u-padding-6">
         <SkeletonBlock block={{ id: `${block.id}_loading`, type: 'skeleton', props: { rows: 2, hero: false } }} />
       </View>
     )
@@ -77,7 +71,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       return <BlockRenderer block={block.empty} onAction={onAction} context={blockContext} />
     }
     return (
-      <View className="sdui-block-wrapper is-glass" style={{ marginBottom: '24rpx', padding: '24rpx' }}>
+      <View className="sdui-block-wrapper is-glass u-space-y-6 u-padding-6">
         <EmptyBlock block={{ id: `${block.id}_empty`, type: 'empty', props: { state: 'empty', title: '暂无数据', desc: '当前卡片内容暂不可用' } }} onAction={onAction} />
       </View>
     )
@@ -87,7 +81,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       return <BlockRenderer block={block.error} onAction={onAction} context={blockContext} />
     }
     return (
-      <View className="sdui-block-wrapper is-glass" style={{ marginBottom: '24rpx', padding: '24rpx' }}>
+      <View className="sdui-block-wrapper is-glass u-space-y-6 u-padding-6">
         <EmptyBlock
           block={{
             id: `${block.id}_error`,
@@ -145,6 +139,11 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       }
       return null
     }
+  }
+
+  // 循环展开后再求值条件，确保 visible_when 可以读取当前 $item。
+  if (block.visible_when !== undefined && !evaluateCondition(block.visible_when, blockContext)) {
+    return null
   }
 
   // 3. 事件动作拦截器 (优先区分内部特定子动作与积木主体动作，主体动作优先执行 events 序列，最后回退 block.action)
@@ -205,24 +204,25 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   const isSpacer = block.type === 'spacer'
   const style = block.style || {}
 
-  const shouldApplyGlass = !isSpacer && (
+  const flatUtility = style.utilities?.includes('layout/flat')
+  const cardUtility = style.utilities?.includes('layout/card')
+  const contentBlock = ['collection_nav', 'category_nav', 'content_feed', 'article_feed', 'content_detail', 'article_detail', 'offer_list', 'membership_plan_list', 'discussion_thread', 'comment_thread'].includes(block.type)
+  const shouldApplyGlass = !isSpacer && !flatUtility && !cardUtility && (
     style.glass_blur !== undefined
       ? !!style.glass_blur
-      : (!isNested && !['text', 'rich_text', 'image', 'video', 'action_button', 'spacer'].includes(block.type))
+      : (!isNested && !contentBlock && !['text', 'rich_text', 'image', 'video', 'action_button', 'spacer'].includes(block.type))
   )
 
   // 嵌套子积木上下外边距默认归零，完全遵循父级容器 (Flex/Grid) 的 gap 布局规范，杜绝双重叠加破坏排版
   const defaultMarginBottom = (isNested || isSpacer) ? '0' : '24rpx'
-  const wrapperClass = `sdui-block-wrapper ${shouldApplyGlass ? 'is-glass' : ''} ${isNested ? 'is-nested' : ''}`
+  const wrapperClass = `sdui-block-wrapper type-${block.type} ${utilityClasses(style.utilities)} ${shouldApplyGlass ? 'is-glass' : ''} ${isNested ? 'is-nested' : ''}`
   const wrapperStyle: any = {
-    marginTop: isNested ? (style.margin_y || undefined) : (style.margin_y || undefined),
+    ...(style.margin_y ? { marginTop: style.margin_y } : {}),
     marginBottom: isNested ? (style.margin_y || defaultMarginBottom) : (style.margin_y !== undefined ? style.margin_y : defaultMarginBottom),
-    marginLeft: style.margin_x || undefined,
-    marginRight: style.margin_x || undefined,
-    padding: style.padding || undefined,
-    borderRadius: style.border_radius || undefined,
-    background: style.background || undefined,
-    minHeight: !isNested && block.props?._layout_height ? `${block.props._layout_height}px` : undefined
+    ...(style.margin_x ? { marginLeft: style.margin_x, marginRight: style.margin_x } : {}),
+    ...(style.padding ? { padding: style.padding } : {}),
+    ...(style.border_radius ? { borderRadius: style.border_radius } : {}),
+    // 颜色和背景只由受控 utility token 决定，避免协议注入任意 CSS。
   }
 
   // 5. 递归求值解析积木 props 中的全部受控数据绑定表达式 ($entity.*, $query.*, $item.*, $state.*)
@@ -265,6 +265,23 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
         return <CarouselBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} renderBlock={renderChildBlock} />
       case 'spacer':
         return <SpacerBlock block={resolvedBlock} />
+
+      // 通用内容消费组件：数据源、字段映射和动作都由协议声明，不绑定任何行业。
+      case 'collection_nav':
+      case 'category_nav':
+        return <CollectionNavBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'content_feed':
+      case 'article_feed':
+        return <ContentFeedBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'content_detail':
+      case 'article_detail':
+        return <ContentDetailBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'offer_list':
+      case 'membership_plan_list':
+        return <OfferListBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'discussion_thread':
+      case 'comment_thread':
+        return <DiscussionThreadBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
 
       // 经典业务块
       case 'media_hero':

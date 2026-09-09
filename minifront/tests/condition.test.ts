@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { evaluateCondition } from '../src/utils/condition.ts'
+import { blockClassName, utilityClasses } from '../src/components/SDUI/style.ts'
 
 const context = {
   state: {
@@ -30,4 +31,9 @@ test('SDUI 条件简写与数组语法保持同一结果', () => {
   for (const { condition, expected } of cases) {
     assert.equal(evaluateCondition(condition, context), expected, JSON.stringify(condition))
   }
+})
+
+test('SDUI 工具令牌去重并保持安全类名', () => {
+  assert.equal(utilityClasses(['space/y-6', 'space/y-6', 'radius/lg', 'bad token']), 'u-space-y-6 u-radius-lg')
+  assert.equal(blockClassName('sdui-card', { utilities: ['layout/card'] }), 'sdui-card u-layout-card')
 })

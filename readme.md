@@ -1,13 +1,13 @@
-# 爆款热词与短剧小程序矩阵一体化系统 (SDUI 动态组件引擎)
+# 通用 SDUI 动态组件与 AI 破甲资讯小程序系统
 
-本项目为针对微信搜一搜爆款关键词与上升指数词流量承接打造的高并发小程序矩阵系统。采用 **Golang (Iris + Gorm) 服务端驱动动态引擎 (Server-Driven UI, SDUI)** 与 **Taro 4 + React 微信小程序跨端技术栈**，界面严格遵循**苹果人机交互设计规范 (Apple HIG)**，并配备了**多租户一脑多控管理工作台与微信开发者工具默认 iPhone 12/13 Pro 同构模拟器**。
+本项目是面向微信小程序的通用服务端驱动动态引擎（Server-Driven UI, SDUI），支持资讯、会员、单篇付费文章、评论、短剧、游戏、查询和下载等页面由协议灵活编排。当前默认租户为“ai破甲”资讯导航站。系统采用 **Golang (Iris + Gorm)** 与 **Taro 4 + React**，界面遵循**苹果人机交互设计规范 (Apple HIG)**，并配备多租户管理工作台、MCP 编排服务和微信开发者工具验收脚本。
 
 ---
 
 ## 🌟 核心架构与核心能力
 
 ### 1. 服务端驱动动态组件引擎 (SDUI Engine)
-- **零发版敏捷上新**：页面布局、原子积木、主题样式（暗夜磨砂/极简冷白/赛博霓虹）、强调色与点击行为完全由后端 JSON 协议驱动，发布后线上小程序 0ms 即时热更新，彻底摆脱小程序审核周期；
+- **零发版敏捷上新**：页面布局、原子积木、主题样式（暗夜磨砂/极简冷白/赛博霓虹）、强调色与点击行为完全由后端 JSON 协议驱动，发布后按缓存失效策略更新线上小程序，无需重新提交代码包；小程序原生代码和平台审核边界仍然保留；
 - **苹果 HIG 全行业原子积木库**：
   - `GenericBlock`：通用自由图文卡片 (`custom` / `custom_block`)，自适应支持徽标、主图、富文本说明与主按钮交互；
   - `MediaHeroBlock`：媒体大焦点海报、高清试看视频、微信视频号原生免跳播放与跳转；
@@ -40,15 +40,18 @@
   - **游戏礼包预设 (`tpl_game_redeem`)**：公测通告 + 独家礼包兑换码 + 启动游戏；
   - **信息查询预设 (`tpl_query_result`)**：考分查询表单 + 查询结果时间线；
   - **资源下载预设 (`tpl_download_resource`)**：安装包说明 + 夸克/百度网盘高速通道；
+  - **AI 破甲资讯门户 (`tpl_ai_breakthrough_portal`)**：栏目导航、文章摘要流和会员入口；
+  - **AI 破甲文章详情 (`tpl_ai_breakthrough_article`)**：Markdown 正文、试读/解锁和两级评论；
+  - **AI 破甲会员中心 (`tpl_ai_breakthrough_membership`)**：会员等级、价格、有效期和开通入口；
   - **自由编排起手预设 (`tpl_general_blank`)**：纯净空白画板，自由拖拽拼积木；
   - 一键套用预设瞬间填充积木树，生成后支持逐块自由增删改查、属性替换与动作绑定；
-- **iPhone 12/13 Pro 手机模拟器 0ms 实时同构渲染**：
+- **iPhone 12/13 Pro 手机模拟器实时同构渲染**：
   - 左侧模拟器采用真实 CSS 毛玻璃磨砂与苹果质感，与小程序同构渲染；
-  - 右侧改动任何标题、积木内容、样式或动作，左侧模拟器 0ms 实时热更新，所见即所得。
+  - 右侧改动标题、积木内容、样式或动作后，左侧模拟器实时刷新，所见即所得。
 
 ### 4. 后端无头截屏与微信分享卡片生成服务
 - **纯 Go 原生图层渲染引擎**：
-  - 零外部 Chromium / Puppeteer 沉重依赖，全平台跨平台支持，内存开销 <15MB，合成速度 <30ms；
+  - 零外部 Chromium / Puppeteer 依赖，使用 Go 图层合成；具体资源占用和耗时以部署环境监控为准；
   - 微信聊天分享卡片：**官方 5:4 比例 (1000 × 800)**；
   - 微信朋友圈分享图：**官方 1:1 比例 (800 × 800)**；
 - **全链路自动配图闭环**：
@@ -60,13 +63,14 @@
 - **`sdui.app.list`**：查询全部已注册小程序，供 AI 选择目标 AppID；
 - **`sdui.page.list` / `sdui.page.get`**：读取页面矩阵、线上协议和已有草稿，避免 AI 重复创建或覆盖错误页面；
 - **`sdui.file.prepare_upload`**：申请 `miniapps/{app_id}/` 前缀的 COS 预签名 PUT 地址，调用方直传后把 CDN URL 写入页面；
-- **`sdui.template.list`**：查询短剧/游戏/查询/下载四大行业可用模板；
+- **`sdui.template.list`**：查询短剧/游戏/查询/下载及 AI 破甲资讯可用模板；
+- **`sdui.template.get` / `sdui.template.save` / `sdui.template.delete`**：读取、保存和删除当前小程序的可复用用户模板，内置模板只读；
 - **`sdui.page.create`**：从模板派生创建草稿页面 (`status: draft`)；
-- **`sdui.page.patch`**：受控局部 JSON Patch 补丁原子打补丁；
+- **`sdui.page.patch`**：基于 `sdui.page.get` 返回的 `expected_revision` 执行受控局部 JSON Patch；支持页面字段与 `/blocks/{block_id}` 的局部替换、`add_block`、`remove_block`；版本冲突会拒绝覆盖；
 - **`sdui.page.validate`**：语法、ID冲突与动作参数机器可读强校验报告；
 - **`sdui.page.preview`**：模拟装配并输出响应信封；
 - **`sdui.page.screenshot`**：规范化图层合成，输出卡片 URL 与 SHA-256 图像哈希；
-- **`sdui.page.publish`**：通过强校验后显式确认发布，沉淀不可篡改版本快照；
+- **`sdui.page.publish`**：通过强校验后，使用人工实际审查的 `expected_revision` 并显式 `confirmed: true` 发布，沉淀不可篡改版本快照；
 - **`sdui.page.revisions` / `sdui.page.rollback`**：读取历史版本并在人工确认后原子回滚；
 - **`sdui.page.set_current`**：将已发布页面切换为小程序当前主页；
 - **`sdui.page.share_card`**：生成并持久化好友/朋友圈分享图；
@@ -81,8 +85,9 @@
 ├── cmd/
 │   └── mcp-server/             # 独立 Stdio 传输协议 AI MCP 命令行服务 (main.go)
 ├── models/                     # GORM 数据模型层
-│   ├── miniapp.go              # 多租户小程序模型 (MiniApp)
+│   ├── miniapp.go              # 多租户小程序模型 (MiniApp，默认租户为 ai破甲)
 │   ├── sdui.go                 # SDUI 动态页面 (DynamicPage)、原子积木 (BlockItem)、动作 (BlockAction)、分享 (PageShareConfig)
+│   ├── ai_breakthrough.go      # AI 破甲栏目、文章、会员、评论与审核模型
 │   ├── session.go              # 用户持久化会话与防重放模型 (UserSession)
 │   ├── drama.go                # 短剧主表 (Drama)、选集表 (DramaEpisode)、页面配置 (PageConfig)
 │   ├── user.go                 # 用户模型 (联合唯一索引隔离 AppID)
@@ -90,6 +95,11 @@
 ├── services/                   # 后端业务逻辑层 (遵循工业级规范，逻辑解耦)
 │   ├── sdui.go                 # SDUI 页面编排组装、多租户页面管理、信封封装与 ETag 304 缓存
 │   ├── template.go             # 行业模板包注册中心 (TemplateRegistry) 与页面派生
+│   ├── ai_breakthrough_template.go # AI 破甲资讯/文章/会员模板预设
+│   ├── article.go              # 文章摘要、Markdown 试读与正文权限
+│   ├── membership.go            # 会员套餐、权益和购买后有效期计算
+│   ├── comment.go              # 两级评论、回复懒加载与审核状态
+│   ├── wechat_audit.go         # 微信文字/图片内容安全审核适配
 │   ├── share_card.go           # 微信分享卡片纯 Go 图层渲染与自动配图服务
 │   ├── auth.go                 # 微信登录、双 Token 轮换状态机与重放攻击拦截
 │   ├── drama.go                # 短剧业务聚合与显式数据读取
@@ -97,6 +107,8 @@
 ├── routers/                    # 路由与控制器层
 │   ├── middleware/             # 租户拦截中间件 (TenantMiddleware)
 │   ├── sdui.go                 # /api/v1/page/:page_id (SDUI 动态页面信封接口)
+│   ├── ai_breakthrough.go      # AI 破甲资讯、文章、会员和评论公开接口
+│   ├── ai_breakthrough_admin.go # AI 破甲内容、会员和评论管理接口
 │   ├── auth.go                 # /api/v1/auth/wechat-login, /refresh, /session, /logout
 │   ├── admin.go                # /api/v1/admin/apps, /pages, /page, /templates, /generate_share_card
 │   ├── drama.go                # /api/v1/drama/home, /api/v1/drama/detail
@@ -115,6 +127,8 @@
 │   │   │   ├── FormBlock.tsx          # 查询与输入表单卡片
 │   │   │   ├── ActionButtonBlock.tsx  # 通栏大胶囊主操作按钮
 │   │   │   ├── NoticeBlock.tsx        # 跑马灯通告栏
+│   │   │   ├── ContentBlocks.tsx      # 资讯流、文章和讨论通用块
+│   │   │   ├── AIBreakthroughBlocks.tsx # AI 破甲文章、会员和评论块
 │   │   │   ├── BlockRenderer.tsx      # 积木动态调度器 (具备未知块优雅降级保护)
 │   │   │   └── sdui.scss              # Apple HIG 磨砂高斯模糊规范样式表
 │   │   ├── pages/dynamic/      # 万能 SDUI 动态承载页容器 (动态标题/骨架屏/分享闭环)
@@ -148,10 +162,10 @@ go run main.go
 启动后端后，浏览器直接访问：
 👉 **`http://localhost:8080/admin`**
 1. **多小程序管理**：顶部切换或添加小程序；
-2. **行业模板套用**：点击“📋 套用行业模板”，在短剧爆款、游戏礼包、考分查询、资源下载中自由选择；
+2. **行业模板套用**：点击“📋 套用行业模板”，在短剧爆款、游戏礼包、考分查询、资源下载和 AI 破甲资讯页面族中自由选择；
 3. **积木编排**：拖拽排序、增删组件、修改文字、配置跳转动作，左侧 iPhone 12/13 Pro 模拟器实时响应；
 4. **一键生成分享卡片**：点击“⚡ 自动生成微信 5:4 分享卡片”，即刻实时预览并在发布后下发；
-5. **发布生效**：点击右上角“⚡ 保存并同步至小程序”，线上小程序无需重新发布代码包即可秒级生效！
+5. **发布生效**：点击右上角“⚡ 保存并同步至小程序”，线上小程序无需重新发布代码包，按页面 ETag/HTTP 缓存失效策略读取新版本。
 
 ### 3. 小程序前端编译与调试
 ```bash
@@ -197,10 +211,12 @@ COS_CDN_URL=https://默认CDN域名（可选）
 
 登录管理后台后进入“AI MCP 智能编排”，填写令牌名称和权限即可创建全局 MCP Token。令牌不绑定单个小程序，明文仅在创建成功时显示一次，数据库只保存 SHA-256 哈希。调用 `/api/v1/mcp` 时通过 `X-MCP-Key` 提交令牌；页面工具必须在 arguments 中显式传入已注册的 `app_id`，部署环境仍可用 `MCP_ALLOWED_TENANTS` 设置总白名单。
 
-AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。推荐按“`sdui.app.list` -> `sdui.page.list/get` -> `sdui.template.list` -> `sdui.file.prepare_upload`（需要图片时） -> `sdui.page.create` -> `sdui.page.patch` -> `sdui.page.validate` -> `sdui.page.preview` -> `sdui.page.screenshot` -> `sdui.page.share_card`（需要分享图时） -> `sdui.page.publish` -> `sdui.page.set_current`”执行；故障恢复使用 `sdui.page.revisions` 和 `sdui.page.rollback`。默认只写草稿，发布、回滚、切换主页和生成分享图必须同时具备 `release` 权限并传入 `confirmed: true`，由人完成最终核对。
+AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。推荐按“`sdui.app.list` -> `sdui.page.list/get` -> `sdui.template.list/get` -> `sdui.file.prepare_upload`（需要图片时） -> `sdui.page.create`（仅创建不存在的 page_id） -> `sdui.page.get` 取得最新 revision -> `sdui.page.patch(expected_revision)` -> `sdui.page.validate` -> `sdui.page.preview` -> `sdui.page.screenshot` -> 人工复核同一 revision -> `sdui.page.publish(expected_revision, confirmed: true)` -> `sdui.page.set_current`”执行；故障恢复使用 `sdui.page.revisions` 和 `sdui.page.rollback`。默认只写草稿，发布、回滚、切换主页和生成分享图必须同时具备 `release` 权限并传入 `confirmed: true`，由人完成最终核对。工具失败会返回机器可读的 `structuredContent.recovery`，应按建议修复后重试。
+
+`tools/list` 中每个工具都包含机器可读的 `requiredScope` 以及 MCP `annotations.requiredScope`。`tools/call` 的业务成功和失败均使用顶层 `result`：成功时 `isError=false`，失败时 `isError=true` 且 `structuredContent` 包含 `code/tool/message/recovery`；只有 JSON-RPC 协议层错误使用顶层 `error`。Stdio 服务严格按一行一个 JSON-RPC 消息通信，stdout 只输出响应，启动提示和诊断信息只写入 stderr。
 
 MCP 的覆盖边界：它完整覆盖 SDUI 页面和资源的 AI 编排闭环，但不开放管理员账号、微信 AppSecret、支付私钥、商品金额、数据库迁移、任意 HTTP 代理或任意脚本执行。这些行为必须继续通过管理后台或专用服务完成。
 
 图片上传使用 `sdui.file.prepare_upload`：MCP 不接收二进制文件，只返回 10 分钟有效的预签名 PUT 地址、`uploadHeaders` 和最终 CDN 地址。AI 调用方必须按返回的 `uploadHeaders` 直接 PUT 图片到 `presignedUrl`，成功后使用 `finalCosFileUrl` 更新页面图片字段。对象统一使用 `miniapps/{app_id}/` 前缀，ACL 由 COS 控制台的 `miniapps/*` 规则管理。
 
-验证状态（2026-09-04）：预签名上传、COS 签名读取以及关闭证书校验后的 CDN 读取均已通过，测试对象已清理；本机使用默认 TLS 校验访问 `minicdn.a0free.com` 仍返回 `SEC_E_CERT_EXPIRED`，需以 CDN 实际边缘节点证书状态为准。Go 项目已通过 `go test ./...` 与 `go build ./...`。
+验证记录：预签名上传、COS 签名读取以及关闭证书校验后的 CDN 读取在 2026-09-04 已通过，测试对象已清理；本机使用默认 TLS 校验访问 `minicdn.a0free.com` 仍返回 `SEC_E_CERT_EXPIRED`，需以 CDN 实际边缘节点证书状态为准。本轮文档与代码核对（2026-09-09）中，Go 项目已通过 `go test ./...` 与 `go build ./...`；小程序已通过 `pnpm --dir minifront run type-check`、`pnpm --dir minifront run test:sdui` 和 `pnpm --dir minifront run build:weapp`。

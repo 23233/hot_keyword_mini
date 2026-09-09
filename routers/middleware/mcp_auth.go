@@ -73,6 +73,9 @@ func MCPAuthMiddleware(ctx iris.Context) {
 			authenticated = true
 			actorID = "mcp_token_" + tokenRecord.Name
 			scopes = services.ParseMCPTokenScopes(tokenRecord.Scopes)
+			if strings.TrimSpace(tokenRecord.AppID) != "" {
+				ctx.Values().Set("mcp_tenant_id", strings.TrimSpace(tokenRecord.AppID))
+			}
 		}
 	}
 	if !authenticated && bearerToken != "" {
@@ -81,7 +84,11 @@ func MCPAuthMiddleware(ctx iris.Context) {
 		claims, err := adminAuth.ParseAdminToken(bearerToken)
 		if err == nil && claims != nil {
 			authenticated = true
-			actorID = "admin_" + claims["username"].(string)
+			username, _ := claims["username"].(string)
+			if strings.TrimSpace(username) == "" {
+				username = "unknown"
+			}
+			actorID = "admin_" + username
 			role, _ := claims["role"].(string)
 			if role == "super_admin" || role == "admin" {
 				scopes = []string{"read", "write:draft", "release"}
@@ -89,6 +96,9 @@ func MCPAuthMiddleware(ctx iris.Context) {
 				scopes = []string{"read", "write:draft"}
 			} else {
 				scopes = []string{"read"}
+			}
+			if claimAppID, ok := claims["app_id"].(string); ok && strings.TrimSpace(claimAppID) != "" {
+				ctx.Values().Set("mcp_tenant_id", strings.TrimSpace(claimAppID))
 			}
 		}
 	}
@@ -152,6 +162,8 @@ func MCPAuthMiddleware(ctx iris.Context) {
 	}
 
 	// 全局 MCP Token 不绑定 Header 中的小程序；具体目标由工具 arguments.app_id 决定。
-	ctx.Values().Set("mcp_tenant_id", "")
+	if ctx.Values().GetString("mcp_tenant_id") == "" {
+		ctx.Values().Set("mcp_tenant_id", "")
+	}
 	ctx.Next()
 }

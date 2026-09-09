@@ -133,23 +133,27 @@ export const ContainerBlock: React.FC<LayoutBlockProps> = ({ block, onAction, co
             ? (hasChildInteraction ? 'auto' : 'none')
             : undefined
 
+          const itemFlex = props.item_flex || (childProps as any).item_flex || ((childStyle as any).flex ? String((childStyle as any).flex) : undefined)
           const itemStyle: React.CSSProperties = isOverlap
             ? {
                 gridArea: 'overlap',
-                alignSelf: itemAlignSelf as any,
-                justifySelf: itemJustifySelf as any,
+                ...(itemAlignSelf ? { alignSelf: itemAlignSelf as any } : {}),
+                ...(itemJustifySelf ? { justifySelf: itemJustifySelf as any } : {}),
                 zIndex: (childStyle as any).z_index || idx + 1,
-                width: childProps.width || (isFullBleed ? '100%' : undefined),
-                height: childProps.height || (isFullBleed ? '100%' : undefined),
-                pointerEvents
+                ...(childProps.width || isFullBleed ? { width: childProps.width || '100%' } : {}),
+                ...(childProps.height || isFullBleed ? { height: childProps.height || '100%' } : {}),
+                ...(pointerEvents ? { pointerEvents } : {})
               }
-            : {
-                flex: props.item_flex || (childProps as any).item_flex || ((childStyle as any).flex ? String((childStyle as any).flex) : undefined)
-              }
+            : (itemFlex ? { flex: itemFlex } : {})
 
           const childCtx = childProps._repeat_item !== undefined
             ? { ...context, isNested: true, index: idx, item: childProps._repeat_item, $item: childProps._repeat_item }
             : { ...context, isNested: true, index: idx }
+
+          const innerStyle: React.CSSProperties = {
+            ...(isFullBleed ? { width: '100%', height: '100%' } : {}),
+            ...(isOverlap ? { pointerEvents: 'auto' } : {})
+          }
 
           return (
             <View
@@ -163,11 +167,7 @@ export const ContainerBlock: React.FC<LayoutBlockProps> = ({ block, onAction, co
                 }
               }}
             >
-              <View style={{
-                width: isFullBleed ? '100%' : (childProps.width || undefined),
-                height: isFullBleed ? '100%' : (childProps.height || undefined),
-                pointerEvents: isOverlap ? 'auto' : undefined
-              }}>
+              <View style={innerStyle}>
                 {renderBlock ? renderBlock(child, childCtx) : null}
               </View>
             </View>
@@ -196,8 +196,8 @@ export const GridBlock: React.FC<LayoutBlockProps> = ({ block, onAction, context
     gridTemplateColumns: `repeat(${columns}, 1fr)`,
     gap: gap,
     width: '100%',
-    alignItems: align,
-    justifyItems: justify
+    ...(align ? { alignItems: align } : {}),
+    ...(justify ? { justifyItems: justify } : {})
   }
 
   const gridAction = block.action || props.action || props.card_action

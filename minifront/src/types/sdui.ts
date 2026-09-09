@@ -72,8 +72,10 @@ export interface BlockAction {
   payload?: Record<string, any>
 }
 
-// 积木组件视觉渲染样式 (严格遵循苹果 HIG 设计标记)
+// 积木组件视觉渲染样式，优先使用可组合的受控原子令牌。
 export interface BlockStyle {
+  // 受控原子样式令牌，仅允许服务端白名单中的组合项，不执行任意 CSS。
+  utilities?: string[]
   // 垂直外边距
   margin_y?: string
   // 水平外边距

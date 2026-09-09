@@ -1,8 +1,8 @@
 // minifront/src/pages/index/index.tsx
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import Taro, { useShareAppMessage, useShareTimeline, usePullDownRefresh, useReachBottom } from '@tarojs/taro'
-import { PageResponseEnvelope, BlockItem } from '../../types/sdui'
+import { PageResponseEnvelope } from '../../types/sdui'
 import { request } from '../../utils/request'
 import { dispatchAction } from '../../utils/action'
 import { ensureSession } from '../../utils/auth'
@@ -143,74 +143,8 @@ export default function Index() {
     }
   }
 
-  // 首页优先消费服务端同构 Layout IR，实现与服务端 100% 像素级对齐
-  const effectiveSduiBlocks = useMemo<BlockItem[]>(() => {
-    const nodes = sduiEnvelope?.layout_ir?.nodes
-    const rawBlocks = sduiEnvelope?.page?.blocks || []
-    if (!nodes || nodes.length === 0) return rawBlocks
-
-    const blockMap = new Map<string, BlockItem>()
-    const registerBlock = (b: BlockItem) => {
-      if (!b || !b.id) return
-      blockMap.set(b.id, b)
-      const children = (b.props?.children || b.props?.items || b.props?.blocks) as BlockItem[]
-      if (Array.isArray(children)) {
-        children.forEach(registerBlock)
-      }
-      if (Array.isArray(b.props?.tabs)) {
-        b.props.tabs.forEach((tab: any) => {
-          const tabChildren = (tab.blocks || tab.children || (tab.child ? [tab.child] : [])) as BlockItem[]
-          if (Array.isArray(tabChildren)) {
-            tabChildren.forEach(registerBlock)
-          }
-        })
-      }
-    }
-    rawBlocks.forEach(registerBlock)
-
-    const toBlock = (node: any, isChild = false): BlockItem => {
-      const orig = blockMap.get(node.id) || blockMap.get(node.id.replace(/_\d+$/, ''))
-      const childrenList = node.children?.length ? node.children.map((c: any) => toBlock(c, true)) : undefined
-      const mergedProps: Record<string, any> = {
-        ...(orig?.props || {}),
-        ...(node.props || {}),
-        _layout_height: node.bounding_box?.height
-      }
-      if (node.type === 'tabs') {
-        // 关键防护：保留 tabs 结构配置，防止被扁平 children 替换导致标签丢失
-        if (orig?.props?.tabs) {
-          mergedProps.tabs = orig.props.tabs
-        }
-      } else if (childrenList && childrenList.length > 0) {
-        mergedProps.children = childrenList
-      }
-
-      return {
-        id: node.id,
-        type: node.type,
-        props: mergedProps,
-        visible_when: node.visible_when !== undefined ? node.visible_when : (orig?.visible_when !== undefined ? orig.visible_when : (node.visible === false ? false : undefined)),
-        repeat: node.repeat,
-        action: node.action || orig?.action,
-        events: node.events || orig?.events,
-        loading: node.loading || orig?.loading,
-        empty: node.empty || orig?.empty,
-        error: node.error || orig?.error,
-        fallback: node.fallback || orig?.fallback,
-        style: {
-          ...(orig?.style || {}),
-          margin_y: isChild
-            ? orig?.style?.margin_y
-            : (node.margin_y ? `${node.margin_y}px` : (orig?.style?.margin_y || '24rpx')),
-          border_radius: node.border_radius ? `${node.border_radius}px` : orig?.style?.border_radius,
-          padding: node.padding ? `${node.padding}px` : orig?.style?.padding,
-          glass_blur: node.glass_blur !== undefined ? node.glass_blur : orig?.style?.glass_blur,
-          accent_color: node.accent_color || orig?.style?.accent_color
-        }
-      }
-    }
-    return nodes.map((n: any) => toBlock(n, false))
-  }, [sduiEnvelope])
+  // page.blocks 是小程序唯一的运行时渲染输入；layout_ir 仅供服务端验收和截图比对。
+  const effectiveSduiBlocks = sduiEnvelope?.page?.blocks || []
 
   // 微信好友分享 (完全由页面下发协议驱动)
   useShareAppMessage(() => {
@@ -274,11 +208,8 @@ export default function Index() {
       <View onTouchStart={handleNavTouchStart} onTouchEnd={handleNavTouchEnd}>
         <AppleNavbar
           title={debugMotionMode ? '🛠️ 动效调试模式 (长按恢复)' : pageTitle}
-          subtitle={
-            debugMotionMode
-              ? 'Native Physics & Shader Lab'
-              : sduiEnvelope?.page?.business_type ? `分类: ${sduiEnvelope.page.business_type}` : undefined
-          }
+          subtitle={debugMotionMode ? 'Native Physics & Shader Lab' : undefined}
+          theme={sduiEnvelope?.page?.theme || 'dark_glass'}
         />
       </View>
 
@@ -286,8 +217,8 @@ export default function Index() {
       <ScrollView scrollY className='page-scroll-body'>
         {/* 开发者调试模式横幅 */}
         {debugMotionMode && (
-          <View className='announcement-banner' style={{ background: 'rgba(10, 132, 255, 0.15)', borderColor: 'rgba(10, 132, 255, 0.3)' }}>
-            <Text className='announcement-text' style={{ color: '#0a84ff' }}>
+          <View className='announcement-banner'>
+            <Text className='announcement-text'>
               🛠️ 开发者动效调试模式已激活 · 正在调试物理动效与 Shader 渲染引擎（长按标题或点击退出）
             </Text>
           </View>
@@ -337,9 +268,9 @@ export default function Index() {
           </View>
         )}
 
-        {/* 4. SDUI 通用原子积木树渲染 (消费 Layout IR，100% 同构) */}
+        {/* 4. SDUI 通用原子积木树渲染 */}
         {!loading && !debugMotionMode && !authRequired && !errorMsg && effectiveSduiBlocks.length > 0 && (
-          <View className='sdui-home-blocks-container' style={{ padding: '24rpx' }}>
+          <View className='sdui-home-blocks-container u-padding-6'>
             {effectiveSduiBlocks.map((block) => (
               <BlockRenderer
                 key={block.id}
@@ -347,6 +278,7 @@ export default function Index() {
                 onAction={handleBlockAction}
                 context={{
                   entity: sduiEnvelope?.data,
+                  data: sduiEnvelope?.data,
                   page: sduiEnvelope?.page,
                   query: routerParams,
                   state: pageState,

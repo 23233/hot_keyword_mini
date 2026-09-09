@@ -512,4 +512,8 @@ func initDefaultTemplates(r *TemplateRegistry) {
 
 	// 6. 全组件验证模板仅用于开发、验收和复杂页面回归，不会作为普通行业页面默认推荐。
 	r.templates["tpl_sdui_component_lab"] = buildComponentLabTemplate()
+	// 7. AI 破甲资讯导航和文章详情模板。
+	r.templates["tpl_ai_breakthrough_portal"] = buildAIBreakthroughTemplate()
+	r.templates["tpl_ai_breakthrough_article"] = buildAIArticleTemplate()
+	r.templates["tpl_ai_breakthrough_membership"] = buildAIMembershipTemplate()
 }

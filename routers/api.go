@@ -36,6 +36,9 @@ func registerAPIRoutes(party iris.Party) {
 	// 注册短剧相关 API 路由
 	RegisterDramaRoutes(api)
 
+	// 注册 AI 破甲资讯、会员和两级评论接口。
+	RegisterAIBreakthroughRoutes(api)
+
 	// 注册可视化管理后台 API 路由
 	RegisterAdminRoutes(party)
 

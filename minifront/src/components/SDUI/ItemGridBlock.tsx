@@ -1,6 +1,7 @@
 // ItemGridBlock.tsx
 import { View, Text, Image } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface ItemGridBlockProps {
   block: BlockItem
@@ -40,93 +41,40 @@ export const ItemGridBlock: React.FC<ItemGridBlockProps> = ({ block, onAction })
   const gridTemplateColumns = `repeat(${columns}, 1fr)`
 
   return (
-    <View
-      className="sdui-item-grid-block"
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx',
-        padding: '28rpx',
-        background: 'rgba(255, 255, 255, 0.05)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)'
-      }}
-    >
+    <View className={blockClassName('sdui-item-grid-block', block.style)} style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}>
       {title && (
-        <View style={{ marginBottom: '20rpx' }}>
-          <Text style={{ fontSize: '30rpx', fontWeight: 600, color: '#fff' }}>{title}</Text>
+        <View className="sdui-grid-heading">
+          <Text className="sdui-grid-title">{title}</Text>
         </View>
       )}
 
-      <View
-        style={{
-          display: 'grid',
-          gridTemplateColumns,
-          gap: '16rpx'
-        }}
-      >
+      <View className="sdui-grid-items" style={{ gridTemplateColumns }}>
         {items.map((item, idx) => (
           <View
             key={item.id || idx}
             onClick={(e) => handleItemClick(item, e)}
-            style={{
-              background: 'rgba(255, 255, 255, 0.04)',
-              borderRadius: '20rpx',
-              overflow: 'hidden',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              display: 'flex',
-              flexDirection: 'column'
-            }}
+            className="sdui-grid-item"
           >
-            <View style={{ position: 'relative' }}>
+            <View className="sdui-grid-media-wrap">
               {item.image_url && (
                 <Image
                   src={item.image_url}
                   mode="aspectFill"
-                  style={{ width: '100%', height: columns === 2 ? '220rpx' : '160rpx', display: 'block' }}
+                  className={`sdui-grid-media sdui-grid-media-${columns}`}
                 />
               )}
               {item.badge && (
-                <View
-                  style={{
-                    position: 'absolute',
-                    top: '8rpx',
-                    right: '8rpx',
-                    background: 'rgba(0, 0, 0, 0.65)',
-                    backdropFilter: 'blur(8px)',
-                    color: '#FF9F0A',
-                    fontSize: '18rpx',
-                    fontWeight: 700,
-                    padding: '2rpx 10rpx',
-                    borderRadius: '999rpx',
-                    border: '1px solid rgba(255, 159, 10, 0.4)'
-                  }}
-                >
+                <View className="sdui-grid-badge">
                   <Text>{item.badge}</Text>
                 </View>
               )}
             </View>
-            <View style={{ padding: '16rpx' }}>
-              <Text
-                style={{
-                  fontSize: '24rpx',
-                  fontWeight: 600,
-                  color: '#fff',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 1,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden'
-                }}
-              >
+            <View className="sdui-grid-copy">
+              <Text className="sdui-grid-item-title">
                 {item.title}
               </Text>
               {item.subtitle && (
-                <Text
-                  style={{
-                    fontSize: '20rpx',
-                    color: 'rgba(255, 255, 255, 0.45)',
-                    marginTop: '4rpx',
-                    display: 'block'
-                  }}
-                >
+                <Text className="sdui-grid-item-subtitle">
                   {item.subtitle}
                 </Text>
               )}

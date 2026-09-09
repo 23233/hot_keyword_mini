@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface PanChannel {
   name: string
@@ -79,10 +80,8 @@ export const ResourceCardBlock: React.FC<ResourceCardBlockProps> = ({ block, onA
 
   return (
     <View
-      className="sdui-resource-card"
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx'
-      }}
+      className={blockClassName('sdui-resource-card', block.style)}
+      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       <View className="resource-header">
         <View className="pan-icon-chip">
@@ -93,7 +92,7 @@ export const ResourceCardBlock: React.FC<ResourceCardBlockProps> = ({ block, onA
 
       {/* 多网盘渠道快捷切换胶囊栏 */}
       {channels.length > 1 && (
-        <View style={{ display: 'flex', gap: '12rpx', marginBottom: '14rpx', flexWrap: 'wrap' }}>
+        <View className="sdui-resource-channels">
           {channels.map((ch, idx) => {
             const isSelected = idx === selectedChannelIdx
             return (
@@ -103,15 +102,7 @@ export const ResourceCardBlock: React.FC<ResourceCardBlockProps> = ({ block, onA
                   e?.stopPropagation?.()
                   setSelectedChannelIdx(idx)
                 }}
-                style={{
-                  padding: '4rpx 16rpx',
-                  borderRadius: '999rpx',
-                  fontSize: '22rpx',
-                  fontWeight: isSelected ? 700 : 500,
-                  background: isSelected ? 'var(--accent-gradient, linear-gradient(135deg, #ff9f0a, #ff453a))' : 'rgba(255, 255, 255, 0.08)',
-                  color: isSelected ? '#fff' : 'rgba(255, 255, 255, 0.7)',
-                  border: isSelected ? '1px solid rgba(255, 159, 10, 0.6)' : '1px solid rgba(255, 255, 255, 0.06)'
-                }}
+                className={`sdui-resource-channel ${isSelected ? 'is-selected' : ''}`}
               >
                 <Text>{ch.name}</Text>
               </View>

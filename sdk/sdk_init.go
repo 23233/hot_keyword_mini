@@ -3,10 +3,10 @@ package sdk
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 
-	"github.com/23233/ggg/logger"
 	"github.com/go-pay/wechat-sdk/mini"
 )
 
@@ -35,14 +35,14 @@ func init() {
 	}
 
 	if WechatMiniAppId == "" || WechatMiniSecret == "" || WechatMiniSecret == "CHANGEME_WECHAT_MINI_SECRET" {
-		logger.JM.Warnf("未配置默认小程序 SDK；多租户请求将按 mini_apps 数据库配置动态初始化")
+		fmt.Fprintln(os.Stderr, "未配置默认小程序 SDK；多租户请求将按 mini_apps 数据库配置动态初始化")
 		return
 	}
 
 	var err error
 	MiniSdk, err = mini.New(WechatMiniAppId, WechatMiniSecret, true)
 	if err != nil {
-		logger.JM.Warnf("默认小程序 SDK 初始化提示: %v (未配置合法 Secret 时微信免密换取不可用)", err)
+		fmt.Fprintf(os.Stderr, "默认小程序 SDK 初始化提示: %v (未配置合法 Secret 时微信免密换取不可用)\n", err)
 		return
 	}
 	sdkCacheMu.Lock()

@@ -13,11 +13,13 @@ import (
 	"hot_keyword/models"
 	"net/url"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/23233/ggg/logger"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -32,7 +34,7 @@ type JSONRPCRequest struct {
 // JSONRPCResponse 标准 JSON-RPC 2.0 响应
 type JSONRPCResponse struct {
 	JSONRPC string        `json:"jsonrpc"`
-	ID      interface{}   `json:"id,omitempty"`
+	ID      interface{}   `json:"id"`
 	Result  interface{}   `json:"result,omitempty"`
 	Error   *JSONRPCError `json:"error,omitempty"`
 }
@@ -49,6 +51,9 @@ type MCPToolDefinition struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	InputSchema map[string]interface{} `json:"inputSchema"`
+	// RequiredScope 是执行该工具所需的最小 MCP 权限范围。
+	RequiredScope string                 `json:"requiredScope"`
+	Annotations   map[string]interface{} `json:"annotations,omitempty"`
 }
 
 // MCPService AI Model Context Protocol 编排调度服务
@@ -69,7 +74,7 @@ func NewMCPService() *MCPService {
 
 // GetToolDefinitions 获取全部受控编排工具清单。
 func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
-	return []MCPToolDefinition{
+	tools := []MCPToolDefinition{
 		{
 			Name:        "sdui.app.list",
 			Description: "查询当前 MCP 凭证可操作的全部已注册小程序 AppID 与基础状态",
@@ -102,7 +107,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.template.list",
-			Description: "查询内置行业模板与指定小程序可复用的用户模板",
+			Description: "查询内置行业模板与指定小程序可复用的用户模板；AI 破甲使用 ai_breakthrough / ai_article 过滤",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -112,7 +117,8 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 					},
 					"business_type": map[string]interface{}{
 						"type":        "string",
-						"description": "按业务类型过滤: drama / game / query / download",
+						"enum":        []string{"drama", "game", "query", "download", "custom", "ai_breakthrough", "ai_article"},
+						"description": "按业务类型过滤",
 					},
 				},
 			},
@@ -134,7 +140,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.page.create",
-			Description: "从行业模板或空白结构创建草稿页面 (status: draft)",
+			Description: "从行业模板或空白结构创建全新草稿页面；page_id 已存在时拒绝覆盖，请改用 page.get + page.patch",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
 				"required": []string{"app_id", "page_id"},
@@ -160,23 +166,26 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.page.patch",
-			Description: "按受控路径对页面协议执行局部 JSON Patch 打补丁",
+			Description: "基于 expected_revision 对草稿执行受控补丁；replace 支持页面字段和 /blocks/{block_id}，并支持 add_block/remove_block",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
-				"required": []string{"app_id", "page_id", "ops"},
+				"required": []string{"app_id", "page_id", "expected_revision", "ops"},
 				"properties": map[string]interface{}{
-					"app_id":  map[string]interface{}{"type": "string"},
-					"page_id": map[string]interface{}{"type": "string"},
+					"app_id":            map[string]interface{}{"type": "string"},
+					"page_id":           map[string]interface{}{"type": "string"},
+					"expected_revision": map[string]interface{}{"type": "integer", "minimum": 1, "description": "page.get 返回的当前草稿 revision；版本不一致时拒绝覆盖"},
 					"ops": map[string]interface{}{
 						"type":        "array",
-						"description": "补丁操作数组 (replace/add_block/remove_block)",
+						"minItems":    1,
+						"description": "操作格式：replace 用 path=/title 等页面字段或 /blocks/{id}；add_block 的 value 为完整 BlockItem；remove_block 的 value 为积木 ID",
+						"items":       map[string]interface{}{"type": "object", "required": []string{"op", "value"}, "properties": map[string]interface{}{"op": map[string]interface{}{"type": "string", "enum": []string{"replace", "add_block", "remove_block"}}, "path": map[string]interface{}{"type": "string"}, "value": map[string]interface{}{}}},
 					},
 				},
 			},
 		},
 		{
 			Name:        "sdui.page.validate",
-			Description: "对页面协议执行强校验，输出机器可读的错误、警告与修复建议 (支持传入已存 page_id 或直接提供页面协议对象)",
+			Description: "对页面协议执行强校验，输出机器可读错误、警告和修复建议；直接传 page 时 blocks 推荐使用 BlockItem 数组，也兼容 JSON 字符串",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -189,7 +198,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.page.preview",
-			Description: "使用指定数据和客户端能力模拟装配，输出响应信封与预览协议",
+			Description: "使用指定查询参数装配草稿信封；客户端能力协商由正式页面请求的 X-Client-Capabilities 处理",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
 				"required": []string{"app_id", "page_id"},
@@ -202,14 +211,18 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.page.screenshot",
-			Description: "后端规范化无头渲染分享卡片截图，输出图像 URL、哈希值与布局元信息",
+			Description: "对草稿或已发布页面执行规范化布局截图，输出签名图像 URL、哈希、Layout IR、结构树、原生能力替身和问题列表",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
 				"required": []string{"app_id", "page_id"},
 				"properties": map[string]interface{}{
 					"app_id":    map[string]interface{}{"type": "string"},
 					"page_id":   map[string]interface{}{"type": "string"},
-					"card_type": map[string]interface{}{"type": "string", "description": "app_message (5:4) 或 timeline (1:1)"},
+					"device":    map[string]interface{}{"type": "string", "description": "设备预设，默认 iphone_12_13_pro"},
+					"card_type": map[string]interface{}{"type": "string", "enum": []string{"app_message", "timeline"}, "description": "兼容旧客户端的分享图比例标识；截图结构仍以 device 为准"},
+					"theme":     map[string]interface{}{"type": "string", "enum": []string{"dark_glass", "light_clean", "cyber_neon"}},
+					"locale":    map[string]interface{}{"type": "string", "description": "语言标识，默认 zh-CN"},
+					"state":     map[string]interface{}{"type": "string", "enum": []string{"normal", "loading", "empty", "error", "offline", "expired", "unauthenticated"}, "description": "视觉状态 Fixture，默认 normal"},
 				},
 			},
 		},
@@ -218,12 +231,13 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 			Description: "显式发布已通过强校验的页面草稿，将其置为 published 并沉淀版本快照 (必须人工显式确认 confirmed: true)",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
-				"required": []string{"app_id", "page_id", "confirmed"},
+				"required": []string{"app_id", "page_id", "expected_revision", "confirmed"},
 				"properties": map[string]interface{}{
-					"app_id":    map[string]interface{}{"type": "string", "description": "小程序 AppID"},
-					"page_id":   map[string]interface{}{"type": "string", "description": "页面 PageID"},
-					"confirmed": map[string]interface{}{"type": "boolean", "description": "人工显式发布确认标记，必须为 true"},
-					"remark":    map[string]interface{}{"type": "string", "description": "发布审计备注"},
+					"app_id":            map[string]interface{}{"type": "string", "description": "小程序 AppID"},
+					"page_id":           map[string]interface{}{"type": "string", "description": "页面 PageID"},
+					"confirmed":         map[string]interface{}{"type": "boolean", "description": "人工显式发布确认标记，必须为 true"},
+					"expected_revision": map[string]interface{}{"type": "integer", "minimum": 1, "description": "人工实际审查通过的草稿 revision，发布时必须仍完全一致"},
+					"remark":            map[string]interface{}{"type": "string", "description": "发布审计备注"},
 				},
 			},
 		},
@@ -248,6 +262,27 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "page_id", "confirmed"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "page_id": map[string]interface{}{"type": "string"}, "host": map[string]interface{}{"type": "string", "description": "服务 HTTPS 根地址，可选"}, "confirmed": map[string]interface{}{"type": "boolean", "description": "人工确认必须为 true"}}},
 		},
 	}
+	for index := range tools {
+		name := tools[index].Name
+		readOnly := strings.HasSuffix(name, ".list") || strings.HasSuffix(name, ".get") || strings.HasSuffix(name, ".validate") || strings.HasSuffix(name, ".preview") || strings.HasSuffix(name, ".screenshot") || strings.HasSuffix(name, ".revisions")
+		tools[index].RequiredScope = mcpToolRequiredScope(name)
+		tools[index].Annotations = map[string]interface{}{"readOnlyHint": readOnly, "destructiveHint": strings.HasSuffix(name, ".delete") || strings.HasSuffix(name, ".rollback"), "openWorldHint": false, "requiredScope": tools[index].RequiredScope, "required_scope": tools[index].RequiredScope}
+	}
+	return tools
+}
+
+// mcpToolRequiredScope 返回工具执行所需的最小权限范围，供 AI 在调用前规划授权。
+func mcpToolRequiredScope(name string) string {
+	switch name {
+	case "sdui.app.list", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.template.get", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.revisions":
+		return "read"
+	case "sdui.file.prepare_upload", "sdui.template.save", "sdui.template.delete", "sdui.page.create", "sdui.page.patch":
+		return "write:draft"
+	case "sdui.page.publish", "sdui.page.rollback", "sdui.page.set_current", "sdui.page.share_card":
+		return "release"
+	default:
+		return ""
+	}
 }
 
 // HandleJSONRPC 处理标准 JSON-RPC 2.0 请求 (默认全权限，用于本地 Stdio)
@@ -257,16 +292,23 @@ func (m *MCPService) HandleJSONRPC(reqBytes []byte) ([]byte, error) {
 
 // HandleJSONRPCWithContext 带身份与权限范围上下文的 JSON-RPC 2.0 处理器
 func (m *MCPService) HandleJSONRPCWithContext(actorID, tenantID string, scopes []string, reqBytes []byte) ([]byte, error) {
+	var rawMessage json.RawMessage
+	if err := json.Unmarshal(reqBytes, &rawMessage); err != nil {
+		return json.Marshal(JSONRPCResponse{JSONRPC: "2.0", Error: &JSONRPCError{Code: -32700, Message: "Parse error: " + err.Error()}})
+	}
+	var rawObject map[string]json.RawMessage
+	if err := json.Unmarshal(rawMessage, &rawObject); err != nil || rawObject == nil {
+		return json.Marshal(JSONRPCResponse{JSONRPC: "2.0", Error: &JSONRPCError{Code: -32600, Message: "Invalid Request: JSON-RPC 消息必须为对象"}})
+	}
 	var req JSONRPCRequest
-	if err := json.Unmarshal(reqBytes, &req); err != nil {
-		resp := JSONRPCResponse{
-			JSONRPC: "2.0",
-			Error: &JSONRPCError{
-				Code:    -32700,
-				Message: "Parse error: " + err.Error(),
-			},
-		}
-		return json.Marshal(resp)
+	if err := json.Unmarshal(rawMessage, &req); err != nil {
+		return json.Marshal(JSONRPCResponse{JSONRPC: "2.0", Error: &JSONRPCError{Code: -32600, Message: "Invalid Request: " + err.Error()}})
+	}
+	if req.JSONRPC != "2.0" || strings.TrimSpace(req.Method) == "" {
+		return json.Marshal(JSONRPCResponse{JSONRPC: "2.0", ID: req.ID, Error: &JSONRPCError{Code: -32600, Message: "Invalid Request: jsonrpc 必须为 2.0 且 method 不能为空"}})
+	}
+	if req.Method == "notifications/initialized" || req.Method == "notifications/cancelled" {
+		return nil, nil
 	}
 
 	resp := JSONRPCResponse{
@@ -275,6 +317,9 @@ func (m *MCPService) HandleJSONRPCWithContext(actorID, tenantID string, scopes [
 	}
 
 	switch req.Method {
+	case "ping":
+		resp.Result = map[string]interface{}{}
+
 	case "initialize":
 		resp.Result = map[string]interface{}{
 			"protocolVersion": "2024-11-05",
@@ -282,7 +327,7 @@ func (m *MCPService) HandleJSONRPCWithContext(actorID, tenantID string, scopes [
 				"name":    "sdui-mcp-server",
 				"version": "1.3.0",
 			},
-			"instructions": "必须先调用 resources/read 读取 sdui://rules 和 sdui://api，再调用 tools/list；所有页面工具必须显式提供已注册 app_id。AI 默认只创建或修改草稿，发布、回滚、设置主页和生成分享图都必须经过人工确认。",
+			"instructions": "先读取 resources/read 资源 sdui://rules 和 sdui://api，再调用 tools/list。先 app.list/page.list/page.get，优先复用模板；所有写入都基于最新 expected_revision。AI 默认只写草稿；发布、回滚、设置主页和生成分享图必须由人审查后 confirmed=true。任何工具失败都先按 structuredContent.recovery 修复，不得绕过权限或校验。",
 			"capabilities": map[string]interface{}{
 				"tools":     map[string]bool{"listChanged": false},
 				"resources": map[string]bool{"subscribe": false, "listChanged": false},
@@ -332,19 +377,36 @@ func (m *MCPService) HandleJSONRPCWithContext(actorID, tenantID string, scopes [
 			resp.Error = &JSONRPCError{Code: -32602, Message: "Invalid params: " + err.Error()}
 			break
 		}
+		if strings.TrimSpace(callParams.Name) == "" {
+			resp.Error = &JSONRPCError{Code: -32602, Message: "tools/call 需要 name 参数"}
+			break
+		}
+		if err := validateMCPArguments(callParams.Name, callParams.Arguments, m.GetToolDefinitions()); err != nil {
+			requestID := uuid.NewString()
+			resp.Result = map[string]interface{}{"isError": true, "requestId": requestID, "structuredContent": mcpToolErrorDetail(callParams.Name, err), "content": []map[string]string{{"type": "text", "text": fmt.Sprintf("工具执行失败: %v", err)}}}
+			break
+		}
 
+		requestID := uuid.NewString()
 		result, err := m.ExecuteToolWithContext(actorID, tenantID, scopes, callParams.Name, callParams.Arguments)
 		if err != nil {
+			detail := mcpToolErrorDetail(callParams.Name, err)
+			mcpAuditf("【MCP审计】Request=%s Actor=%s Tenant=%s Tool=%s Result=error Code=%s", requestID, actorID, tenantID, callParams.Name, detail["code"])
 			resp.Result = map[string]interface{}{
-				"isError": true,
+				"isError":           true,
+				"requestId":         requestID,
+				"structuredContent": detail,
 				"content": []map[string]string{
 					{"type": "text", "text": fmt.Sprintf("工具执行失败: %v", err)},
 				},
 			}
 		} else {
 			rawJSON, _ := json.MarshalIndent(result, "", "  ")
+			mcpAuditf("【MCP审计】Request=%s Actor=%s Tenant=%s Tool=%s Result=success", requestID, actorID, tenantID, callParams.Name)
 			resp.Result = map[string]interface{}{
-				"isError": false,
+				"isError":           false,
+				"requestId":         requestID,
+				"structuredContent": result,
 				"content": []map[string]string{
 					{"type": "text", "text": string(rawJSON)},
 				},
@@ -357,6 +419,169 @@ func (m *MCPService) HandleJSONRPCWithContext(actorID, tenantID string, scopes [
 	}
 
 	return json.Marshal(resp)
+}
+
+func mcpToolErrorDetail(tool string, err error) map[string]interface{} {
+	message := err.Error()
+	code := "TOOL_EXECUTION_FAILED"
+	recovery := "检查工具参数后重试；不要绕过服务端校验"
+	switch {
+	case strings.Contains(message, "未知 MCP 工具"):
+		code, recovery = "UNKNOWN_TOOL", "先调用 tools/list 获取当前可用工具名称"
+	case strings.Contains(message, "权限不足") || strings.Contains(message, "越权"):
+		code, recovery = "PERMISSION_DENIED", "使用具备所需 scope 的凭证，并确认 app_id 位于授权租户范围"
+	case strings.Contains(message, "未找到") || strings.Contains(message, "不存在"):
+		code, recovery = "NOT_FOUND", "先调用对应 list/get 工具确认资源标识"
+	case strings.Contains(message, "必填") || strings.Contains(message, "参数") || strings.Contains(message, "格式"):
+		code, recovery = "INVALID_ARGUMENT", "读取 tools/list 的 inputSchema 与 sdui://rules 后修正参数"
+	case strings.Contains(message, "并发") || strings.Contains(message, "revision"):
+		code, recovery = "REVISION_CONFLICT", "重新调用 page.get 读取最新草稿，基于新的 revision 重新生成补丁并再次校验"
+	}
+	return map[string]interface{}{"code": code, "tool": tool, "message": message, "recovery": recovery}
+}
+
+// validateMCPArguments 在执行前落实 tools/list 暴露的最小参数契约。
+func validateMCPArguments(name string, args map[string]interface{}, tools []MCPToolDefinition) error {
+	var definition *MCPToolDefinition
+	for index := range tools {
+		if tools[index].Name == name {
+			definition = &tools[index]
+			break
+		}
+	}
+	if definition == nil {
+		return fmt.Errorf("未知 MCP 工具: %s", name)
+	}
+	if args == nil {
+		args = map[string]interface{}{}
+	}
+	if err := validateMCPSchemaValue("arguments", args, definition.InputSchema); err != nil {
+		return err
+	}
+	if name == "sdui.page.patch" {
+		rawOps, ok := args["ops"].([]interface{})
+		if !ok {
+			return errors.New("参数 ops 必须为数组")
+		}
+		for index, rawOp := range rawOps {
+			op, ok := rawOp.(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("参数 ops[%d] 必须为对象", index)
+			}
+			switch op["op"] {
+			case "replace":
+				if path, _ := op["path"].(string); strings.TrimSpace(path) == "" {
+					return fmt.Errorf("参数 ops[%d].path 在 replace 操作中不能为空", index)
+				}
+			case "add_block":
+				if _, ok := op["value"].(map[string]interface{}); !ok {
+					return fmt.Errorf("参数 ops[%d].value 在 add_block 操作中必须为 BlockItem 对象", index)
+				}
+			case "remove_block":
+				if value, _ := op["value"].(string); strings.TrimSpace(value) == "" {
+					return fmt.Errorf("参数 ops[%d].value 在 remove_block 操作中必须为积木 ID 字符串", index)
+				}
+			}
+		}
+	}
+	if name == "sdui.page.validate" {
+		if _, hasPage := args["page"]; !hasPage {
+			if protocol, hasProtocol := args["protocol"]; !hasProtocol || strings.TrimSpace(fmt.Sprintf("%v", protocol)) == "" {
+				if _, hasApp := args["app_id"]; !hasApp {
+					return errors.New("page/protocol 直接校验或 app_id + page_id 至少提供一组")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateMCPSchemaValue 执行 MCP 工具声明中当前使用的 JSON Schema 约束。
+func validateMCPSchemaValue(path string, value interface{}, schema map[string]interface{}) error {
+	if expected, _ := schema["type"].(string); expected != "" && !mcpValueMatchesType(value, expected) {
+		return fmt.Errorf("参数 %s 类型必须为 %s", path, expected)
+	}
+	if enum, ok := schema["enum"].([]string); ok {
+		actual, _ := value.(string)
+		for _, candidate := range enum {
+			if actual == candidate {
+				return nil
+			}
+		}
+		return fmt.Errorf("参数 %s 不在允许枚举范围内", path)
+	}
+
+	if actual, ok := mcpIntArg(value); ok {
+		if minimum, exists := schema["minimum"]; exists {
+			if minValue, valid := mcpIntArg(minimum); valid && actual < minValue {
+				return fmt.Errorf("参数 %s 不得小于 %d", path, minValue)
+			}
+		}
+		if maximum, exists := schema["maximum"]; exists {
+			if maxValue, valid := mcpIntArg(maximum); valid && actual > maxValue {
+				return fmt.Errorf("参数 %s 不得大于 %d", path, maxValue)
+			}
+		}
+	}
+
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		if required, ok := schema["required"].([]string); ok {
+			for _, key := range required {
+				requiredValue, exists := typed[key]
+				if !exists || requiredValue == nil {
+					return fmt.Errorf("参数 %s.%s 为必填项", path, key)
+				}
+				if text, ok := requiredValue.(string); ok && strings.TrimSpace(text) == "" {
+					return fmt.Errorf("参数 %s.%s 不能为空", path, key)
+				}
+			}
+		}
+		properties, _ := schema["properties"].(map[string]interface{})
+		for key, childValue := range typed {
+			childSchema, ok := properties[key].(map[string]interface{})
+			if ok {
+				if err := validateMCPSchemaValue(path+"."+key, childValue, childSchema); err != nil {
+					return err
+				}
+			}
+		}
+	case []interface{}:
+		if minimum, ok := mcpIntArg(schema["minItems"]); ok && len(typed) < minimum {
+			return fmt.Errorf("参数 %s 至少需要 %d 项", path, minimum)
+		}
+		if itemSchema, ok := schema["items"].(map[string]interface{}); ok {
+			for index, item := range typed {
+				if err := validateMCPSchemaValue(fmt.Sprintf("%s[%d]", path, index), item, itemSchema); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func mcpValueMatchesType(value interface{}, expected string) bool {
+	if value == nil {
+		return false
+	}
+	switch expected {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "integer":
+		_, ok := mcpIntArg(value)
+		return ok
+	case "array":
+		return reflect.ValueOf(value).Kind() == reflect.Array || reflect.ValueOf(value).Kind() == reflect.Slice
+	case "object":
+		return reflect.ValueOf(value).Kind() == reflect.Map || reflect.ValueOf(value).Kind() == reflect.Struct
+	default:
+		return true
+	}
 }
 
 // hasScope 判断当前持有的权限集是否包含指定权限
@@ -382,7 +607,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 
 	// 记录调用审计跟踪 (对敏感字段进行安全脱敏)
 	sanitizedArgs := sanitizeMCPArgs(args)
-	logger.JM.Infof("【MCP审计】Actor=%s Tenant=%s Tool=%s Args=%+v", actorID, tenantID, name, sanitizedArgs)
+	mcpAuditf("【MCP审计】Actor=%s Tenant=%s Tool=%s Args=%+v", actorID, tenantID, name, sanitizedArgs)
 
 	switch name {
 	case "sdui.template.list":
@@ -451,7 +676,14 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, fmt.Errorf("多租户越权拦截: 模板 app_id %s 与目标小程序 %s 不一致", template.AppID, appID)
 		}
 		template.AppID = appID
-		expectedRevision, _ := mcpIntArg(args["expected_revision"])
+		expectedRevision := 0
+		if rawRevision, exists := args["expected_revision"]; exists {
+			var ok bool
+			expectedRevision, ok = mcpIntArg(rawRevision)
+			if !ok || expectedRevision < 0 {
+				return nil, errors.New("expected_revision 必须为 0 或正整数")
+			}
+		}
 		return m.templateService.SaveCustomTemplate(&template, actorID, expectedRevision)
 
 	case "sdui.template.delete":
@@ -536,14 +768,14 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		}
 		if readDraft {
 			if draft, draftErr := m.sduiService.FindRawDraft(appID, pageID); draftErr == nil {
-				return map[string]interface{}{"source": "draft", "page": draft}, nil
+				return map[string]interface{}{"source": "draft", "page": draft, "protocol": mcpPageProtocol(draft)}, nil
 			}
 		}
 		page, err := m.sduiService.GetRawPage(appID, pageID)
 		if err != nil {
 			return nil, fmt.Errorf("读取页面失败: %w", err)
 		}
-		return map[string]interface{}{"source": "published", "page": page}, nil
+		return map[string]interface{}{"source": "published", "page": page, "protocol": mcpPageProtocol(page)}, nil
 
 	case "sdui.file.prepare_upload":
 		if !hasScope(scopes, "write:draft") {
@@ -556,13 +788,9 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if err := ensureMCPAppExists(appID); err != nil {
 			return nil, err
 		}
-		fileSize, ok := args["file_size"].(float64)
-		if !ok {
-			if integer, integerOK := args["file_size"].(int64); integerOK {
-				fileSize = float64(integer)
-			} else if integer, integerOK := args["file_size"].(int); integerOK {
-				fileSize = float64(integer)
-			}
+		fileSize, ok := mcpIntArg(args["file_size"])
+		if !ok || fileSize <= 0 || fileSize > 10*1024*1024 {
+			return nil, errors.New("file_size 必须为 1 到 10485760 的整数")
 		}
 		fileName, _ := args["file_name"].(string)
 		contentType, _ := args["content_type"].(string)
@@ -595,6 +823,22 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		}
 		if err := ensureMCPAppExists(appID); err != nil {
 			return nil, err
+		}
+		pageID = strings.TrimSpace(pageID)
+		if pageID == "" {
+			return nil, errors.New("page_id 为必填参数")
+		}
+		if db.Mysql != nil {
+			if _, err := m.sduiService.FindRawDraft(appID, pageID); err == nil {
+				return nil, errors.New("page_id 已存在草稿；请先调用 sdui.page.get，再使用 sdui.page.patch 修改")
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, fmt.Errorf("检查页面草稿失败: %w", err)
+			}
+			if _, err := m.sduiService.GetRawPage(appID, pageID); err == nil {
+				return nil, errors.New("page_id 已存在已发布页面；请先调用 sdui.page.get，再使用 sdui.page.patch 修改")
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, fmt.Errorf("检查已发布页面失败: %w", err)
+			}
 		}
 
 		var page *models.DynamicPage
@@ -632,13 +876,14 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			UpdatedAt:    time.Now(),
 		}
 		if db.Mysql != nil {
-			if err := m.sduiService.SaveDraft(&draft); err != nil {
+			if err := m.sduiService.SaveDraftWithAudit(&draft, actorID, 0); err != nil {
 				return nil, fmt.Errorf("保存页面草稿失败: %w", err)
 			}
 		}
 		return map[string]interface{}{
 			"draft_id": fmt.Sprintf("%s:%s", appID, pageID),
 			"draft":    draft,
+			"protocol": mcpPageProtocol(&draft),
 			"revision": draft.Revision,
 			"status":   draft.Status,
 		}, nil
@@ -674,9 +919,13 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if err := json.Unmarshal(opsBytes, &ops); err != nil {
 			return nil, fmt.Errorf("解析 ops 补丁集失败: %w", err)
 		}
+		expectedRevision, ok := mcpIntArg(args["expected_revision"])
+		if !ok || expectedRevision <= 0 {
+			return nil, errors.New("expected_revision 必须为 page.get 返回的正整数草稿版本")
+		}
 
 		// 执行受控打草稿补丁 (严格限制在草稿表，杜绝未经 release 权限篡改已发布页面)
-		patchedDraft, err := PatchDynamicPageDraft(appID, pageID, ops)
+		patchedDraft, err := PatchDynamicPageDraftWithRevisionBy(appID, pageID, expectedRevision, actorID, ops)
 		if err != nil {
 			return nil, fmt.Errorf("补丁应用失败: %w", err)
 		}
@@ -712,39 +961,43 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, errors.New("权限不足: 需要 read 权限以校验协议")
 		}
 
-		// 优先支持直接传入页面协议对象进行强校验 (契合架构文档 3.12 节: draft_id 或协议 JSON)
+		// 优先支持直接传入页面协议对象；否则按 app_id + page_id 读取页面，protocol 保留 JSON 字符串兼容。
 		if pageRaw, ok := args["page"]; ok && pageRaw != nil {
-			var directPage models.DynamicPage
-			rawBytes, err := json.Marshal(pageRaw)
-			if err == nil && json.Unmarshal(rawBytes, &directPage) == nil {
-				if directPage.AppID == "" {
-					if appArg, _ := args["app_id"].(string); appArg != "" {
-						directPage.AppID = appArg
-					} else if tenantID != "" {
-						directPage.AppID = tenantID
-					}
-				}
-				report := ValidateDynamicPage(&directPage)
-				return report, nil
+			directPage, err := decodeMCPPage(pageRaw)
+			if err != nil {
+				return nil, fmt.Errorf("page 参数格式无效: %w", err)
 			}
+			if err := applyMCPPageTenant(directPage, args, tenantID); err != nil {
+				return nil, err
+			}
+			if db.Mysql != nil {
+				if err := ensureMCPAppExists(directPage.AppID); err != nil {
+					return nil, err
+				}
+			}
+			return ValidateDynamicPage(directPage), nil
 		}
 		if protocolStr, ok := args["protocol"].(string); ok && strings.TrimSpace(protocolStr) != "" {
-			var directPage models.DynamicPage
-			if err := json.Unmarshal([]byte(protocolStr), &directPage); err == nil {
-				if directPage.AppID == "" {
-					if appArg, _ := args["app_id"].(string); appArg != "" {
-						directPage.AppID = appArg
-					} else if tenantID != "" {
-						directPage.AppID = tenantID
-					}
-				}
-				report := ValidateDynamicPage(&directPage)
-				return report, nil
+			directPage, err := decodeMCPPage(json.RawMessage(protocolStr))
+			if err != nil {
+				return nil, fmt.Errorf("protocol JSON 格式无效: %w", err)
 			}
+			if err := applyMCPPageTenant(directPage, args, tenantID); err != nil {
+				return nil, err
+			}
+			if db.Mysql != nil {
+				if err := ensureMCPAppExists(directPage.AppID); err != nil {
+					return nil, err
+				}
+			}
+			return ValidateDynamicPage(directPage), nil
 		}
 
 		appID, _ := args["app_id"].(string)
 		pageID, _ := args["page_id"].(string)
+		if strings.TrimSpace(pageID) == "" {
+			return nil, errors.New("page_id 为必填参数；或提供 page/protocol 直接校验")
+		}
 
 		var err error
 		appID, err = resolveMCPAppID(args, tenantID)
@@ -824,6 +1077,8 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if err != nil {
 			return nil, fmt.Errorf("装配草稿预览信封失败: %w", err)
 		}
+		// MCP 预览必须与小程序正式读取共享 AI 破甲业务数据，避免预览只有空组件壳。
+		m.sduiService.attachAIBreakthroughData(envelope, appID, false, 0)
 		return envelope, nil
 
 	case "sdui.page.screenshot":
@@ -868,7 +1123,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, errors.New("未找到目标页面或草稿，无法生成截图")
 		}
 
-		// 1. 真实消费 device、theme 与 locale 参数，保证视觉渲染与目标物理设备同构
+		// 1. 消费受控 device、theme 与 locale 参数；当前 Layout IR 文案基线固定为 zh-CN
 		deviceName, _ := args["device"].(string)
 		deviceParams := ResolveDeviceParams(deviceName)
 
@@ -986,13 +1241,17 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if remark == "" {
 			remark = fmt.Sprintf("由 %s 显式确认发布", actorID)
 		}
+		expectedRevision, ok := mcpIntArg(args["expected_revision"])
+		if !ok || expectedRevision <= 0 {
+			return nil, errors.New("expected_revision 必须为人工审查时 page.get 返回的正整数草稿版本")
+		}
 
 		if db.Mysql == nil {
 			return nil, errors.New("无数据库环境，无法执行持久化发布")
 		}
 
 		// 调用草稿发布流转至线上 dynamic_pages 表并沉淀版本快照
-		publishedPage, err := m.sduiService.PublishDraft(appID, pageID, actorID, remark)
+		publishedPage, err := m.sduiService.PublishDraftWithRevision(appID, pageID, actorID, remark, expectedRevision)
 		if err != nil {
 			return nil, fmt.Errorf("发布页面失败: %w", err)
 		}
@@ -1021,7 +1280,11 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if err != nil {
 			return nil, fmt.Errorf("查询历史版本失败: %w", err)
 		}
-		return map[string]interface{}{"app_id": appID, "page_id": pageID, "total": len(revisions), "revisions": revisions}, nil
+		protocolRevisions := make([]map[string]interface{}, 0, len(revisions))
+		for _, revision := range revisions {
+			protocolRevisions = append(protocolRevisions, map[string]interface{}{"id": revision.ID, "revision": revision.Revision, "title": revision.Title, "business_type": revision.BusinessType, "intent": revision.Intent, "theme": revision.Theme, "accent_color": revision.AccentColor, "require_auth": revision.RequireAuth, "keyword": revision.Keyword, "source": revision.Source, "campaign_id": revision.CampaignID, "expires_at": revision.ExpiresAt, "remark": revision.Remark, "created_by": revision.CreatedBy, "created_at": revision.CreatedAt, "protocol": mcpPageProtocol(&revision)})
+		}
+		return map[string]interface{}{"app_id": appID, "page_id": pageID, "total": len(protocolRevisions), "revisions": protocolRevisions}, nil
 
 	case "sdui.page.rollback":
 		if !hasScope(scopes, "release") {
@@ -1104,6 +1367,15 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 	}
 }
 
+// mcpAuditf 在 Stdio 模式写入 stderr，避免诊断信息破坏 stdout 的 JSON-RPC 流；HTTP 模式沿用结构化日志文件。
+func mcpAuditf(format string, args ...interface{}) {
+	if os.Getenv("MCP_STDIO_MODE") == "1" {
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
+		return
+	}
+	logger.JM.Infof(format, args...)
+}
+
 // mcpIntArg 将 JSON 数字安全转换为整数参数。
 func mcpIntArg(value interface{}) (int, bool) {
 	switch number := value.(type) {
@@ -1116,6 +1388,84 @@ func mcpIntArg(value interface{}) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// decodeMCPPage 将 AI 友好的数组/对象协议转换为内部持久化模型。
+func decodeMCPPage(value interface{}) (*models.DynamicPage, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]interface{}
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"blocks", "share_config"} {
+		if field, exists := object[key]; exists {
+			if _, alreadyString := field.(string); !alreadyString {
+				encoded, err := json.Marshal(field)
+				if err != nil {
+					return nil, fmt.Errorf("%s 序列化失败: %w", key, err)
+				}
+				object[key] = string(encoded)
+			}
+		}
+	}
+	raw, err = json.Marshal(object)
+	if err != nil {
+		return nil, err
+	}
+	var page models.DynamicPage
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+// applyMCPPageTenant 校验直接协议中的租户与工具上下文一致。
+func applyMCPPageTenant(page *models.DynamicPage, args map[string]interface{}, tenantID string) error {
+	if page == nil {
+		return errors.New("page 不能为空")
+	}
+	argumentAppID, _ := args["app_id"].(string)
+	argumentAppID = strings.TrimSpace(argumentAppID)
+	page.AppID = strings.TrimSpace(page.AppID)
+	if page.AppID != "" && argumentAppID != "" && page.AppID != argumentAppID {
+		return errors.New("page.app_id 与 arguments.app_id 不一致")
+	}
+	target := page.AppID
+	if target == "" {
+		target = argumentAppID
+	}
+	if target == "" {
+		target = strings.TrimSpace(tenantID)
+	}
+	if target == "" {
+		return errors.New("直接校验页面时必须提供 app_id")
+	}
+	if tenantID != "" && target != tenantID {
+		return fmt.Errorf("多租户越权拦截: 操作者绑定租户 %s，不可校验 %s", tenantID, target)
+	}
+	page.AppID = target
+	return nil
+}
+
+// mcpPageProtocol 返回适合 AI 修改的页面协议，隐藏 JSON 字符串存储细节。
+func mcpPageProtocol(page interface{}) map[string]interface{} {
+	raw, _ := json.Marshal(page)
+	result := map[string]interface{}{}
+	_ = json.Unmarshal(raw, &result)
+	for _, key := range []string{"blocks", "share_config"} {
+		if value, ok := result[key].(string); ok && strings.TrimSpace(value) != "" {
+			var decoded interface{}
+			if json.Unmarshal([]byte(value), &decoded) == nil {
+				result[key] = decoded
+			}
+		} else if key == "blocks" && result[key] == nil {
+			result[key] = []interface{}{}
+		}
+	}
+	return result
 }
 
 // resolveMCPAppID 解析工具参数中的目标小程序，并兼容部署级租户白名单。
@@ -1185,19 +1535,57 @@ func mcpAllowedTenantSet() map[string]bool {
 // mcpAPIResource 返回供 AI 读取的 MCP 接口与自动编排说明。
 func mcpAPIResource(tools []MCPToolDefinition) map[string]interface{} {
 	return map[string]interface{}{
-		"endpoint":                  "/api/v1/mcp",
-		"transport":                 "HTTP POST JSON-RPC 2.0",
+		"endpoint":  "/api/v1/mcp",
+		"transport": "HTTP POST JSON-RPC 2.0",
+		"transports": map[string]interface{}{
+			"http":  map[string]interface{}{"method": "POST", "content_type": "application/json", "framing": "single JSON-RPC 2.0 object"},
+			"stdio": map[string]interface{}{"command": "go run ./cmd/mcp-server", "framing": "newline-delimited JSON-RPC 2.0", "stdout": "responses only", "stderr": "startup diagnostics and audit logs"},
+		},
+		"jsonrpc": map[string]interface{}{
+			"version":               "2.0",
+			"request":               map[string]interface{}{"jsonrpc": "2.0", "id": "request-id", "method": "tools/call", "params": map[string]interface{}{"name": "sdui.page.get", "arguments": map[string]interface{}{}}},
+			"success_response":      map[string]interface{}{"jsonrpc": "2.0", "id": "request-id", "result": "method result"},
+			"error_response":        map[string]interface{}{"jsonrpc": "2.0", "id": "request-id", "error": map[string]interface{}{"code": -32602, "message": "Invalid params", "data": "optional"}},
+			"notification_behavior": "notifications/initialized 和 notifications/cancelled 成功处理但不返回响应",
+			"error_codes":           map[string]int{"parse_error": -32700, "invalid_request": -32600, "method_not_found": -32601, "invalid_params": -32602, "internal_error": -32603},
+		},
+		"tool_response": map[string]interface{}{
+			"success": map[string]interface{}{"isError": false, "requestId": "uuid", "structuredContent": "tool result", "content": []map[string]string{{"type": "text", "text": "JSON encoded tool result"}}, "data": "tool result"},
+			"error":   map[string]interface{}{"isError": true, "requestId": "uuid", "structuredContent": map[string]string{"code": "INVALID_ARGUMENT", "tool": "sdui.page.patch", "message": "human readable detail", "recovery": "machine actionable next step"}, "content": []map[string]string{{"type": "text", "text": "工具执行失败: ..."}}},
+			"note":    "tools/call 的业务失败使用 result.isError=true；只有 JSON-RPC 协议层失败才使用顶层 error。",
+		},
 		"authentication":            map[string]interface{}{"header": "X-MCP-Key", "admin_alternative": "Authorization: Bearer <admin_jwt>"},
-		"methods":                   []string{"initialize", "resources/list", "resources/read", "tools/list", "tools/call"},
+		"methods":                   []string{"initialize", "notifications/initialized", "ping", "resources/list", "resources/read", "tools/list", "tools/call"},
 		"tools":                     tools,
-		"scopes":                    map[string]string{"read": "读取模板、应用、页面并执行校验、预览、截图", "write:draft": "创建和修改草稿", "release": "发布已确认且通过校验的草稿"},
+		"scopes":                    map[string]string{"read": "读取模板、应用、页面并执行校验、预览、截图", "write:draft": "创建和修改草稿", "release": "发布、回滚、当前主页切换和分享图生成；均需 confirmed=true"},
 		"global_token":              true,
-		"app_id_rule":               "全局 Token 不绑定小程序；每个页面工具必须在 arguments 中显式提供已注册 app_id。",
-		"workflow":                  []string{"resources/read sdui://rules", "sdui.app.list", "sdui.template.list", "sdui.template.get", "sdui.template.save (创建或更新用户模板)", "sdui.page.create (从内置或用户模板派生草稿)", "sdui.page.patch", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.publish", "sdui.template.delete (不再需要时)"},
+		"app_id_rule":               "全局 Token 不绑定小程序；除仅读取内置模板外，每个工具必须在 arguments 中显式提供已注册 app_id；tenant-bound 凭证不能跨租户。",
+		"workflow":                  []string{"读取 sdui://rules 与 sdui://api", "sdui.app.list 选择 app_id", "sdui.page.list/get 避免重复创建", "sdui.template.list/get 选择最接近的模板", "需要新模板时调用 sdui.template.save", "sdui.page.create 创建不存在的草稿", "每轮先 page.get 取得 revision，再 page.patch(expected_revision)", "page.validate -> page.preview -> page.screenshot；逐项修复 errors/issues", "人工核对实际 revision 后 page.publish(expected_revision, confirmed=true)", "需要时 page.share_card 与 page.set_current", "故障时 page.revisions 后人工确认 rollback"},
+		"ai_breakthrough_workflow":  []string{"门户使用 tpl_ai_breakthrough_portal", "文章详情使用 tpl_ai_breakthrough_article", "会员页使用 tpl_ai_breakthrough_membership", "文章/VIP/评论数据由同源 HTTP 业务接口装配，MCP 只负责编排 SDUI 模板和页面", "商品金额、商户密钥、文章发布和评论后台审核不属于 SDUI MCP 权限边界"},
+		"ai_breakthrough_templates": map[string]interface{}{"portal": "tpl_ai_breakthrough_portal", "article_detail": "tpl_ai_breakthrough_article", "membership": "tpl_ai_breakthrough_membership", "article_access_fields": []string{"can_read", "markdown", "preview_markdown", "locked_reason", "locked_title", "unlock_label", "pay_sku"}, "membership_levels": []map[string]interface{}{{"level": 1, "name": "普通会员", "price_yuan": 9.9, "duration_days": 30}, {"level": 2, "name": "高级会员", "price_yuan": 29.9, "duration_days": 90}, {"level": 3, "name": "年度会员", "price_yuan": 99, "duration_days": 365}}, "rule": "RequiredLevel <= 当前有效会员等级可读；IsPaid=true 时无 ArticlePurchase 只能读取 FreeMarkdown"},
+		"ai_breakthrough_http": map[string]interface{}{
+			"tenant_header": "X-WX-AppID",
+			"public": []map[string]interface{}{
+				{"method": "GET", "path": "/api/v1/article-categories", "purpose": "读取已启用资讯栏目"},
+				{"method": "GET", "path": "/api/v1/articles", "purpose": "读取文章摘要；支持 category_id、limit、offset"},
+				{"method": "GET", "path": "/api/v1/articles/{article_id}", "purpose": "读取文章详情；服务端裁剪会员正文和单篇付费正文"},
+				{"method": "GET", "path": "/api/v1/membership/plans", "purpose": "读取启用的会员套餐和展示价格"},
+				{"method": "GET", "path": "/api/v1/articles/{article_id}/comments", "purpose": "读取一级评论；只返回审核通过内容"},
+				{"method": "GET", "path": "/api/v1/comments/{comment_id}/replies", "purpose": "点击后读取二级回复；只返回审核通过内容"},
+			},
+			"authenticated": []map[string]interface{}{
+				{"method": "POST", "path": "/api/v1/auth/wechat-login", "purpose": "以微信 code 建立会话"},
+				{"method": "GET", "path": "/api/v1/membership/me", "purpose": "读取当前用户会员权益", "requires": "Authorization: Bearer"},
+				{"method": "POST", "path": "/api/v1/membership/orders", "purpose": "按会员 SKU 创建支付订单", "requires": "Authorization: Bearer"},
+				{"method": "POST", "path": "/api/v1/articles/{article_id}/comments", "purpose": "提交评论或二级回复；服务端调用微信内容安全审核", "requires": "Authorization: Bearer"},
+				{"method": "POST", "path": "/api/v1/payment/orders", "purpose": "按单篇文章或会员 SKU 创建支付订单", "requires": "Authorization: Bearer"},
+			},
+			"rules": []string{"文章正文权限只能由服务端返回字段 can_read、markdown、preview_markdown、locked_reason 决定", "MCP 不得把完整付费正文写入页面协议或模板", "前端动作只传 SKU，不传金额；金额由商品表读取", "评论图片必须先上传当前租户 COS CDN，再提交 image_url；服务端审核状态为 pending 时不可公开显示"},
+		},
 		"coverage":                  map[string]string{"app_selection": "sdui.app.list", "template_inspection": "sdui.template.list + sdui.template.get", "template_save": "sdui.template.save", "template_delete": "sdui.template.delete", "draft_creation": "sdui.page.create", "draft_editing": "sdui.page.patch", "validation": "sdui.page.validate", "preview": "sdui.page.preview", "visual_review": "sdui.page.screenshot", "image_upload": "sdui.file.prepare_upload", "publish": "sdui.page.publish", "history": "sdui.page.revisions", "rollback": "sdui.page.rollback", "homepage_activation": "sdui.page.set_current", "share_assets": "sdui.page.share_card"},
-		"supported_runtime_actions": []string{"require_auth", "copy_text", "toast", "refresh", "navigate_page", "open_channels_activity", "open_mini_program", "open_webview", "preview_image", "request_data", "request_payment", "share", "subscribe_message"},
-		"unsupported_or_admin_only": []string{"管理员账号与权限管理", "微信 AppSecret 与支付私钥配置", "商品和金额配置", "数据库迁移与种子数据", "任意 HTTP 代理或任意脚本执行", "直接上传二进制到 MCP（必须使用预签名 COS PUT）"},
-		"coverage_note":             "MCP 与 HTTP 管理接口共用模板服务，覆盖内置模板读取、用户模板 CRUD、从模板创建草稿、修改、校验、预览和发布闭环；系统级敏感配置和未登记业务接口仍必须由管理后台或专用服务处理。",
+		"supported_runtime_actions": sortedMapKeys(allowedActionTypes),
+		"unsupported_or_admin_only": []string{"管理员账号与权限管理", "微信 AppSecret 与支付私钥配置", "商品和金额配置", "AI 破甲文章/栏目/会员配置/评论审核管理", "数据库迁移与种子数据", "任意 HTTP 代理或任意脚本执行", "直接上传二进制到 MCP（必须使用预签名 COS PUT）"},
+		"coverage_note":             "MCP 完整覆盖 SDUI 页面与模板编排，不等同于覆盖全部业务后台。MCP 与 HTTP 管理接口复用 TemplateService、SDUIService、协议校验和截图服务；业务内容及敏感配置继续由受认证管理接口处理。",
 		"publish_gate":              map[string]interface{}{"required_scope": "release", "required_argument": "confirmed=true", "human_review": true},
 		"image_upload":              map[string]interface{}{"mcp_tool": "sdui.file.prepare_upload", "admin_endpoint": "/api/v1/admin/files/presigned-upload-url", "flow": []string{"调用工具申请预签名 PUT 地址", "调用方按 uploadHeaders 直接 PUT 二进制到 presignedUrl", "将 finalCosFileUrl 写入 page.patch 的图片字段"}, "prefix": "miniapps/{app_id}/", "stored_value": "CDN URL only", "acl": "由 COS 控制台 miniapps/* 规则统一管理"},
 	}
@@ -1206,20 +1594,36 @@ func mcpAPIResource(tools []MCPToolDefinition) map[string]interface{} {
 // mcpRulesResource 返回 SDUI 协议的机器可读规则。
 func mcpRulesResource() map[string]interface{} {
 	return map[string]interface{}{
-		"protocol_version":    "1.1",
-		"schema_version":      3,
-		"block_types":         sortedMapKeys(allowedBlockTypes),
-		"action_types":        sortedMapKeys(allowedActionTypes),
+		"protocol_version": "1.1",
+		"schema_version":   3,
+		"block_types":      sortedMapKeys(allowedBlockTypes),
+		"action_types":     sortedMapKeys(allowedActionTypes),
+		"style_utilities":  sortedMapKeys(allowedStyleUtilities),
+		"block_item_shape": map[string]interface{}{
+			"required": []string{"id", "type"},
+			"fields":   []string{"id", "type", "props", "style", "action", "events", "visible_when", "repeat", "loading", "empty", "error", "fallback"},
+			"style":    map[string]interface{}{"utilities": "string[]，只能使用 style_utilities；margin_y/margin_x/padding/border_radius/background 为受控值", "glass_blur": "boolean", "accent_color": "主题色令牌"},
+			"events":   "对象，键为事件名（通常 tap/change/submit），值为 BlockAction[]；动作按数组顺序执行",
+			"states":   "loading/empty/error/fallback 均为完整 BlockItem，id 必须在页面树中全局唯一",
+		},
+		"action_shape": map[string]interface{}{
+			"required": []string{"type"},
+			"fields":   []string{"type", "require_auth", "condition", "confirm", "on_success", "on_error", "track", "endpoint", "url", "payload"},
+			"chain":    "on_success/on_error 为 BlockAction[]，按顺序执行；禁止脚本、任意 URL、任意请求头和凭证字段",
+		},
+		"block_contracts":     mcpBlockContracts(),
+		"action_contracts":    mcpActionContracts(),
 		"condition_operators": []string{"eq", "neq", "in", "exists", "gt", "gte", "lt", "lte", "and", "or", "not"},
 		"condition_shape":     map[string]interface{}{"comparison": "{\"eq\": [{\"path\": \"$entity.value\"}, true]}", "logic": "{\"and\": [{...}, {...}]}", "path_prefixes": []string{"$entity", "$query", "$item", "$state", "$result", "$page", "$session", "$tenant", "$props"}},
 		"binding_scopes":      []string{"$entity", "$query", "$item", "$state", "$result", "$page", "$session", "$tenant", "$props"},
 		"block_capabilities":  []string{"visible_when", "repeat", "loading", "empty", "error", "fallback", "events"},
 		"action_capabilities": []string{"condition", "confirm", "on_success", "on_error", "track", "payload"},
-		"page_fields":         map[string]interface{}{"required": []string{"app_id", "page_id", "title", "business_type", "blocks"}, "business_type": []string{"drama", "game", "query", "download", "custom"}, "intent": []string{"watch", "redeem", "query", "download", "buy", "book", "join"}, "theme": []string{"dark_glass", "light_clean", "cyber_neon"}, "status": []string{"draft", "published", "archived", "reviewing"}},
-		"patch_operations":    []string{"replace: 修改受控字段", "add_block: 在积木列表中新增积木", "remove_block: 按积木 ID 删除积木"},
+		"page_fields":         map[string]interface{}{"required": []string{"app_id", "page_id", "title", "business_type", "blocks"}, "business_type": []string{"drama", "game", "query", "download", "custom", "ai_breakthrough", "ai_article"}, "intent": []string{"watch", "redeem", "query", "download", "buy", "book", "join"}, "theme": []string{"dark_glass", "light_clean", "cyber_neon"}, "status": []string{"draft", "published", "archived", "reviewing"}, "authoring_shape": "在 MCP page 参数中 blocks 使用 BlockItem 数组、share_config 使用对象；page.get 额外返回同形态 protocol。数据库 JSON 字符串属于内部存储细节。"},
+		"patch_operations":    []string{"replace: path 支持 /title、/theme、/accent_color、/business_type、/intent、/require_auth、/share_config、/keyword、/source、/campaign_id、/expires_at、/blocks 或 /blocks/{block_id}", "add_block: value 为完整且 ID 唯一的 BlockItem", "remove_block: value 为已有积木 ID", "所有 patch 必须提交 page.get 返回的 expected_revision"},
 		"request_data_rules":  []string{"优先使用已登记 endpoint", "自定义 URL 只能是同源相对路径", "禁止任意 Authorization、Cookie、内网地址和脚本", "修改/删除请求必须确认并具备幂等策略"},
 		"image_rules":         []string{"后台图片必须通过预签名 PUT 上传", "对象路径固定使用 miniapps/{app_id}/ 前缀", "页面协议只保存 CDN URL", "禁止第三方示例图片 URL"},
-		"state_rules":         []string{"AI 默认只写 draft", "校验通过后再 preview/screenshot", "publish 必须具备 release 且 confirmed=true", "不允许下发任意脚本"},
+		"state_rules":         []string{"AI 默认只写 draft", "page.create 不覆盖已有 page_id", "patch 和 publish 必须绑定人工实际读取/审查的 expected_revision", "校验通过后再 preview/screenshot", "publish 必须具备 release 且 confirmed=true", "不允许下发任意脚本"},
+		"quality_gate":        []string{"validate.is_valid 必须为 true", "逐项处理 screenshot.issues 中 error", "检查 normal/loading/empty/error/offline/expired/unauthenticated 状态", "检查长标题、缺图、空数组和未知块 fallback", "确认动作所需 payload、登录态、成功链和失败链", "发布前重新 page.get 并由人工确认相同 revision"},
 		"examples": map[string]interface{}{
 			"page":      map[string]interface{}{"app_id": "wxexample", "page_id": "home", "protocol_version": "1.1", "schema_version": 3, "blocks": []map[string]interface{}{{"id": "hero", "type": "text", "props": map[string]interface{}{"text": "标题"}}}},
 			"action":    map[string]interface{}{"type": "copy_text", "payload": map[string]interface{}{"text": "复制内容"}},

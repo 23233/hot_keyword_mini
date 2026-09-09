@@ -757,6 +757,25 @@ func TestLayoutIR_InlineInterpolation(t *testing.T) {
 	}
 }
 
+// TestCalculateAdaptiveBlockHeightTypedSlices 验证真实 Go 切片绑定能驱动资讯与会员块高度。
+func TestCalculateAdaptiveBlockHeightTypedSlices(t *testing.T) {
+	feedHeight, _ := CalculateAdaptiveBlockHeight(&models.BlockItem{Type: "article_feed"}, map[string]interface{}{
+		"items_path": []map[string]interface{}{{"id": 1}, {"id": 2}, {"id": 3}},
+		"layout":     "list",
+		"limit":      8,
+	}, 358)
+	if feedHeight != 258 {
+		t.Fatalf("文章流应按真实绑定条目计算高度，实际: %d", feedHeight)
+	}
+
+	planHeight, _ := CalculateAdaptiveBlockHeight(&models.BlockItem{Type: "membership_plan_list"}, map[string]interface{}{
+		"items_path": []models.MembershipLevel{{Level: 1}, {Level: 2}, {Level: 3}},
+	}, 358)
+	if planHeight != 276 {
+		t.Fatalf("会员套餐应按真实绑定条目计算高度，实际: %d", planHeight)
+	}
+}
+
 // TestLayoutIR_StackOverlapAlignSelfAndJustifySelf 测试 Overlap 模式下两趟扫描自适应对齐与尺寸计算
 func TestLayoutIR_StackOverlapAlignSelfAndJustifySelf(t *testing.T) {
 	page := &models.DynamicPage{
@@ -831,5 +850,28 @@ func TestLayoutIR_StackOverlapAlignSelfAndJustifySelf(t *testing.T) {
 	// 4. 浮动按钮 align_self 为 flex-end，Y 坐标应靠底
 	if floatingBtn.BoundingBox.Y <= bgImage.BoundingBox.Y {
 		t.Fatalf("浮动按钮靠底对齐 Y 坐标 (%d) 应大于底图起始 Y 坐标 (%d)", floatingBtn.BoundingBox.Y, bgImage.BoundingBox.Y)
+	}
+}
+
+// TestLayoutIR_StyleUtilitiesKeepMetricsInSync 验证工具令牌与前端 rpx 工具类使用同一组逻辑像素。
+func TestLayoutIR_StyleUtilitiesKeepMetricsInSync(t *testing.T) {
+	page := &models.DynamicPage{
+		PageID: "utility_metrics",
+		Title:  "工具令牌",
+		Blocks: `[{"id":"box","type":"container","style":{"utilities":["layout/flat","space/y-6","padding/6","radius/lg","gap/4"]},"props":{"children":[{"id":"a","type":"text","props":{"text":"A"}},{"id":"b","type":"text","props":{"text":"B"}}]}}]`,
+	}
+	ir, err := BuildPageLayoutIRWithContext(page, DefaultDeviceParams(), "normal", nil)
+	if err != nil {
+		t.Fatalf("生成工具令牌 IR 失败: %v", err)
+	}
+	if len(ir.Nodes) != 1 {
+		t.Fatalf("预期一个容器节点，实际 %d", len(ir.Nodes))
+	}
+	node := ir.Nodes[0]
+	if node.MarginY != 12 || node.Padding != 12 || node.BorderRadius != 12 || node.GlassBlur {
+		t.Fatalf("工具令牌未正确映射: margin=%d padding=%d radius=%d glass=%v", node.MarginY, node.Padding, node.BorderRadius, node.GlassBlur)
+	}
+	if len(node.Children) != 2 || node.Children[1].BoundingBox.Y-node.Children[0].BoundingBox.Y < 8 {
+		t.Fatalf("容器 gap/4 未生效: %+v", node.Children)
 	}
 }

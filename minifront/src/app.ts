@@ -6,11 +6,13 @@ if (typeof (globalThis as any).process === 'undefined') {
 
 import { PropsWithChildren } from 'react'
 import { useLaunch } from '@tarojs/taro'
+import { ensureSession } from './utils/auth'
 import './app.scss'
 
 function App({ children }: PropsWithChildren) {
   useLaunch(() => {
     console.log('App launched.')
+    void ensureSession()
   })
 
   return children

@@ -1,7 +1,8 @@
 # 微信搜一搜爆款指数词敏捷流量收割系统：服务端驱动动态组件引擎 (SDUI) 架构设计
 
 > **版本**：v1.3.0  
-> **状态**：协议扩展设计（待评审）  
+> **状态**：当前实现基线（SDUI 协议 1.1 / Schema 3；Go、前端契约测试已通过，路线图中的运营增强项仍单独标注）
+> **最近核对**：2026-09-09
 > **核心目标**：在已发布的小程序版本内，通过受控的 SDUI 协议快速切换指数词落地页、内容和转化路径；不承诺绕过平台审核，也不把任意代码下发到客户端。
 
 ---
@@ -18,7 +19,7 @@
 - 小程序端只预置**标准的原生苹果风原子积木库**和**万能动作执行器**；
 - 页面显示什么结构、排版、样式，以及按钮点击做什么事，**100% 由后端 JSON 协议动态下发**；
 - 管理后台提供所见即所得的微信开发者工具默认 iPhone 12/13 Pro 手机模拟器（390×844，DPR 3），支持拼积木、配样式、绑定事件；
-- **全网发布 0ms 生效**：发现热词 -> 后台改名改模版 -> 瞬间上线承接万级搜索流量！
+- **发布后动态生效**：发现热词 -> 后台修改草稿 -> 通过发布确认后按缓存失效策略更新线上页面；不承诺零延迟，也不绕过小程序代码审核边界。
 
 ---
 
@@ -36,7 +37,7 @@
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │                          Golang 后端服务端                             │
-│  - 页面协议持久化存储 (MySQL + Redis 极速缓存)                         │
+│  - 页面协议持久化存储 (MySQL + ETag/HTTP 缓存；Redis 可选基础设施)       │
 │  - 统一协议解析/绑定/校验中间表示 (IR)                                  │
 │  - 模板库、MCP 编排服务与规范化截图服务                                │
 └───────────────────────────────────┬────────────────────────────────────┘
@@ -87,13 +88,13 @@
 为保证 Golang 后端与 Taro React 前端的完美对齐与类型安全，制定双端镜像结构：
 
 ### 3.1 动作协议 (`BlockAction`)
-定义任意按钮、卡片、图片被点击时的标准原子行为态（含跨小程序矩阵联动跳转、受控业务调用与支付），系统受控支持 13 种标准原子动作：
+定义任意按钮、卡片、图片被点击时的标准原子行为态（含跨小程序矩阵联动跳转、受控业务调用与支付），系统受控支持 21 种标准原子动作：
 - `copy_text`：复制文本至剪贴板（支持 `text` / `content` / `path` 与 `toast` 提示）
 - `navigate_page`：小程序内部页面路由跳转（支持 `page_id` / `id` / `query`）
 - `open_channels_activity`：直达微信视频号原生动态（支持 `feed_id` / `finder_user_name`）
 - `open_mini_program`：跨小程序矩阵互跳（支持 `target_app_id` / `target_path` / `extra_data`）
 - `preview_image`：全屏大图预览（支持 `current` / `urls`）
-- `open_webview`：微信原生 H5 容器打开（支持 `url` 换取一次性短期凭证）
+- `open_webview`：微信原生 H5 容器打开（支持 `url` 换取一次性短期凭证；当前服务端仅校验 HTTP(S) 格式，微信业务域名白名单仍需在平台配置）
 - `request_data`：受控业务数据请求与事务触发（支持 `endpoint` / `query` / `body` / `response.save_as`）
 - `request_payment`：创建商品订单并调起微信支付（支持 `sku` / `idempotency_key`）
 - `require_auth`：前置强制登录拦截
@@ -101,11 +102,19 @@
 - `refresh`：刷新当前页面或指定积木
 - `share`：唤起微信官方原生分享菜单
 - `subscribe_message`：调起微信消息订阅授权（支持 `tmpl_ids` 与单 `template_id`）
+- `request`：`request_data` 的兼容名称
+- `set_state`：设置页面局部状态
+- `toggle_state`：切换页面局部布尔状态
+- `reset_state`：清空页面局部状态
+- `show_error_state`：将目标积木切换为错误态
+- `show_empty_state`：将目标积木切换为空态
+- `show_loading_state`：将目标积木切换为加载态
+- `reset_block_state`：将目标积木恢复正常态
 
 标准协议载荷格式示例：
 ```json
 {
-  "type": "copy_text | navigate_page | open_channels_activity | open_mini_program | preview_image | open_webview | request_data | request_payment | require_auth | toast | refresh | share | subscribe_message",
+  "type": "copy_text | navigate_page | open_channels_activity | open_mini_program | preview_image | open_webview | request_data | request | request_payment | require_auth | toast | refresh | share | subscribe_message | set_state | toggle_state | reset_state | show_error_state | show_empty_state | show_loading_state | reset_block_state",
   "require_auth": false,
   "condition": { "eq": [{ "path": "$entity.is_locked" }, true] },
   "confirm": { "title": "操作确认", "message": "确认执行该操作？" },
@@ -129,7 +138,7 @@
 `request_payment` 仅提交商品 SKU 和可选幂等键。服务端按当前小程序 AppID 查询商品表金额和普通商户配置，创建 JSAPI 订单并返回 `wx.requestPayment` 参数；客户端支付回调后通过订单查询接口确认最终状态。客户端不得提交或覆盖金额。
 
 ### 3.2 原子积木定义 (`BlockItem`)
-每一个原子组件由 4 个要素构成（ID、类型、属性、样式与动作），分为通用自由积木、基础内容块、基础布局块与业务预设块：
+每一个原子组件由 `id`、`type`、`props`、`style`、`action/events` 以及可选的条件、循环和状态分支构成，分为通用自由积木、基础内容块、基础布局块与业务预设块：
 
 #### 3.2.1 通用自由图文卡片 (`custom` / `custom_block`)
 整个 SDUI 引擎天生 100% 自由拼装，自由卡片支持标题、角标、图文与主按钮全维度灵活自适应：
@@ -183,7 +192,9 @@
 描述一个完整页面的全局元信息：
 ```json
 {
+   "protocol_version": "1.1",
    "schema_version": 3,
+   "app_id": "wxexample",
    "page_id": "home",
    "title": "猴王下山 - 精选剧场",
    "business_type": "drama",
@@ -212,7 +223,7 @@
 
 ### 3.4 统一响应信封与版本协商
 
-页面接口不直接返回裸页面，统一使用响应信封，便于缓存、灰度、回滚和客户端兼容：
+页面接口不直接返回裸页面，统一使用响应信封，便于版本缓存、回滚和客户端兼容；灰度分流需要额外的运营策略，当前不由该信封自动完成：
 
 ```json
 {
@@ -236,10 +247,10 @@
 }
 ```
 
-客户端请求时携带 `X-SDUI-Version` 和 `X-Client-Capabilities`。小程序网络层必须完整申报所具备的全部原子积木与动作能力标识：
+客户端请求时携带 `X-SDUI-Version` 和 `X-Client-Capabilities`。当前小程序网络层申报的能力标识与 `minifront/src/utils/request.ts` 保持一致：
 ```http
 X-SDUI-Version: 1.1
-X-Client-Capabilities: custom,custom_block,image,text,rich_text,container,stack,grid,tabs,carousel,spacer,empty,skeleton,media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,clipboard,video,request_payment
+X-Client-Capabilities: custom,custom_block,image,text,rich_text,container,stack,grid,tabs,carousel,list,spacer,empty,skeleton,media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,score_panel,coupon_card,countdown,result_table,contact_card,map_card,game_header,redeem_code_card,server_status,product_card,download_card,event_card,poll,feed_list,collection_nav,content_feed,content_detail,offer_list,discussion_thread,category_nav,article_feed,article_detail,membership_plan_list,comment_thread,clipboard,video,channels,request_payment,subscribe_message
 ```
 服务端只下发客户端声明支持的块和动作；不支持时使用块级 `fallback` 降级，杜绝因个别新积木导致整页白屏。
 
@@ -263,17 +274,19 @@ X-Client-Capabilities: custom,custom_block,image,text,rich_text,container,stack,
 2. 兼容省略路径：`"entity.title"`、`"item.name"`、`"result.code"` 自动映射至对应作用域；
 3. 对象路径语法：`{ "path": "$entity.title" }` 与 `{ "path": "entity.title" }` 具有完全等价的解析结果。
 
-数据源只允许后端注册的实体和查询方式，例如 `drama`、``、`score_result`、`download_resource`。协议只传 `entity`、`id`、`fields`、`filters`、`cursor`、`limit`，禁止传任意 SQL。敏感资源（网盘真实地址、兑换码、手机号等）必须由后端鉴权后单独返回，不能提前放在公开页面 JSON 中。product
+数据源只允许后端注册的实体和查询方式，例如 `drama_detail`、`game_detail`、`query.score`、`download_resource`、`article` 和 `membership`。协议只传 `entity`、`id`、`fields`、`filters`、`cursor`、`limit`，禁止传任意 SQL。敏感资源（网盘真实地址、兑换码、手机号等）必须由后端鉴权后单独返回，不能提前放在公开页面 JSON 中。
 
 ### 3.6 块、容器、循环和条件
 
 将“原子积木”分为三类，避免每新增一个业务就新增一套页面：
 
 1. **布局块**：`stack`、`container`、`grid`、`tabs`、`carousel`、`list`、`spacer`；
-2. **内容块**：`text`、`rich_text`、`image`、`media_hero`、`video`、`notice`、`timeline`、`empty`、`skeleton`；
-3. **业务块**：`resource_card`、`episode_list`、`score_panel`、`coupon_card`、`countdown`、`result_table`、`form`、`contact_card`、`map_card`、`game_card`、`game_header`、`redeem_code_card`、`server_status`、`product_card`、`download_card`、`event_card`、`poll`、`feed_list`。
+2. **内容块**：`text`、`rich_text`、`image`、`video`、`notice`、`timeline`、`empty`、`skeleton`；
+3. **业务块**：`media_hero`、`resource_card`、`action_button`、`game_card`、`form`、`episode_list`、`item_grid`、`score_panel`、`coupon_card`、`countdown`、`result_table`、`contact_card`、`map_card`、`game_header`、`redeem_code_card`、`server_status`、`product_card`、`download_card`、`event_card`、`poll`、`feed_list`；
+4. **资讯与会员块**：`category_nav`、`collection_nav`、`article_feed`、`content_feed`、`article_detail`、`content_detail`、`membership_plan_list`、`offer_list`、`comment_thread`、`discussion_thread`；
+5. **自由块**：`custom`、`custom_block`。
 
-`gallery`、`filter_bar`、`anchor_nav` 等通用列表辅助块可作为 `container` 的受控子类型；块注册表必须明确每个子类型的最小客户端版本。
+`gallery`、`filter_bar`、`anchor_nav` 等未注册名称不能直接作为顶层 `type`；需要时应使用 `container`/`grid`/`list` 等已注册块组合表达。块注册表必须明确每个类型的最小客户端版本。
 
 块统一支持 `visible_when`、`repeat`、`loading`、`empty`、`error` 和 `fallback`。条件表达式只提供有限操作符：`eq`、`neq`、`in`、`exists`、`gt`、`gte`、`lt`、`lte`、`and`、`or`、`not`。示例：
 
@@ -347,27 +360,27 @@ X-Client-Capabilities: custom,custom_block,image,text,rich_text,container,stack,
 请求动作的标准字段：
 
 - `endpoint`：推荐配置，使用后端登记的端点名称，由服务端维护真实地址、方法和凭证；
-- `url`：需要自定义地址时使用。允许同源相对路径，或租户请求域名白名单中的 HTTPS 地址；禁止内网地址、动态协议、URL 中携带凭证以及绑定整个 URL；
+- `url`：仅允许同源相对路径（以 `/` 开头且不能以 `//` 开头）；跨域 HTTPS 地址不属于当前客户端请求动作能力，避免开放代理和凭证泄漏；
 - `method`：支持 `GET`、`POST`、`PUT`、`PATCH`、`DELETE`，默认 `GET`。修改和删除类请求必须先确认，并由后端执行权限和幂等校验；
 - `path_params`、`query`、`body`：分别配置路径参数、查询参数和 JSON 请求体；值可以来自受控绑定路径、页面状态或固定白名单值，并在请求前通过参数 Schema 校验；
-- `headers`：只允许 `Content-Type`、`Accept-Language`、`Idempotency-Key` 等安全白名单字段；租户、客户端版本和登录令牌由统一请求层自动注入；
+- `headers`：当前协议不接受动作自定义请求头；`content-type`、租户标识、客户端版本和登录令牌由统一请求层自动注入，幂等键使用 `idempotency_key` 字段；
 - `response.data_path`、`save_as`：将响应中的非敏感数据保存到当前页面状态，供后续块和动作使用；
 - `on_success`、`on_error`：请求完成后的动作链，支持提示、刷新、跳转、复制和展示状态；
 - `require_auth`、`timeout_ms`、`idempotency_key`：分别控制鉴权、超时和重复提交；
 - `loading`、`empty`、`error`：请求期间及异常时绑定到对应块的状态视图。
 
-当 `endpoint` 与 `url` 同时存在时，以 `endpoint` 注册表解析结果为准，`url` 只作为管理后台预览信息，避免配置被篡改。端点注册表还必须声明请求方法、参数 Schema、响应 Schema、最低客户端版本、限流策略和是否允许匿名访问。客户端不得接收服务端密钥，不得配置任意 `Authorization`、Cookie 或内部请求头；上传文件、支付和敏感数据提交应使用专门的业务动作。所有真实域名仍须加入微信小程序 `request` 合法域名。
+当 `endpoint` 与 `url` 同时存在时，以 `endpoint` 注册表解析结果为准，`url` 只作为管理后台预览信息，避免配置被篡改。当前内置端点注册表声明名称、描述、是否鉴权和处理器，并在处理器内校验业务参数；后续新增端点应补齐请求/响应 Schema、最低客户端版本、限流策略和匿名访问策略。客户端不得接收服务端密钥，不得配置任意 `Authorization`、Cookie 或内部请求头；上传文件、支付和敏感数据提交应使用专门的业务动作。所有真实域名仍须加入微信小程序 `request` 合法域名。
 
 ### 3.9 动作能力矩阵与安全边界
 
-动作类型使用稳定的蛇形命名：`copy_text`、`navigate_page`、`open_channels_activity`、`open_mini_program`、`preview_image`、`open_webview`、`request_data`、`require_auth`、`toast`、`refresh`、`share`、`subscribe_message`。每个动作必须声明：
+动作类型使用稳定的蛇形命名：`copy_text`、`navigate_page`、`open_channels_activity`、`open_mini_program`、`preview_image`、`open_webview`、`request_data`、`request`、`request_payment`、`require_auth`、`toast`、`refresh`、`share`、`subscribe_message`、`set_state`、`toggle_state`、`reset_state`、`show_error_state`、`show_empty_state`、`show_loading_state`、`reset_block_state`。当前实现的 21 种动作均在后端白名单、前端类型和动作分发器中对齐；每个动作必须声明：
 
 - 支持的平台和最低基础库；
 - 必填参数及类型；
 - 失败时的用户提示和降级动作；
 - 域名、AppID、页面路径等白名单约束。
 
-协议不得下发任意脚本、远程组件、任意小程序路径或任意网页域名。`open_webview` 只能使用已配置的业务域名，`open_mini_program` 只能跳转已审核的 AppID 和路径。动作参数的字段命名必须统一，不能同时出现 `feed_id` 与 `feedId`。
+协议不得下发任意脚本、远程组件、任意小程序路径或任意网页域名。当前 `open_webview` 服务端只接受 HTTP(S) 地址，实际可访问域名还必须加入微信业务域名白名单；服务端域名白名单尚未在本版本实现，不能将协议中的任意 HTTP(S) 地址视为已完成租户白名单校验。`open_mini_program` 只能跳转已审核的 AppID 和路径。动作参数的字段命名必须统一，不能同时出现 `feed_id` 与 `feedId`。
 
 #### 3.9.1 图片资源存储与 CDN 访问行为
 
@@ -411,7 +424,7 @@ miniapps/{app_id}/share/{uuid}-{card_type}.png
 - `timeline` 对应 `onShareTimeline`：微信只接受 `title`、`query`、`image_url`，没有独立的 `path` 字段；
 - `enabled` 为 `false` 时，页面不主动声明该分享入口；系统仍须遵循微信客户端实际展示规则；
 - 分享参数支持 `$entity`、`$query`、`$tenant` 的受控绑定，但不得放入 token、手机号、兑换码等敏感信息；
-- 每次分享自动附带不可伪造的 `campaign_id`、`share_id` 和来源标记，用于归因、去重和回访；
+- 归因参数不会由客户端自动生成；需要归因时由页面显式配置 `campaign_id`、来源等非敏感 query/path 参数，去重和回访逻辑由业务端点实现；
 - 页面跳转后的分享配置必须重新从目标页面读取，不能沿用上一个页面的状态。
 
 ### 3.11 登录态生命周期与内置刷新机制
@@ -465,51 +478,65 @@ miniapps/{app_id}/share/{uuid}-{card_type}.png
 
 ### 3.12 AI/MCP 编排接口
 
-SDUI 从实现之初就提供 MCP 接口，让 AI 能够通过结构化工具快速搭建页面、调用真实数据预览并进行视觉审查。MCP 只操作受控的页面草稿和模板，不直接修改数据库，不绕过发布审批。
+SDUI 从实现之初就提供 MCP 接口，让 AI 能够通过结构化工具快速搭建页面、调用真实数据预览并进行视觉审查。MCP 通过服务层操作受控的页面/模板生命周期，不提供 SQL、脚本或任意数据库访问，也不绕过发布审批。
 
-建议提供以下 MCP 工具：
+当前实现提供以下 18 个 MCP 工具（HTTP 与 Stdio 名称、参数和权限一致）：
 
-| 工具 | 作用 | 关键输入 | 关键输出 |
+| 工具 | 最小权限 | 关键输入 | 关键输出 |
 |---|---|---|---|
-| `sdui.template.list` | 查询可用行业模板和版本 | `business_type`、`keyword` | 模板摘要、适用场景、所需实体 |
-| `sdui.page.create` | 从模板或空白页面创建草稿 | `template_id`、`page_id`、`context` | `draft_id`、初始 `DynamicPage` |
-| `sdui.page.patch` | 按路径修改页面协议 | `draft_id`、JSON Patch、操作者 | 新 revision、校验结果 |
-| `sdui.page.validate` | 校验协议、绑定、动作、权限和能力 | `draft_id` 或协议 JSON | 错误、警告、自动修复建议 |
-| `sdui.page.preview` | 使用指定数据和客户端能力渲染预览 | `draft_id`、`device`、`fixtures` | 预览地址、渲染日志、最终协议 |
-| `sdui.page.screenshot` | 后端生成规范化截图 | `draft_id`、设备尺寸、状态 | PNG 地址、截图哈希、视觉报告 |
-| `sdui.page.publish` | 发布已通过校验的版本 | `draft_id`、灰度范围、备注 | `release_id`、生效时间、回滚版本 |
+| `sdui.app.list` | `read` | 无 | 已注册小程序列表 |
+| `sdui.page.list` | `read` | `app_id` | 页面列表与状态 |
+| `sdui.page.get` | `read` | `app_id`、`page_id`、`draft?` | 页面与数组/对象形态 `protocol`、`revision` |
+| `sdui.file.prepare_upload` | `write:draft` | `app_id`、文件名、大小、类型 | 预签名 PUT 地址与 CDN 地址 |
+| `sdui.template.list` / `sdui.template.get` | `read` | 模板过滤或 `template_id` | 内置/用户模板协议 |
+| `sdui.template.save` / `sdui.template.delete` | `write:draft` | `app_id`、模板、`expected_revision` | 新版本或删除状态 |
+| `sdui.page.create` | `write:draft` | `app_id`、`page_id`、`template_id?` | 草稿、初始协议与兼容输出 `draft_id`；后续工具仍使用 `app_id` + `page_id` |
+| `sdui.page.patch` | `write:draft` | `app_id`、`page_id`、`expected_revision`、受控 `ops` | 新 revision 与校验结果 |
+| `sdui.page.validate` | `read` | 页面协议，或 `app_id` + `page_id` | 错误、警告、修复建议 |
+| `sdui.page.preview` | `read` | `app_id`、`page_id`、`query?` | 预览响应信封 |
+| `sdui.page.screenshot` | `read` | `app_id`、`page_id`、设备/主题/语言/状态 | PNG URL、哈希、Layout IR、结构树 |
+| `sdui.page.publish` | `release` | `app_id`、`page_id`、`expected_revision`、`confirmed=true` | 发布 revision |
+| `sdui.page.revisions` | `read` | `app_id`、`page_id` | 历史版本协议 |
+| `sdui.page.rollback` | `release` | `app_id`、`page_id`、目标 revision、`confirmed=true` | 回滚后的发布版本 |
+| `sdui.page.set_current` | `release` | `app_id`、`page_id`、`confirmed=true` | 当前主页状态 |
+| `sdui.page.share_card` | `release` | `app_id`、`page_id`、`confirmed=true` | 分享图配置状态 |
 
 MCP 工具必须具备以下约束：
 
-- 所有写操作默认只创建或修改草稿；发布、撤回和回滚必须显式调用并记录审计信息；
+- 所有写操作默认只创建或修改草稿；发布、当前主页切换、分享图生成和回滚必须显式调用并记录审计信息；文章下架、评论审核等业务状态由对应管理接口处理，不作为 MCP 工具开放；SDUI 页面暂无独立撤回工具。
 - `sdui.page.patch` 使用 JSON Patch 或受控路径操作，不能让 AI 提交任意 SQL、脚本、组件代码或数据库字段；
+- `sdui.page.patch` 和 `sdui.page.publish` 必须绑定最近一次 `sdui.page.get` 返回的 `expected_revision`，版本不一致时拒绝覆盖或发布；
 - 工具返回机器可读的错误码、字段路径和修复建议，便于 AI 自动迭代，而不是只返回自然语言错误；
 - AI 可以读取模板、协议、校验结果和截图，但默认不能读取 AppSecret、用户隐私和未授权的敏感资源；
 - 每次 AI 修改生成 `revision`，支持差异查看、撤销和回滚；并发修改使用乐观锁，避免覆盖人工编辑。
 
-MCP 服务本身需要独立的身份认证和权限范围：`read`（模板、协议、截图）、`write:draft`（创建和修改草稿）、`release`（发布/撤回/回滚）。生产环境只允许通过受保护的 MCP 传输端点接入，按租户和操作者隔离；每次工具调用记录 `request_id`、`actor_id`、`tenant_id`、输入摘要和结果 revision。MCP 不应直接暴露数据库连接或内部管理 API，工具层负责参数校验、脱敏和审计。
+MCP 服务本身需要独立的身份认证和权限范围：`read`（模板、协议、截图）、`write:draft`（创建和修改草稿）、`release`（发布、回滚、当前主页切换和分享图生成）。生产环境只允许通过受保护的 MCP 传输端点接入，按租户和操作者隔离；每次工具调用记录 `request_id`、`actor_id`、`tenant_id`、输入摘要和结果 revision。MCP 不应直接暴露数据库连接或内部管理 API，工具层负责参数校验、脱敏和审计。
+
+`tools/list` 的每个工具必须声明机器可读的 `requiredScope`，并与真实执行门禁保持一致。`sdui://rules` 必须镜像服务端真实的积木、动作、样式令牌、BlockItem、状态分支、事件和动作链白名单；`sdui://api` 必须给出标准 JSON-RPC 与 `tools/call` 成功/失败响应信封。HTTP 与 Stdio 共用同一执行层；Stdio 的 stdout 只允许逐行 JSON-RPC 响应，所有启动提示、日志和审计信息必须进入 stderr 或日志文件。
 
 AI 快速搭建的标准流程：
 
 ```text
 选择模板/业务类型 -> 生成草稿 -> 绑定实体与请求 -> 协议校验
 -> 后端预览 -> 后端截图 -> AI 视觉审查 -> 修正草稿
--> 人工确认 -> 发布/灰度 -> 采集效果
+-> 人工确认 -> 发布 -> 采集效果
 ```
+
+灰度策略属于后续运营增强；当前 MCP 闭环到人工确认后的正式发布，不宣称已提供灰度分流。
 
 ### 3.13 后端截图与视觉一致性协议
 
-截图不是独立的设计稿，也不是管理后台自行拼接的图片，而是后端对同一份已解析 `DynamicPage` 执行规范化渲染得到的视觉基线。协议解析、绑定、条件求值、状态合并必须先生成统一的中间表示（IR）；小程序渲染器和截图渲染器都消费这份 IR，不能各自重新解释 JSON。截图服务必须记录：`protocol_version`、`schema_version`、`revision`、`device`、`theme`、`locale`、`data_fixture_id` 和渲染器版本。
+截图不是独立的设计稿，也不是管理后台自行拼接的图片，而是后端对同一份已解析 `DynamicPage` 生成 Layout IR 后执行规范化渲染得到的视觉基线。协议解析、绑定、条件求值和状态合并先进入统一 IR；小程序运行时继续以 `page.blocks` 为唯一渲染输入，响应信封中的 `layout_ir` 仅供服务端验收和截图比对，前端不据此重建布局，避免被后端坐标锁死。截图服务当前记录：`protocol_version`、`schema_version`、`revision`、设备预设、`theme`、`locale`、状态 Fixture 和渲染器版本。
 
 视觉一致性分为三层：
 
-1. **协议一致**：截图使用的页面 JSON、块顺序、绑定后的值、条件结果和动作状态，与实际客户端收到的协议完全相同；
-2. **布局一致**：前端和后端共享同一套 Design Tokens、块尺寸规则、字体回退、间距、圆角、颜色和状态占位尺寸；
-3. **状态一致**：加载中、空结果、错误、登录拦截、库存不足、兑换成功、视频不可用等状态都能单独截图，不能只审查成功态。
+1. **协议一致**：截图与小程序来自同一页面 revision、块顺序、绑定结果和能力协商规则；
+2. **布局基线一致**：前端和后端共享 Design Tokens、块尺寸规则、间距、圆角、颜色和状态占位语义，IR 给出可比对的规范化边界；
+3. **状态一致**：当前截图工具支持 `normal`、`loading`、`empty`、`error`、`offline`、`expired`、`unauthenticated` 状态 Fixture，业务细分状态通过对应块的状态分支表达。
 
 后端渲染器与小程序原生能力存在差异时，必须使用确定性的能力替身，例如将视频号播放器渲染为同尺寸的封面和状态占位，但不得改变块的尺寸、边距、按钮位置或文字层级。截图报告应同时列出“原生能力替身”清单，避免 AI 将占位内容误判为协议缺陷。替身只用于截图和预览，真实小程序运行时仍由对应原生组件执行。
 
-截图接口至少支持：设备宽度/高度、DPR、横竖屏、主题、语言、登录态、查询参数、实体 Fixture、网络状态和指定页面状态。截图结果除了 PNG，还应返回可供 AI 分析的结构树：块 ID、类型、边界框、可见性、文本摘要、动作类型和异常列表。
+截图工具当前支持 `device` 设备预设、主题、语言标识和状态 Fixture；设备宽度、高度和 DPR 由 `ResolveDeviceParams` 的受控预设决定，不接受任意尺寸。当前渲染器以中文 `zh-CN` 文案为基线，`locale` 会记录到结果但尚未提供动态翻译。截图结果返回签名 PNG URL、SHA-256、Layout IR、结构树、原生能力替身和协议问题列表。自定义查询参数与外部实体 Fixture 尚未作为 `sdui.page.screenshot` 参数开放。
 
 视觉验收最低标准：
 
@@ -517,11 +544,11 @@ AI 快速搭建的标准流程：
 - 未知块、缺失字段或能力不足时有明确降级，不得出现空白页或布局塌陷；
 - 文本不溢出、不遮挡、不被固定底栏覆盖，长标题和多语言均需验证；
 - 关键点击目标有稳定尺寸，截图中的块 ID 可以映射回协议路径；
-- 发布前必须通过协议校验和截图审查，视觉报告与协议 revision 不一致时禁止发布。
+- 发布前应完成协议校验和截图审查，并核对视觉报告与协议 revision；当前 `sdui.page.publish` 强制协议校验、乐观锁和 `confirmed=true`，不会自动读取截图问题来阻断发布，视觉审查由流程和人工确认负责。
 
 ### 3.14 页面生命周期、草稿隔离与状态门禁契约
 
-页面配置具备严格的生命周期状态流转机制（`published` 已发布 与 `draft` 草稿）：
+页面配置具备严格的生命周期状态流转机制（`published` 已发布、`draft`/`reviewing` 草稿审查、`archived` 归档）：
 
 1. **草稿物理门禁隔离**：
    - 面向普通微信客户端的小程序公开接口 `GET /api/v1/page/:page_id` 实施强门禁拦截：仅对外下发 `status = 'published'` 的页面；
@@ -538,7 +565,7 @@ AI 快速搭建的标准流程：
 1. **小程序原生窗口全局标题脱敏**：
    - 小程序全局配置 `app.config.ts` 中的 `navigationBarTitleText` 统一设定为通用中立文案 `'热点精选'`，彻底根除在网络延迟或动态协议加载前窗口闪烁旧业务私有字样（如特定短剧名）的问题；
 2. **动态承载页兜底脱敏**：
-   - 动态承载容器 `pages/dynamic/index.tsx` 中的微信好友分享、朋友圈分享以及导航栏页面标题，其兜底文案必须统一为通用的 `'精选推荐'`；
+   - 动态承载容器 `pages/dynamic/index.tsx` 中的微信好友分享、朋友圈分享以及导航栏页面标题，其兜底文案统一为通用的 `'精选推荐'`；主页容器 `pages/index/index.tsx` 使用 `'精选主页'`、`'首页精选'` 作为主页专用兜底；
 3. **管理后台模拟器中立化**：
    - iPhone 12/13 Pro 模拟器的导航栏标题和模式胶囊标签完全受当前页面配置动态驱动，未配置时统一兜底为 `'精选页面'` 与 `'custom'`，杜绝任何私有硬编码字样。
 
@@ -555,13 +582,15 @@ AI 快速搭建的标准流程：
 
 ## 四、核心技术难点解决方案
 
-### 4.1 样式怎么做？—— 苹果 Design Tokens 视觉标记系统
-- **原则**：非开发人员不能随心所欲写 CSS，以免破坏 UI 规范或引发跨端错位。
-- **机制**：前端预装一套工业级 SCSS 苹果规范样式库。后台仅开放可视化 Tokens 调节：
+### 4.1 样式怎么做？—— 可组合 Utility Tokens 视觉标记系统
+- **原则**：非开发人员不能随心所欲写 CSS，以免破坏 UI 规范或引发跨端错位；同时令牌应像 Tailwind 一样可组合，而不是绑定某个行业页面。
+- **机制**：前端预装一套工业级 SCSS 原子样式库。后台仅开放可视化 Tokens 调节：
   - **主题基调**：`dark_glass` (深黑磨砂)、`light_clean` (极简冷白)、`cyber_neon` (赛博霓虹)；
   - **材质质感**：高斯模糊毛玻璃 (`backdrop-filter: blur(20px)`)、纯色磨砂、高光描边；
   - **圆角梯度**：直角(0)、轻微(16rpx)、标准(28rpx)、胶囊全圆(999rpx)；
   - **渐变微调**：苹果琥珀橙红渐变、科技青蓝渐变、高光白炽。
+
+每个积木在 `style.utilities` 中按需组合 `layout/flat`、`surface/*`、`border/*`、`radius/*`、`space/y-*`、`padding/*`、`gap/*`、`text/*`、`accent/*`、`elevation/*` 与 `media/rounded`。令牌必须同时通过后端协议校验和 Schema 枚举；小程序只将已校验令牌转换为预置工具类。`layout_ir` 是服务端验收与截图比对产物，不参与小程序的运行时积木重建，运行时唯一输入为 `page.blocks`。
 - **效果**：无论后台如何排列组合，渲染出来永远是纯正高雅的苹果原生质感。
 
 ---
@@ -609,7 +638,7 @@ AI 快速搭建的标准流程：
        AppSecret    string    `gorm:"size:64;comment:小程序密钥(换取openid)"`
        AppName      string    `gorm:"size:128;comment:小程序名称(当前蹭的热词)"`
        CurrentPage  string    `gorm:"size:64;default:'home';comment:当前线上激活的主页ID"`
-       ReleaseMode  string    `gorm:"size:16;default:'normal';comment:发布模式(normal/gray/fallback)"`
+       ReleaseMode  string    `gorm:"size:16;default:'normal';comment:发布模式(normal/gray/fallback；gray 分流能力待运营增强)"`
        FallbackPageID string  `gorm:"size:64;default:'home';comment:故障或过期时的兜底页面"`
        CreatedAt    time.Time
        UpdatedAt    time.Time
@@ -619,9 +648,8 @@ AI 快速搭建的标准流程：
    - 联合主键 / 联合唯一索引：`(app_id, page_id)`；
    - 小程序 A 和小程序 B 各自拥有独立的 `home` 主页、独立的模版配置、互不干扰。
 3. **接口请求头自适应识别**：
-   - 小程序前端发起的任何请求，由 `request.ts` 统一在 Header 自动附带：
-     `Referer: https://servicewechat.com/<appid>/...`
-   - 后端中间件优先提取微信 `X-WX-AppID`，并兼容 `Referer` 中的 `<appid>`，精准装配并返回属于该小程序的专属页面配置；
+   - 微信运行时会自动提供 `Referer: https://servicewechat.com/<appid>/...`；前端 `request.ts` 不伪造该 Header，并在运行时可读取时附带官方 `X-WX-AppID`；
+   - 后端中间件优先提取官方 `X-WX-AppID`，并兼容微信 `Referer` 中的 `<appid>`，精准装配并返回属于该小程序的专属页面配置；
 4. **管理后台一脑多控切换器**：
    - `/admin` 顶部提供**小程序选择下拉框**：
      `[ 📱 小程序 1: 猴王下山 (wx516...) ▼ ]`
@@ -676,66 +704,15 @@ AI 快速搭建的标准流程：
 - **`ResourceCardBlock`**：网盘多渠道提取卡片（夸克/百度/迅雷）；
 - **`ActionButtonBlock`**：通栏大胶囊主按钮；
 - **`ItemGridBlock`**：自适应 2/3/4 列网格（集数、画廊、九宫格、壁纸）；
-- **`CopyListBlock`**：兑换码 / 口令复制列表；
 - **`TimelineBlock`**：吃瓜始末 / 热点时间线；
-- **`AnnouncementBar`**：顶部跑马灯通告。
+- **`NoticeBlock`**：顶部公告与提示；
 - **`FormBlock`**：查询、报名、预约和反馈表单。
+- **`LayoutBlocks` / `ContentBlocks` / `AIBreakthroughBlocks`**：通用布局、资讯流、文章详情、会员套餐和评论承载；
+- **`BlockRenderer`**：按已注册类型统一分派，未知块走 `fallback` 或安全占位。
 
 ### 7.2 动作分发器的环境自适应
-```typescript
-export const dispatchAction = async (action?: BlockAction) => {
-  if (!action) return
-  const isWeapp = Taro.getEnv() === Taro.ENV_TYPE.WEAPP
 
-  // 1. 拦截动作级登录鉴权
-  if (action.require_auth) {
-    const sessionReady = await ensureSession()
-    if (!sessionReady) return
-  }
-
-  // 2. 执行具体业务行为
-  switch (action.type) {
-    case 'copy_text':
-      Taro.setClipboardData({
-        data: action.payload.text,
-        success: () => Taro.showToast({ title: action.payload.toast || '已复制', icon: 'success' })
-      })
-      break
-    case 'open_channels_activity':
-      if (isWeapp) {
-        wx.openChannelsActivity({
-          feedId: action.payload.feed_id,
-          finderUserName: action.payload.finder_user_name
-        })
-      } else {
-        Taro.showToast({ title: `[模拟] 打开视频号: ${action.payload.feed_id}`, icon: 'none' })
-      }
-      break
-    case 'navigate_page':
-      Taro.navigateTo({
-        url: `/pages/dynamic/index?page_id=${action.payload.page_id}&id=${action.payload.id || ''}`
-      })
-      break
-    case 'open_mini_program':
-      // 跨小程序矩阵联动跳转 (流量互导与分流)
-      if (isWeapp) {
-        Taro.navigateToMiniProgram({
-          appId: action.payload.target_app_id,
-          path: action.payload.target_path || '',
-          extraData: action.payload.extra_data || {},
-          envVersion: action.payload.env_version || 'release',
-          fail: (err) => console.warn('跳转小程序失败:', err)
-        })
-      } else {
-        Taro.showToast({
-          title: `[模拟跳转小程序] AppID: ${action.payload.target_app_id}`,
-          icon: 'none'
-        })
-      }
-      break
-  }
-}
-```
+前端统一使用 `minifront/src/utils/action.ts` 的 `dispatchAction`。该分发器按协议白名单处理当前 21 种动作，统一执行条件、登录门禁、确认弹窗、成功/失败动作链和状态更新；`track` 元数据当前输出到前端日志，尚未接入持久化分析服务。微信原生能力（视频号、跨小程序、支付、订阅、分享）在微信环境调用 Taro API，非微信环境使用可测试的提示降级。文档示例不再复制简化版 `switch`，以免与真实分发器产生漂移。
 
 ---
 
@@ -768,9 +745,9 @@ export const dispatchAction = async (action?: BlockAction) => {
 | 游戏互动 (redeem) | 游戏名、新游、兑换码、开服 | 游戏介绍、礼包状态、版本 | 领取、复制兑换码、启动游戏 | `game_card`、`notice`、`action_button` |
 | 信息查询 (query) | 成绩查询、物流、榜单 | 结果状态、输入表单、时间线 | 查询、刷新、订阅提醒 | `form`、`notice`、`timeline`、`action_button` |
 | 资源下载 (download) | 软件安装包、电子书、壁纸 | 版本、适用平台、多网盘通道 | 复制口令、直达网盘、下载 | `media_hero`、`resource_card`、`action_button` |
-| 自由编排 (general) | 突发热点、任意自定义落地页 | 自定义图文、多列网格、卡片 | 任意 13 种组合动作 | `image`、`text`、`grid`、`container`、`action_button` |
+| 自由编排 (general) | 突发热点、任意自定义落地页 | 自定义图文、多列网格、卡片 | 任意 21 种组合动作 | `image`、`text`、`grid`、`container`、`action_button` |
 
-所有场景均由通用的原子积木树组装而成，无任何私有路由。全系统统一遵循：来源追踪、有效期与过期自动兜底、内容审核状态、动态分享配置、登录门禁拦截以及转化事件埋点。
+所有场景均由通用的原子积木树组装而成，无任何私有路由。全系统统一遵循：来源参数显式配置、有效期与过期自动兜底、内容审核状态、动态分享配置和登录门禁拦截；动作可携带 `track` 元数据，当前仅由前端日志记录。
 
 ### 8.1 游戏业务页面族
 
@@ -779,10 +756,10 @@ export const dispatchAction = async (action?: BlockAction) => {
 | 页面 | `page_id` 示例 | 核心数据 | 主要块和动作 |
 |---|---|---|---|
 | 游戏主页 | `game_home` | 推荐游戏、热门礼包、开服列表、活动 Banner | `carousel`、`game_card`、`redeem_code_card`、`server_status` |
-| 游戏列表 | `game_list` | 分类、平台、标签、分页游戏列表 | `tabs`、`filter_bar`、`list`、`game_card` |
-| 游戏详情 | `game_detail` | 图标、截图、简介、版本、厂商、评分、下载/跳转信息 | `game_header`、`gallery`、`rich_text`、`action_button` |
+| 游戏列表 | `game_list` | 分类、平台、标签、分页游戏列表 | `tabs`、`collection_nav`、`list`、`game_card` |
+| 游戏详情 | `game_detail` | 图标、截图、简介、版本、厂商、评分、下载/跳转信息 | `game_header`、`item_grid`、`rich_text`、`action_button` |
 | 兑换码领取 | `game_redeem` | 礼包库存、领取条件、有效期、用户领取状态 | `redeem_code_card`、`form`、`countdown`、`request_data` |
-| 攻略/资讯 | `game_guide` | 攻略正文、目录、关联游戏、更新时间 | `rich_text`、`anchor_nav`、`game_card`、`share` |
+| 攻略/资讯 | `game_guide` | 攻略正文、目录、关联游戏、更新时间 | `rich_text`、`collection_nav`、`game_card`、`share` |
 | 开服/活动 | `game_event` | 开始时间、服务器、预约状态、活动规则 | `timeline`、`server_status`、`countdown`、`subscribe_message` |
 
 页面跳转仍使用万能容器：
@@ -801,15 +778,31 @@ export const dispatchAction = async (action?: BlockAction) => {
 
 兑换码领取必须走受保护的 `request_data` 端点，由服务端在同一事务中完成资格校验、库存扣减、领取记录和兑换码分配。请求必须携带幂等键，重复点击返回同一次领取结果；领取成功后才把兑换码返回当前页面状态，再由 `copy_text` 复制。客户端显示的库存只用于展示，不能作为扣减依据。
 
-### 8.2 分支配置规则
+### 8.2 AI 破甲资讯与会员页面族
+
+AI 破甲不是前端写死页面，而是三套可复用模板和通用资讯积木的组合：
+
+| 页面 | 模板 | 核心块 | 数据来源 |
+|---|---|---|---|
+| 资讯门户 | `tpl_ai_breakthrough_portal` | `collection_nav`、`content_feed`、`action_button` | SDUI 信封中的 `data.content.categories/items` |
+| 文章详情 | `tpl_ai_breakthrough_article` | `content_detail`、`discussion_thread` | `/api/v1/articles/{id}` 与两级评论接口 |
+| 会员中心 | `tpl_ai_breakthrough_membership` | `offer_list`、`action_button` | SDUI 信封中的 `data.content.offers` 与会员接口 |
+
+- 普通文章 `required_level=0` 且 `is_paid=false`，直接返回 Markdown 正文；会员文章按“当前有效等级大于等于最低等级”判断，未满足时只返回试读和解锁提示。
+- 单篇付费文章设置 `is_paid=true`、`pay_sku`、`price_fen` 和正文开头的 `free_markdown`；无论会员等级都必须存在当前用户的 `ArticlePurchase` 才返回全文。
+- 会员套餐由后台配置等级、名称、SKU、金额、有效期和介绍；同等级续费顺延，升级时将剩余天数按旧等级/新等级比例折算后叠加。
+- 评论是否开放由文章的 `allow_comments` 控制；一级评论直接分页读取，二级回复只显示数量并在点击后加载，显示 `@被回复用户`。文字同步调用微信审核，图片必须来自当前租户 COS CDN 并走微信异步审核，只有 `approved` 内容对外可见。
+- 支付动作只提交 SKU，金额由后端商品表读取。当前代码链路和回调处理已实现，但真实微信支付必须配置商户参数后才能完成环境验收。
+
+### 8.3 分支配置规则
 
 - `business_type` 决定允许的数据源和业务块集合；
 - `intent` 决定首屏排序和主动作，例如 `watch`、`query`、`download`、`redeem`、`buy`、`book`、`join`；
-- `campaign_id` 用于灰度、渠道归因和一键回滚；
+- `campaign_id` 作为页面元数据供业务归因使用；灰度分流和回滚分别由后续运营策略与版本工具负责，不能仅凭该字段触发；
 - `expires_at` 到期后自动切换到安全兜底页，不能继续展示过期资源；
 - 不同分支共用 `stack/list/form/action` 等基础块，只有领域数据和少数业务块不同。
 
-### 8.3 协议必须覆盖的非正常分支
+### 8.4 协议必须覆盖的非正常分支
 
 协议除了“成功展示”还必须定义：无结果、数据过期、部分字段缺失、登录失败、权限不足、接口超时、客户端能力不足、内容被下架和网络离线。每种情况都要有 `empty/error/fallback` 块或页面级兜底，且不能把后端错误文本直接当作用户文案。
 
@@ -817,26 +810,34 @@ export const dispatchAction = async (action?: BlockAction) => {
 
 实施遵循“先协议与安全边界，再渲染闭环，最后模板和 AI 自动化”的顺序。每个阶段必须有可运行的增量产物，不能先做后台编辑器再倒推协议。
 
+### 9.0 当前实现状态（2026-09-09）
+
+- **已实现**：SDUI 协议 1.1 / Schema 3、48 种注册积木类型、21 种注册动作、受控绑定/条件/状态/事件/动作链、页面能力协商、Layout IR、截图和降级。
+- **已实现**：多租户页面与模板 CRUD、草稿 CAS、发布确认、版本历史、回滚、当前主页切换、COS 预签名上传、HTTP MCP 与 Stdio MCP。
+- **已实现**：AI 破甲资讯门户、文章详情、会员中心、会员等级、会员/单篇文章权限、评论两级懒加载及微信内容审核接口；支付真实商户参数仍按部署环境配置。
+- **已实现**：MCP 工具 Schema、`requiredScope`、结构化错误、`sdui://api`、`sdui://rules` 和契约测试；真实微信支付因未配置商户参数不能在当前环境执行。
+- **待后续运营增强**：灰度策略、指标监控、告警、内容运营后台的批量工作流，以及真实商户支付联调。这些不属于当前 SDUI MCP 工具边界。
+
 ### 9.1 阶段与交付物
 
 | 阶段 | 目标 | 主要工作 | 必须交付 |
 |---|---|---|---|
 | 0. 基线冻结 | 明确边界和兼容策略 | 冻结协议 v1、块/动作/绑定枚举；确认旧 `/drama/home` 兼容期；定义错误码、能力矩阵和安全白名单 | JSON Schema、协议示例、兼容策略、评审记录 |
 | 1. 协议内核 | 后端能安全解析和装配页面 | 实现协议校验、绑定、条件求值、状态模型、动作 Schema、版本协商和 IR；未知字段可忽略、未知块可降级 | Go 协议包、契约测试、IR 示例、错误码表 |
-| 2. 数据与发布 | 页面可持久化、发布和回滚 | 建立租户、模板、页面草稿、页面版本、端点注册、发布记录、会话模型；实现缓存、灰度、撤回、回滚和审计 | 数据库迁移、页面 API、发布 API、回滚演示 |
+| 2. 数据与发布 | 页面可持久化、发布和回滚 | 已实现租户、模板、页面草稿、页面版本、发布记录、会话模型、缓存和审计；灰度分流、批量撤回和 SDUI 页面独立下架接口仍属于后续运营增强，当前支持受控发布与回滚 | 数据库迁移、页面 API、发布 API、回滚演示 |
 | 3. 小程序运行时 | 客户端能渲染通用页面 | 注册动态页面容器；实现块注册表、绑定/条件渲染、加载/空/错态、动作分发、分享、能力降级和登录刷新 | `pages/dynamic/index`、运行时组件、真机包 |
-| 4. 后端截图 | 生成可信视觉基线 | 使用同一 IR 实现规范化截图；支持设备、主题、语言、Fixture、登录态和异常状态；输出 PNG、结构树和哈希 | 截图 API、视觉报告、固定 Fixture 集 |
-| 5. 模板包 | 快速搭建常见行业页面 | 实现 `drama`、`game`、`query`、`download` 模板；覆盖游戏主页、游戏详情、兑换码领取等页面族；支持模板生成后逐块自定义 | 模板注册表、模板版本、示例页面、迁移规则 |
-| 6. MCP/AI | AI 可搭建和审查页面 | 实现模板查询、创建草稿、Patch、校验、预览、截图和发布工具；接入权限、审计和人工确认 | MCP 工具清单、机器错误码、AI 搭建样例 |
+| 4. 后端截图 | 生成可信视觉基线 | 使用同一 IR 实现规范化截图；支持受控设备、主题、语言标识、固定状态 Fixture 和异常状态；登录态/外部实体 Fixture 尚未开放 | 截图 API、视觉报告、固定 Fixture 集 |
+| 5. 模板包 | 快速搭建常见行业页面 | 已实现 `drama`、`game`、`query`、`download`、`ai_breakthrough`、`ai_article` 模板；模板生成后可逐块自定义 | 模板注册表、模板版本、示例页面、迁移规则 |
+| 6. MCP/AI | AI 可搭建和审查页面 | 已实现模板查询、模板 CRUD、创建草稿、Patch、校验、预览、截图、发布、回滚和主页切换工具；接入权限、审计和人工确认 | MCP 工具清单、机器错误码、AI 搭建样例 |
 | 7. 运营与上线 | 支持热词快速响应 | 完成多租户后台、灰度发布、指标埋点、过期兜底、内容审核和告警；建立上线手册和回滚演练 | 运行手册、监控面板、应急预案、上线检查表 |
 
 ### 9.2 依赖与门禁
 
-- 阶段 0 未通过，禁止开始模板和后台开发；
-- 阶段 1 未通过，禁止让前端直接消费生产页面 JSON；
-- 阶段 2 未通过，禁止开放生产发布或让 AI 直接改线上版本；
-- 阶段 3、4 的协议 IR、块边界和状态必须一致，未通过视觉对照不得进入模板批量生成；
-- 阶段 6 先开放 `read` 和 `write:draft`，`release` 权限必须最后开放并要求人工确认；
+- 阶段 0 未通过，禁止开始模板和后台开发；（当前协议基线已冻结）
+- 阶段 1 未通过，禁止让前端直接消费生产页面 JSON；（当前 Go/前端契约测试已通过）
+- 阶段 2 未通过，禁止开放生产发布或让 AI 直接改线上版本；（当前仍由 `release` + `confirmed=true` 门禁控制）
+- 阶段 3、4 的协议字段、块边界和状态必须一致；当前已具备 Layout IR 结构对照与固定状态截图，真实微信开发者工具差异仍需按设备和版本留存验收证据后再进入模板批量生成；
+- 阶段 6 先开放 `read` 和 `write:draft`，`release` 权限必须最后开放并要求人工确认；（当前实现已按此策略执行）
 - 每阶段结束都保留可回滚版本、测试数据和变更记录。
 
 ### 9.3 最小首发范围
@@ -845,7 +846,7 @@ export const dispatchAction = async (action?: BlockAction) => {
 
 - 单租户到多租户的数据模型已预留，先启用一个小程序；
 - `DynamicPage`、`BlockItem`、`BlockAction`、绑定、条件、请求和分享协议稳定；
-- `drama`、`game` 两个模板包可用；
+- `drama`、`game`、`query`、`download`、`ai_breakthrough`、`ai_article` 模板包可用；
 - 游戏主页、游戏详情、兑换码领取和短剧详情四个页面可从模板生成并逐块修改；
 - access/refresh 登录态、后端截图、MCP 草稿编排和人工确认发布链路打通；
 - `/api/v1/drama/home` 保留兼容，不阻塞现有客户端迁移。
@@ -871,7 +872,7 @@ export const dispatchAction = async (action?: BlockAction) => {
 
 ### 10.3 自定义请求与兑换码
 
-- 请求动作支持登记端点及白名单 HTTPS/同源相对地址；支持方法、路径参数、query、body、参数绑定、响应映射和成功/失败动作链；
+- 请求动作支持当前已登记的 `game.redeem`、`query.score` 端点及同源相对地址；支持方法、路径参数、query、body、参数绑定、响应映射和成功/失败动作链；新增业务端点必须先注册服务端处理器与参数校验。
 - 任意内网地址、任意脚本、任意请求头、任意凭证和未登记域名均被拒绝；
 - 请求参数和响应按 Schema 校验，超时、限流、非 2xx、业务错误均进入协议定义的错误态；
 - 兑换码领取具备资格校验、库存扣减、领取记录和幂等键；并发领取不能超发，重复请求返回同一领取结果；真实兑换码只在成功且授权后返回。
@@ -889,24 +890,24 @@ export const dispatchAction = async (action?: BlockAction) => {
 
 - 每个页面可独立配置分享给朋友和朋友圈；朋友分享使用 `path`，朋友圈分享使用 `query`，字段符合微信客户端能力；
 - 分享参数支持受控实体绑定和来源归因，不能包含敏感信息；目标页面打开后重新读取目标页面分享配置；
-- 复制、领取、跳转、报名等关键动作有统一事件 ID、租户、campaign、页面 revision 和结果状态；
+- 复制、领取、跳转、报名等关键动作可配置 `track.event_id`、租户、campaign、页面 revision 和结果状态；当前仅记录到前端日志，持久化分析和报表属于后续运营增强；
 - 页面过期或活动下架后，旧分享链接进入安全兜底，不展示失效资源。
 
 ### 10.6 MCP、截图与视觉一致性
 
 - AI 可以通过 MCP 完成“模板选择 -> 创建草稿 -> 修改 -> 校验 -> 预览 -> 截图 -> 再修改”的闭环；
 - MCP 默认只能写草稿，发布需要明确权限和人工确认；工具调用有租户、操作者、请求 ID 和 revision 审计；
-- 截图和小程序都消费同一份 IR；相同 Fixture 下，块顺序、可见性、文本、边界框、按钮位置和状态一致；
+- 截图由后端消费 Layout IR，小程序运行时消费同一 revision 的 `page.blocks`；两者通过协议字段、块顺序、可见性、文本和状态结构对照，不把 IR 坐标下发给小程序；
 - 截图结果包含 PNG、哈希、结构树、渲染器版本、设备、主题、语言、Fixture 和原生能力替身清单；
 - AI 视觉审查至少覆盖正常态、加载态、空态、错误态、登录拦截、过期态、库存不足和网络离线；
-- 发现文字溢出、遮挡、点击区域不稳定、底栏覆盖或协议 revision 不一致时，发布自动阻断。
+- 发现文字溢出、遮挡、点击区域不稳定、底栏覆盖或协议 revision 不一致时，应停止人工发布确认；当前系统不会由截图服务自动阻断 `sdui.page.publish`。
 
 ### 10.7 性能与可靠性
 
 - 页面协议和已发布 IR 支持 ETag/版本缓存，发布后缓存可主动失效；
 - 正常网络下首屏协议请求、解析和首屏渲染耗时有监控，P95 目标由部署规模确定并写入环境配置；
 - 单个块接口失败不影响其他块呈现；页面级失败有兜底页；
-- 发布、撤回和回滚为原子操作，回滚后新请求只能读取目标版本；
+- 发布和回滚为原子操作，回滚后新请求只能读取目标版本；文章归档/下架走 AI 破甲管理接口，SDUI 页面独立下架接口属于后续运营增强；
 - Go 项目必须通过 `go build ./...`；服务层相关修改必须通过对应测试；小程序必须完成构建和至少一轮真机/模拟器测试。
 
 ### 10.8 验收证据
@@ -930,7 +931,7 @@ export const dispatchAction = async (action?: BlockAction) => {
 3. **第三阶段：管理后台一脑多控工作台**
    - 增加多小程序快速切换下拉框；
    - 支持独立页面的积木拼装、样式微调、登录要求勾选与点击动作配置；
-   - 支持受控发布、灰度、撤回和回滚；所有版本仍须遵守平台审核与内容规范。
+   - 规划支持受控发布、灰度、归档/下架和回滚；当前正式发布与回滚已实现，灰度分流仍属运营增强，所有版本仍须遵守平台审核与内容规范。
 
 4. **第四阶段：指数词业务模板**
    - 先实现 `drama`、`game`、`query`、`download` 四个分支；

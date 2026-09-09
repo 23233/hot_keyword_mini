@@ -9,7 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/23233/ggg/logger"
 	"github.com/23233/ggg/ut"
 	golangjwt "github.com/golang-jwt/jwt/v4"
 	"github.com/iris-contrib/middleware/jwt"
@@ -21,7 +20,7 @@ var MySecret = func() []byte {
 	if s := os.Getenv("JWT_SECRET"); s != "" {
 		return []byte(s)
 	}
-	logger.JM.Warn("【安全提示】环境变量 JWT_SECRET 未配置，已生成运行时一次性随机安全密钥")
+	fmt.Fprintln(os.Stderr, "【安全提示】环境变量 JWT_SECRET 未配置，已生成运行时一次性随机安全密钥")
 	return []byte("sdui_user_jwt_" + ut.RandomStr(32))
 }()
 

@@ -1,8 +1,8 @@
 // minifront/src/pages/dynamic/index.tsx
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import Taro, { useShareAppMessage, useShareTimeline, usePullDownRefresh, useReachBottom } from '@tarojs/taro'
-import { PageResponseEnvelope, BlockItem } from '../../types/sdui'
+import { PageResponseEnvelope } from '../../types/sdui'
 import { request } from '../../utils/request'
 import { dispatchAction } from '../../utils/action'
 import { ensureSession } from '../../utils/auth'
@@ -168,82 +168,15 @@ export default function DynamicPageIndex() {
   const themeClass = `dynamic-page-container theme-${envelope?.page?.theme || 'dark_glass'}`
   const pageTitle = envelope?.page?.title || '精选推荐'
 
-  // 计算最终渲染的积木列表：优先消费服务端下发的同构 Layout IR 节点，确保与服务端截图 100% 像素级一致
-  const effectiveBlocks = useMemo<BlockItem[]>(() => {
-    const rawBlocks = envelope?.page?.blocks || []
-    if (envelope?.layout_ir?.nodes && envelope.layout_ir.nodes.length > 0) {
-      const blockMap = new Map<string, BlockItem>()
-      const registerBlock = (b: BlockItem) => {
-        if (!b || !b.id) return
-        blockMap.set(b.id, b)
-        const children = (b.props?.children || b.props?.items || b.props?.blocks) as BlockItem[]
-        if (Array.isArray(children)) {
-          children.forEach(registerBlock)
-        }
-        if (Array.isArray(b.props?.tabs)) {
-          b.props.tabs.forEach((tab: any) => {
-            const tabChildren = (tab.blocks || tab.children || (tab.child ? [tab.child] : [])) as BlockItem[]
-            if (Array.isArray(tabChildren)) {
-              tabChildren.forEach(registerBlock)
-            }
-          })
-        }
-      }
-      rawBlocks.forEach(registerBlock)
-
-      const nodeToBlock = (node: any, isChild = false): BlockItem => {
-        const orig = blockMap.get(node.id) || blockMap.get(node.id.replace(/_\d+$/, ''))
-        const childrenList = node.children?.length ? node.children.map((c: any) => nodeToBlock(c, true)) : undefined
-        const mergedProps: Record<string, any> = {
-          ...(node.props || {}),
-          // 保留原始绑定表达式，避免初始 IR 的已解析值覆盖 $state/$result 后续响应式更新。
-          ...(orig?.props || {}),
-          _layout_height: node.bounding_box?.height
-        }
-        if (node.type === 'tabs') {
-          // 关键防护：保留 tabs 结构配置，防止被扁平 children 替换导致标签丢失
-          if (orig?.props?.tabs) {
-            mergedProps.tabs = orig.props.tabs
-          }
-        } else if (childrenList && childrenList.length > 0) {
-          mergedProps.children = childrenList
-        }
-
-        return {
-          id: node.id,
-          type: node.type,
-          props: mergedProps,
-          visible_when: node.visible_when !== undefined ? node.visible_when : (orig?.visible_when !== undefined ? orig.visible_when : (node.visible === false ? false : undefined)),
-          repeat: node.repeat,
-          action: node.action || orig?.action,
-          events: node.events || orig?.events,
-          loading: node.loading || orig?.loading,
-          empty: node.empty || orig?.empty,
-          error: node.error || orig?.error,
-          fallback: node.fallback || orig?.fallback,
-          style: {
-            ...(orig?.style || {}),
-            margin_y: isChild
-              ? orig?.style?.margin_y
-              : (node.margin_y ? `${node.margin_y}px` : (orig?.style?.margin_y || '24rpx')),
-            border_radius: node.border_radius ? `${node.border_radius}px` : orig?.style?.border_radius,
-            padding: node.padding ? `${node.padding}px` : orig?.style?.padding,
-            glass_blur: node.glass_blur !== undefined ? node.glass_blur : orig?.style?.glass_blur,
-            accent_color: node.accent_color || orig?.style?.accent_color
-          }
-        }
-      }
-      return envelope.layout_ir.nodes.map((n: any) => nodeToBlock(n, false))
-    }
-    return rawBlocks
-  }, [envelope])
+  // page.blocks 是小程序唯一的运行时渲染输入；layout_ir 仅供服务端验收和截图比对。
+  const effectiveBlocks = envelope?.page?.blocks || []
 
   return (
     <View className={themeClass}>
       {/* 苹果原生毛玻璃胶囊对齐导航栏 */}
       <AppleNavbar
         title={pageTitle}
-        subtitle={envelope?.page?.business_type ? `模式: ${envelope.page.business_type}` : undefined}
+        theme={envelope?.page?.theme || 'dark_glass'}
       />
 
       {/* 页面内容滚动区域 */}
@@ -281,7 +214,7 @@ export default function DynamicPageIndex() {
           </View>
         )}
 
-        {/* 4. 积木列表渲染 (优先消费同构 Layout IR 节点，实现两端 100% 一致) */}
+        {/* 4. 积木列表渲染 */}
         {!loading && !authRequired && !errorMsg && effectiveBlocks.length > 0 && (
           <View className="blocks-container">
             {effectiveBlocks.map((block) => (
@@ -291,6 +224,7 @@ export default function DynamicPageIndex() {
                 onAction={handleBlockAction}
                 context={{
                   entity: envelope?.data,
+                  data: envelope?.data,
                   page: envelope?.page,
                   query: routerParams,
                   state: pageState,

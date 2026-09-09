@@ -65,7 +65,7 @@ export async function request<T>(options: RequestOptions): Promise<T> {
   const requestHeaders: Record<string, string> = {
     'content-type': 'application/json',
     'X-SDUI-Version': '1.1',
-    'X-Client-Capabilities': 'custom,custom_block,image,text,rich_text,container,stack,grid,tabs,carousel,list,spacer,empty,skeleton,media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,score_panel,coupon_card,countdown,result_table,contact_card,map_card,game_header,redeem_code_card,server_status,product_card,download_card,event_card,poll,feed_list,clipboard,video,channels,request_payment,subscribe_message',
+    'X-Client-Capabilities': 'custom,custom_block,image,text,rich_text,container,stack,grid,tabs,carousel,list,spacer,empty,skeleton,media_hero,resource_card,action_button,notice,game_card,form,episode_list,item_grid,timeline,score_panel,coupon_card,countdown,result_table,contact_card,map_card,game_header,redeem_code_card,server_status,product_card,download_card,event_card,poll,feed_list,collection_nav,content_feed,content_detail,offer_list,discussion_thread,category_nav,article_feed,article_detail,membership_plan_list,comment_thread,clipboard,video,channels,request_payment,subscribe_message',
     ...header
   }
 

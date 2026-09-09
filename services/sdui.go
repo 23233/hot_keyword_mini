@@ -38,7 +38,7 @@ func (s *SDUIService) GetRawPage(appID, pageID string) (*models.DynamicPage, err
 	err := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).First(&page).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("页面不存在: app_id=%s, page_id=%s", appID, pageID)
+			return nil, fmt.Errorf("页面不存在: app_id=%s, page_id=%s: %w", appID, pageID, err)
 		}
 		return nil, err
 	}
@@ -49,11 +49,16 @@ func (s *SDUIService) GetRawPage(appID, pageID string) (*models.DynamicPage, err
 // GetPublishedDynamicPageEnvelope 获取面向普通微信客户端的已发布动态页面信封 (严格隔离草稿、下架及未登录数据)
 // GetPublishedDynamicPageEnvelope 获取面向微信小程序正式发布的动态页面统一响应信封
 func (s *SDUIService) GetPublishedDynamicPageEnvelope(appID, pageID string, queryParams map[string]string, isAuthenticated bool) (*models.PageResponseEnvelope, error) {
-	return s.GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pageID, queryParams, isAuthenticated, "")
+	return s.GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(appID, pageID, queryParams, isAuthenticated, "", 0)
 }
 
 // GetPublishedDynamicPageEnvelopeWithCapabilities 获取面向微信小程序发布的动态页面信封 (集成客户端能力协商与块级降级)
 func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pageID string, queryParams map[string]string, isAuthenticated bool, clientCapabilities string) (*models.PageResponseEnvelope, error) {
+	return s.GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(appID, pageID, queryParams, isAuthenticated, clientCapabilities, 0)
+}
+
+// GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer 按访问者会员权益装配 AI 破甲信封。
+func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(appID, pageID string, queryParams map[string]string, isAuthenticated bool, clientCapabilities string, userID int64) (*models.PageResponseEnvelope, error) {
 	if appID == "" {
 		return nil, errors.New("AppID 不能为空")
 	}
@@ -111,6 +116,10 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pag
 	if err != nil {
 		return nil, err
 	}
+	// AI 破甲首页和文章导航只下发摘要与权限结果，正文仍由文章详情接口按会员等级裁剪。
+	s.attachAIBreakthroughData(envelope, appID, isAuthenticated, userID)
+	// 资讯块高度依赖动态文章和套餐数据，装配后同步刷新 IR。
+	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 
 	// 5. 客户端能力协商与块级受控降级: 若客户端申报了 X-Client-Capabilities，执行过滤与 Fallback 替换
 	if strings.TrimSpace(clientCapabilities) != "" && len(envelope.Page.Blocks) > 0 {
@@ -131,6 +140,59 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilities(appID, pag
 	return envelope, nil
 }
 
+// attachAIBreakthroughData 将资讯导航、会员方案和访问者权益摘要附加到统一信封。
+func (s *SDUIService) attachAIBreakthroughData(envelope *models.PageResponseEnvelope, appID string, authenticated bool, userID int64) {
+	if envelope == nil || db.Mysql == nil || (envelope.Page.BusinessType != "ai_breakthrough" && envelope.Page.BusinessType != "ai_article") {
+		return
+	}
+	level := 0
+	var membership *models.UserMembership
+	if userID > 0 {
+		membership, _ = NewMembershipService().GetMembership(appID, userID)
+		if membership != nil && membership.ExpiresAt.After(time.Now()) {
+			level = membership.Level
+		}
+	}
+	viewer := map[string]interface{}{"logged_in": authenticated, "membership_level": level}
+	if membership != nil && membership.ExpiresAt.After(time.Now()) {
+		viewer["membership_expires_at"] = membership.ExpiresAt
+	}
+	var categories []models.ArticleCategory
+	_ = db.Mysql.Where("app_id = ? AND status = ?", appID, "active").Order("sort asc, id asc").Find(&categories).Error
+	categorySlugs := make(map[int64]string, len(categories))
+	categoryNames := make(map[int64]string, len(categories))
+	for _, category := range categories {
+		categorySlugs[category.ID] = category.Slug
+		categoryNames[category.ID] = category.Name
+	}
+	var articles []models.Article
+	_ = db.Mysql.Where("app_id = ? AND status = ?", appID, "published").Order("published_at desc, id desc").Limit(12).Find(&articles).Error
+	items := make([]map[string]interface{}, 0, len(articles))
+	articleService := NewArticleService()
+	for _, article := range articles {
+		categorySlug := categorySlugs[article.CategoryID]
+		categoryName := categoryNames[article.CategoryID]
+		purchased := userID > 0 && articleService.hasPurchase(appID, userID, article.ID)
+		summary := toArticleSummaryForViewer(article, level, purchased)
+		item := map[string]interface{}{"id": article.ID, "title": article.Title, "summary": article.Summary, "cover_url": article.CoverURL, "category_id": article.CategoryID, "category_slug": categorySlug, "category_name": categoryName, "featured": categorySlug == "featured" && !article.IsPaid && article.RequiredLevel == 0, "published_at": article.PublishedAt, "required_level": article.RequiredLevel, "is_paid": article.IsPaid, "pay_sku": article.PaySKU, "price_fen": article.PriceFen, "allow_comments": article.AllowComments, "can_read": summary.CanRead, "display_meta": summary.DisplayMeta, "access_badge": summary.AccessBadge, "key": article.ID, "image": article.CoverURL, "meta": summary.DisplayMeta, "badge": summary.AccessBadge}
+		items = append(items, item)
+	}
+	var plans []models.MembershipLevel
+	_ = db.Mysql.Where("app_id = ? AND status = ?", appID, "active").Order("level asc").Find(&plans).Error
+	offers := make([]map[string]interface{}, 0, len(plans))
+	for _, plan := range plans {
+		offers = append(offers, map[string]interface{}{
+			"key": plan.SKU, "title": plan.Name, "summary": plan.Description,
+			"caption": fmt.Sprintf("有效期 %d 天", plan.DurationDays), "price": fmt.Sprintf("¥%.2f", float64(plan.PriceFen)/100), "purchase_value": plan.SKU,
+		})
+	}
+	envelope.Viewer = viewer
+	content := map[string]interface{}{"categories": categories, "items": items, "offers": offers, "articles": items, "membership_plans": plans}
+	envelope.Data["content"] = content
+	// 兼容旧页面协议；新模板只使用通用 content 数据键。
+	envelope.Data["ai_breakthrough"] = content
+}
+
 // GetDynamicPageEnvelope 获取组装后的 SDUI 统一响应信封 (供管理后台线上版本预览使用)
 func (s *SDUIService) GetDynamicPageEnvelope(appID, pageID string, queryParams map[string]string) (*models.PageResponseEnvelope, error) {
 	rawPage, err := s.GetRawPage(appID, pageID)
@@ -138,7 +200,13 @@ func (s *SDUIService) GetDynamicPageEnvelope(appID, pageID string, queryParams m
 		return nil, err
 	}
 
-	return s.AssembleEnvelope(rawPage, queryParams, "admin_preview")
+	envelope, err := s.AssembleEnvelope(rawPage, queryParams, "admin_preview")
+	if err != nil {
+		return nil, err
+	}
+	s.attachAIBreakthroughData(envelope, appID, false, 0)
+	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
+	return envelope, nil
 }
 
 // GetDynamicDraftEnvelope 获取组装后的草稿 SDUI 统一响应信封 (供管理后台草稿箱和 AI MCP 编排即时预览使用)
@@ -167,7 +235,13 @@ func (s *SDUIService) GetDynamicDraftEnvelope(appID, pageID string, queryParams 
 		ExpiresAt:    draft.ExpiresAt,
 	}
 
-	return s.AssembleEnvelope(tempPage, queryParams, "draft_preview")
+	envelope, err := s.AssembleEnvelope(tempPage, queryParams, "draft_preview")
+	if err != nil {
+		return nil, err
+	}
+	s.attachAIBreakthroughData(envelope, draft.AppID, false, 0)
+	s.rebuildEnvelopeLayoutIR(tempPage, envelope)
+	return envelope, nil
 }
 
 // AssembleEnvelope 统一组装响应信封 (共享 DTO 转换、Blocks 反序列化与 ETag 计算)
@@ -247,7 +321,7 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 	return envelope, nil
 }
 
-// rebuildEnvelopeLayoutIR 使用信封当前的积木树重建布局 IR，确保协议、截图与小程序渲染消费同一份内容。
+// rebuildEnvelopeLayoutIR 使用信封当前的积木树重建布局 IR，确保截图与结构对照基于同一份协议内容；小程序运行时仍消费 page.blocks。
 func (s *SDUIService) rebuildEnvelopeLayoutIR(rawPage *models.DynamicPage, envelope *models.PageResponseEnvelope) {
 	if rawPage == nil || envelope == nil {
 		return
@@ -786,6 +860,9 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 	err := db.Mysql.Where("app_id = ? AND page_id = ?", draft.AppID, draft.PageID).First(&existing).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if expectedRevision > 0 {
+				return errors.New("草稿不存在，无法按指定 revision 保存")
+			}
 			draft.Revision = 1
 			draft.Status = "draft"
 			draft.CreatedAt = time.Now()
@@ -805,7 +882,11 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 	draft.Status = "draft"
 	draft.UpdatedAt = time.Now()
 
-	return db.Mysql.Model(&existing).Updates(map[string]interface{}{
+	updateQuery := db.Mysql.Model(&existing)
+	if expectedRevision > 0 {
+		updateQuery = updateQuery.Where("id = ? AND revision = ?", existing.ID, expectedRevision)
+	}
+	result := updateQuery.Updates(map[string]interface{}{
 		"revision":      newRevision,
 		"status":        "draft",
 		"title":         draft.Title,
@@ -822,11 +903,23 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 		"expires_at":    draft.ExpiresAt,
 		"updated_by":    operator,
 		"updated_at":    time.Now(),
-	}).Error
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if expectedRevision > 0 && result.RowsAffected != 1 {
+		return errors.New("草稿并发保存冲突: revision 已变化，请重新读取")
+	}
+	return nil
 }
 
 // PublishDraft 发布指定草稿至线上 dynamic_pages 并沉淀不可篡改的 Revision 快照
 func (s *SDUIService) PublishDraft(appID, pageID, operator, remark string) (*models.DynamicPage, error) {
+	return s.PublishDraftWithRevision(appID, pageID, operator, remark, 0)
+}
+
+// PublishDraftWithRevision 发布指定 revision 的草稿，防止人工审查后被覆盖。
+func (s *SDUIService) PublishDraftWithRevision(appID, pageID, operator, remark string, expectedRevision int) (*models.DynamicPage, error) {
 	if appID == "" || pageID == "" {
 		return nil, errors.New("AppID 与 PageID 不能为空")
 	}
@@ -841,6 +934,9 @@ func (s *SDUIService) PublishDraft(appID, pageID, operator, remark string) (*mod
 	draft, err := s.GetRawDraft(appID, pageID)
 	if err != nil {
 		return nil, fmt.Errorf("获取草稿失败: %w", err)
+	}
+	if expectedRevision > 0 && draft.Revision != expectedRevision {
+		return nil, fmt.Errorf("发布版本冲突: 期望草稿 v%d，当前为 v%d，请重新审查", expectedRevision, draft.Revision)
 	}
 
 	// 转化为 DynamicPage 并调用 SavePageWithAudit 沉淀真实操作人与备注

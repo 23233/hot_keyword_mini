@@ -129,6 +129,9 @@ func (s *PaymentService) CreateJSAPIOrder(ctx context.Context, appID string, use
 	if config.Cfg == nil {
 		return nil, nil, errors.New("服务公共域名未配置")
 	}
+	if app.PaymentMchID == "" || app.PaymentMchSerialNo == "" || app.PaymentAPIv3Key == "" || app.PaymentPrivateKey == "" {
+		return nil, nil, errors.New("当前小程序未完整配置微信支付商户参数")
+	}
 	if _, err := config.Cfg.PaymentNotifyURL(app.AppID); err != nil {
 		return nil, nil, err
 	}
@@ -260,7 +263,8 @@ func (s *PaymentService) ApplyNotify(ctx context.Context, app *models.MiniApp, r
 		return errors.New("支付通知缺少微信交易单号")
 	}
 	if order.Status == models.PaymentOrderPaid {
-		return nil
+		// 订单可能在上一次通知中已落库，但权益发放失败；重复通知必须继续补发权益。
+		return NewMembershipService().ApplyPaidOrder(&order)
 	}
 	updates := map[string]interface{}{"status": models.PaymentOrderPaid, "updated_at": time.Now()}
 	if transaction.TransactionId != nil {
@@ -278,6 +282,9 @@ func (s *PaymentService) ApplyNotify(ctx context.Context, app *models.MiniApp, r
 	if result.RowsAffected == 0 {
 		return errors.New("支付订单状态更新失败")
 	}
+	if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
+		return fmt.Errorf("更新会员权益失败: %w", err)
+	}
 	return nil
 }
 
@@ -294,7 +301,13 @@ func (s *PaymentService) GetOrderStatus(ctx context.Context, appID string, userI
 	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND out_trade_no = ?", appID, userID, outTradeNo).First(&order).Error; err != nil {
 		return nil, errors.New("支付订单不存在")
 	}
-	if order.Status == models.PaymentOrderPaid || order.Status == models.PaymentOrderClosed || order.Status == models.PaymentOrderFailed {
+	if order.Status == models.PaymentOrderPaid {
+		if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
+			return nil, err
+		}
+		return &order, nil
+	}
+	if order.Status == models.PaymentOrderClosed || order.Status == models.PaymentOrderFailed {
 		return &order, nil
 	}
 	client, err := s.clientForApp(ctx, &app)
@@ -337,6 +350,11 @@ func (s *PaymentService) GetOrderStatus(ctx context.Context, appID string, userI
 		return nil, err
 	}
 	_ = db.Mysql.First(&order, order.ID).Error
+	if order.Status == models.PaymentOrderPaid {
+		if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
+			return nil, err
+		}
+	}
 	return &order, nil
 }
 

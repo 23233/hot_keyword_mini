@@ -4,6 +4,7 @@ import { View, Image, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { BlockItem, BlockAction } from '../../types/sdui'
 import { resolveRemoteUrl } from '../../config/env'
+import { blockClassName } from './style'
 
 interface ImageBlockProps {
   block: BlockItem
@@ -41,7 +42,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onAction }) => {
 
   // 计算宽高比样式
   const containerStyle: React.CSSProperties = {
-    borderRadius: block.style?.border_radius || props.border_radius || '16rpx',
+    ...(block.style?.border_radius || props.border_radius ? { borderRadius: block.style?.border_radius || props.border_radius } : {}),
     overflow: 'hidden',
     position: 'relative'
   }
@@ -79,7 +80,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onAction }) => {
   const currentSrc = !hasError && imageUrl ? imageUrl : (!fallbackError ? fallbackUrl : '')
 
   return (
-    <View className="sdui-image-block" style={containerStyle} onClick={handleClick}>
+    <View className={blockClassName('sdui-image-block', block.style)} style={containerStyle} onClick={handleClick}>
       {currentSrc ? (
         <Image
           src={currentSrc}
@@ -89,7 +90,6 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({ block, onAction }) => {
             if (!hasError && imageUrl) setHasError(true)
             else setFallbackError(true)
           }}
-          style={{ width: '100%', height: '100%', display: 'block' }}
         />
       ) : (
         <View className="sdui-img-placeholder">

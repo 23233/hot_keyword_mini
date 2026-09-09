@@ -53,6 +53,9 @@ func main() {
 	if err = system.EnsureInitialAdmin(); err != nil {
 		panic(err)
 	}
+	if err = system.EnsureAIBreakthroughData(); err != nil {
+		panic(err)
+	}
 
 	app := iris.New()
 	app.Use(iris.Compression)

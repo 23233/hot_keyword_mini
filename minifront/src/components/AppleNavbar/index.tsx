@@ -7,11 +7,13 @@ import './index.scss'
 interface AppleNavbarProps {
   title?: string
   subtitle?: string
+  theme?: string
 }
 
 export const AppleNavbar: React.FC<AppleNavbarProps> = ({
   title = '热点精选',
-  subtitle = ''
+  subtitle = '',
+  theme = 'dark_glass'
 }) => {
   // 精确获取微信官方胶囊按钮和系统状态栏信息
   const { navBarHeight, statusBarHeight } = useMemo(() => {
@@ -43,7 +45,7 @@ export const AppleNavbar: React.FC<AppleNavbarProps> = ({
   return (
     <>
       {/* 固定在顶部的导航栏 */}
-      <View className='apple-navbar-container' style={{ height: `${navBarHeight}px` }}>
+      <View className={`apple-navbar-container theme-${theme}`} style={{ height: `${navBarHeight}px` }}>
         <View
           className='apple-navbar-content'
           style={{

@@ -14,6 +14,13 @@
     background: radial-gradient(circle at 50% 0%, #161c2e 0%, #090b10 80%);
   }
 
+  &.theme-light_clean {
+    background: #f9f9f9;
+    color: #1d1d1f;
+  }
+
+  &.theme-light_clean .apple-navbar-container { background: rgba(249,249,249,.96); border-bottom-color: #e6e6e6; }
+
   .page-scroll-body {
     padding: 24rpx 32rpx;
     box-sizing: border-box;

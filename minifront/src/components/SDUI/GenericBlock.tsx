@@ -2,6 +2,7 @@
 import React from 'react'
 import { View, Image, Text } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface GenericBlockProps {
   block: BlockItem
@@ -18,6 +19,9 @@ export const GenericBlock: React.FC<GenericBlockProps> = ({ block, onAction }) =
   const badge = props.badge || props.tag || props.category || (props.score !== undefined ? `分值: ${props.score}` : '')
   const btnText = props.btn_text || props.button_text || (props.redeem_code || props.code ? '复制口令' : '')
   const btnAction = props.btn_action || props.button_action
+  const rows = Array.isArray(props.rows) ? props.rows : []
+  const items = Array.isArray(props.items) ? props.items : []
+  const options = Array.isArray(props.options) ? props.options : []
 
   const targetCardAction = block.action || props.card_action || props.action
   const handleCardClick = (e: any) => {
@@ -44,14 +48,29 @@ export const GenericBlock: React.FC<GenericBlockProps> = ({ block, onAction }) =
   }
 
   return (
-    <View className="sdui-generic-block" onClick={handleCardClick}>
+    <View className={blockClassName('sdui-generic-block', block.style)} onClick={handleCardClick}>
       {imageUrl && <Image className="sdui-generic-image" src={String(imageUrl)} mode="aspectFill" />}
       <View className="sdui-generic-header">
         <Text className="sdui-generic-title">{String(title)}</Text>
         {badge && <Text className="sdui-generic-badge">{String(badge)}</Text>}
       </View>
-      {subtitle && <Text style={{ fontSize: '24rpx', color: 'rgba(255,255,255,0.5)', marginTop: '4rpx', marginBottom: '8rpx', display: 'block' }}>{String(subtitle)}</Text>}
+      {subtitle && <Text className="sdui-generic-subtitle">{String(subtitle)}</Text>}
       {content && <Text className="sdui-generic-content">{String(content)}</Text>}
+      {rows.length > 0 && (
+        <View className="sdui-generic-list">
+          {rows.map((row: any, index: number) => <View className="sdui-generic-list-row" key={row.id || index}><Text>{String(row.label || row.name || row.key || '')}</Text><Text>{String(row.value ?? row.val ?? row.content ?? '')}</Text></View>)}
+        </View>
+      )}
+      {items.length > 0 && (
+        <View className="sdui-generic-list">
+          {items.map((item: any, index: number) => <View className="sdui-generic-list-row" key={item.id || index}><Text>{String(item.title || item.name || item.label || '')}</Text><Text>{String(item.summary || item.value || item.status || '')}</Text></View>)}
+        </View>
+      )}
+      {options.length > 0 && (
+        <View className="sdui-generic-list">
+          {options.map((option: any, index: number) => <View className="sdui-generic-option" key={option.id || index} onClick={(event) => { event.stopPropagation?.(); onAction?.(option.action || block.action, { item: option, actionPayload: option }) }}><Text>{String(option.label || option.title || option.name || option)}</Text></View>)}
+        </View>
+      )}
       {btnText && (
         <View className="sdui-generic-action-row">
           <View className="sdui-generic-btn" onClick={handleBtnClick}>

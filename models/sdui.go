@@ -53,8 +53,10 @@ type BlockAction struct {
 	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
-// BlockStyle 定义积木组件视觉渲染样式 (严格遵循苹果 HIG 规范)
+// BlockStyle 定义积木组件视觉渲染样式，优先使用可组合的受控原子令牌。
 type BlockStyle struct {
+	// 受控原子样式令牌列表，由协议白名单校验后映射为客户端工具类，禁止任意 CSS。
+	Utilities []string `json:"utilities,omitempty"`
 	// 垂直外边距
 	MarginY string `json:"margin_y,omitempty"`
 	// 水平外边距
@@ -360,7 +362,7 @@ type PageResponseEnvelope struct {
 	Page DynamicPageDTO `json:"page"`
 	// 受控附加数据
 	Data map[string]interface{} `json:"data"`
-	// 服务端计算生成的统一同构布局中间表示 (IR)，小程序与后端截图共同消费
+	// 服务端计算生成的统一布局中间表示 (IR)，用于后端截图、结构对照与验收；小程序运行时消费 page.blocks
 	LayoutIR *PageLayoutIR `json:"layout_ir,omitempty"`
 	// 渲染此页必需的客户端能力声明 (如 ["video", "clipboard"])
 	CapabilitiesRequired []string `json:"capabilities_required"`
@@ -368,6 +370,8 @@ type PageResponseEnvelope struct {
 	Cache EnvelopeCache `json:"cache"`
 	// 异常时的降级路由方案
 	Fallback EnvelopeFallback `json:"fallback"`
+	// 当前访问者登录和会员权益摘要；不包含任何敏感凭证。
+	Viewer map[string]interface{} `json:"viewer,omitempty"`
 }
 
 // BoundingBox 像素级绝对与相对渲染边界框
@@ -404,7 +408,7 @@ func DefaultDeviceParams() DeviceParams {
 	}
 }
 
-// BlockLayoutNode 积木块在同构布局中的视觉计算节点 (供真机与截图共同消费)
+// BlockLayoutNode 积木块在服务端布局中的视觉计算节点 (供截图、结构对照与验收使用)
 type BlockLayoutNode struct {
 	// 积木唯一ID
 	ID string `json:"id"`
@@ -438,9 +442,9 @@ type BlockLayoutNode struct {
 	Action *BlockAction `json:"action,omitempty"`
 	// 绑定的多事件流动作列表
 	Events map[string][]BlockAction `json:"events,omitempty"`
-	// 递归子节点，布局块通过该字段保留同构渲染树
+	// 递归子节点，布局块通过该字段保留服务端结构对照树
 	Children []BlockLayoutNode `json:"children,omitempty"`
-	// 块级加载态、空态、错误态与降级节点，供客户端运行时切换
+	// 块级加载态、空态、错误态与降级节点，供截图和结构验收记录
 	Loading  *BlockItem `json:"loading,omitempty"`
 	Empty    *BlockItem `json:"empty,omitempty"`
 	Error    *BlockItem `json:"error,omitempty"`
@@ -449,8 +453,8 @@ type BlockLayoutNode struct {
 	NativeStub string `json:"native_stub,omitempty"`
 }
 
-// PageLayoutIR 统一的动态页面同构布局中间表示 (IR)
-// 小程序渲染器与后端视觉截图服务共同消费该基线表示
+// PageLayoutIR 统一的动态页面布局中间表示 (IR)
+// 该基线供后端视觉截图、结构对照与验收使用，小程序运行时不消费坐标 IR
 type PageLayoutIR struct {
 	// 协议主版本号
 	ProtocolVersion string `json:"protocol_version"`
@@ -464,7 +468,7 @@ type PageLayoutIR struct {
 	Theme string `json:"theme"`
 	// 语言环境
 	Locale string `json:"locale"`
-	// 状态 Fixture (normal / loading / empty / error / auth_required)
+	// 状态 Fixture (normal / loading / empty / error / offline / expired / unauthenticated)
 	StateFixture string `json:"state_fixture"`
 	// 页面内容排版总高度(像素)
 	TotalHeight int `json:"total_height"`

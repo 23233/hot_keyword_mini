@@ -3,6 +3,7 @@ import React from 'react'
 import { View, Video } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
 import { resolveRemoteUrl } from '../../config/env'
+import { blockClassName } from './style'
 
 interface VideoBlockProps {
   block: BlockItem
@@ -21,7 +22,7 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({ block, onAction }) => {
   const loop = props.loop === true
 
   const containerStyle: React.CSSProperties = {
-    borderRadius: block.style?.border_radius || '20rpx',
+    ...(block.style?.border_radius ? { borderRadius: block.style.border_radius } : {}),
     overflow: 'hidden',
     position: 'relative',
     width: '100%',
@@ -37,7 +38,7 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({ block, onAction }) => {
   }
 
   return (
-    <View className="sdui-video-block" style={containerStyle} onClick={(e) => e.stopPropagation?.()}>
+    <View className={blockClassName('sdui-video-block', block.style)} style={containerStyle} onClick={(e) => e.stopPropagation?.()}>
       <Video
         src={videoUrl}
         poster={poster}

@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import { View, Text, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface FormBlockProps {
   block: BlockItem
@@ -65,21 +66,19 @@ export const FormBlock: React.FC<FormBlockProps> = ({ block, onAction }) => {
 
   return (
     <View
-      className="sdui-form-block"
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx'
-      }}
+      className={blockClassName('sdui-form-block', block.style)}
+      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
       <Text className="form-title">{title}</Text>
       {inputLabel && (
-        <Text style={{ fontSize: '24rpx', color: 'rgba(255,255,255,0.7)', marginBottom: '12rpx', display: 'block' }}>
+        <Text className="form-input-label">
           {inputLabel}
         </Text>
       )}
       <Input
         className="form-input-field"
         placeholder={placeholder}
-        placeholderStyle="color: rgba(255,255,255,0.3);"
+        placeholderClass="form-input-placeholder"
         value={inputVal}
         onInput={(e) => setInputVal(e.detail.value)}
         onConfirm={handleSubmit}

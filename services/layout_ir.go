@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hot_keyword/models"
 	"math"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -143,18 +144,9 @@ func BuildPageLayoutIRWithContext(page *models.DynamicPage, device DeviceParams,
 			accentColor := page.AccentColor
 
 			if targetBlock.Style != nil {
-				glassBlur = targetBlock.Style.GlassBlur
+				marginY, padding, borderRadius, glassBlur = resolveStyleMetrics(targetBlock.Style, marginY, padding, borderRadius, glassBlur)
 				if targetBlock.Style.AccentColor != "" {
 					accentColor = targetBlock.Style.AccentColor
-				}
-				if targetBlock.Style.MarginY != "" {
-					marginY = parsePixelValue(targetBlock.Style.MarginY, 8)
-				}
-				if targetBlock.Style.Padding != "" {
-					padding = parsePixelValue(targetBlock.Style.Padding, 14)
-				}
-				if targetBlock.Style.BorderRadius != "" {
-					borderRadius = parsePixelValue(targetBlock.Style.BorderRadius, 14)
 				}
 			}
 
@@ -568,7 +560,7 @@ func extractNestedBlocks(props map[string]interface{}) []models.BlockItem {
 			}
 		}
 	}
-	// tabs 按小程序初始 activeKey 规则展开当前选中栏，保持 IR 与客户端一致。
+	// tabs 按协议定义的初始 activeKey 规则展开当前选中栏，保持 IR 与 page.blocks 结构对照一致。
 	if rawTabs, ok := props["tabs"].([]interface{}); ok && len(rawTabs) > 0 {
 		if tab := selectActiveTab(rawTabs, props); tab != nil {
 			if children := extractNestedBlocks(tab); len(children) > 0 {
@@ -647,7 +639,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 		if c := int(toFloat64(parentProps["columns"])); c >= 1 && c <= 4 {
 			cols = c
 		}
-		gap := 8
+		gap := resolveStyleGap(parent, 8)
 		if gapStr, ok := parentProps["gap"].(string); ok {
 			gap = parsePixelValue(gapStr, 8)
 		}
@@ -684,10 +676,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 			h, stub := CalculateAdaptiveBlockHeight(&target, props, cellWidth)
 			marginY, padding, radius, glass := 4, 8, 12, true
 			if target.Style != nil {
-				glass = target.Style.GlassBlur
-				marginY = parsePixelValue(target.Style.MarginY, marginY)
-				padding = parsePixelValue(target.Style.Padding, padding)
-				radius = parsePixelValue(target.Style.BorderRadius, radius)
+				marginY, padding, radius, glass = resolveStyleMetrics(target.Style, marginY, padding, radius, glass)
 			}
 
 			child := BlockLayoutNode{
@@ -765,10 +754,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 			h, stub := CalculateAdaptiveBlockHeight(&target, props, childW)
 			marginY, padding, radius, glass := 0, 0, 14, false
 			if target.Style != nil {
-				glass = target.Style.GlassBlur
-				marginY = parsePixelValue(target.Style.MarginY, marginY)
-				padding = parsePixelValue(target.Style.Padding, padding)
-				radius = parsePixelValue(target.Style.BorderRadius, radius)
+				marginY, padding, radius, glass = resolveStyleMetrics(target.Style, marginY, padding, radius, glass)
 			}
 
 			nested := extractNestedBlocks(props)
@@ -882,7 +868,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 			return nil, 0
 		}
 
-		gap := 8
+		gap := resolveStyleGap(parent, 8)
 		if gapStr, ok := parentProps["gap"].(string); ok {
 			gap = parsePixelValue(gapStr, 8)
 		}
@@ -911,10 +897,7 @@ func buildNestedLayoutNodesForParent(parent *models.BlockItem, blocks []models.B
 			h, stub := CalculateAdaptiveBlockHeight(&target, props, itemW)
 			marginY, padding, radius, glass := 4, 8, 12, false
 			if target.Style != nil {
-				glass = target.Style.GlassBlur
-				marginY = parsePixelValue(target.Style.MarginY, marginY)
-				padding = parsePixelValue(target.Style.Padding, padding)
-				radius = parsePixelValue(target.Style.BorderRadius, radius)
+				marginY, padding, radius, glass = resolveStyleMetrics(target.Style, marginY, padding, radius, glass)
 			}
 
 			child := BlockLayoutNode{
@@ -975,10 +958,7 @@ func buildNestedLayoutNodes(blocks []models.BlockItem, context map[string]interf
 			height, nativeStub := CalculateAdaptiveBlockHeight(&target, props, width)
 			marginY, padding, radius, glass := 8, 14, 14, true
 			if target.Style != nil {
-				glass = target.Style.GlassBlur
-				marginY = parsePixelValue(target.Style.MarginY, marginY)
-				padding = parsePixelValue(target.Style.Padding, padding)
-				radius = parsePixelValue(target.Style.BorderRadius, radius)
+				marginY, padding, radius, glass = resolveStyleMetrics(target.Style, marginY, padding, radius, glass)
 			}
 			child := BlockLayoutNode{
 				ID: target.ID, Type: target.Type, Props: props, Visible: visible,
@@ -1452,9 +1432,57 @@ func CalculateAdaptiveBlockHeight(block *models.BlockItem, props map[string]inte
 		}
 		return itemCount * 88, ""
 
+	// 32. 资讯栏目导航与文章流，按同一组 props 估算客户端实际内容高度。
+	case "category_nav", "collection_nav":
+		return 42, ""
+	case "article_feed", "content_feed":
+		itemCount := sliceLength(props["items_path"])
+		if itemCount == 0 {
+			itemCount = sliceLength(props["items"])
+		}
+		limit := int(toFloat64(props["limit"]))
+		if limit <= 0 || limit > itemCount {
+			limit = itemCount
+		}
+		if limit == 0 {
+			limit = 1
+		}
+		layout, _ := props["layout"].(string)
+		if layout == "featured" || layout == "feature" {
+			// 图片焦点 16:9，加上栏目、标题、摘要和阅读入口。
+			return int(float64(contentWidth)*9.0/16.0) + 150, ""
+		}
+		return limit * 86, ""
+
+	case "membership_plan_list", "offer_list":
+		count := sliceLength(props["items_path"])
+		if count == 0 {
+			count = sliceLength(props["items"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		return count * 92, ""
+	case "article_detail", "content_detail":
+		return 520, ""
+	case "comment_thread", "discussion_thread":
+		return 300, ""
+
 	default:
 		return 90, ""
 	}
+}
+
+// sliceLength 返回绑定数据中的切片或数组长度。
+func sliceLength(value interface{}) int {
+	if value == nil {
+		return 0
+	}
+	resolved := reflect.ValueOf(value)
+	if resolved.Kind() != reflect.Slice && resolved.Kind() != reflect.Array {
+		return 0
+	}
+	return resolved.Len()
 }
 
 // extractTextSummary 从解析后的真实属性中提炼具有业务代表性的文字摘要
@@ -1491,6 +1519,92 @@ func parsePixelValue(str string, fallback int) int {
 	}
 	if n, err := strconv.Atoi(str); err == nil {
 		return n
+	}
+	return fallback
+}
+
+// resolveStyleMetrics 将协议工具令牌映射为 IR 使用的统一逻辑像素，保持预览与小程序端同构。
+func resolveStyleMetrics(style *models.BlockStyle, marginY, padding, radius int, glass bool) (int, int, int, bool) {
+	if style == nil {
+		return marginY, padding, radius, glass
+	}
+	if style.MarginY != "" {
+		marginY = parsePixelValue(style.MarginY, marginY)
+	}
+	if style.Padding != "" {
+		padding = parsePixelValue(style.Padding, padding)
+	}
+	if style.BorderRadius != "" {
+		radius = parsePixelValue(style.BorderRadius, radius)
+	}
+	if style.GlassBlur {
+		glass = true
+	}
+	for _, token := range style.Utilities {
+		switch token {
+		case "layout/flat":
+			glass = false
+		case "layout/card":
+			glass = false
+		case "space/y-0":
+			marginY = 0
+		case "space/y-2":
+			marginY = 4
+		case "space/y-4":
+			marginY = 8
+		case "space/y-6":
+			marginY = 12
+		case "space/y-8":
+			marginY = 16
+		case "space/y-10":
+			marginY = 20
+		case "space/y-12":
+			marginY = 24
+		case "padding/none", "padding/0":
+			padding = 0
+		case "padding/2":
+			padding = 4
+		case "padding/4", "padding/x-4", "padding/y-4":
+			padding = 8
+		case "padding/6", "padding/y-6":
+			padding = 12
+		case "padding/8":
+			padding = 16
+		case "padding/x-5":
+			padding = 10
+		case "padding/x-6":
+			padding = 12
+		case "radius/none":
+			radius = 0
+		case "radius/sm":
+			radius = 4
+		case "radius/md":
+			radius = 8
+		case "radius/lg":
+			radius = 12
+		case "radius/full":
+			radius = 499
+		}
+	}
+	return marginY, padding, radius, glass
+}
+
+// resolveStyleGap 读取容器的 gap 属性或对应工具令牌。
+func resolveStyleGap(parent *models.BlockItem, fallback int) int {
+	if parent == nil || parent.Style == nil {
+		return fallback
+	}
+	for _, token := range parent.Style.Utilities {
+		switch token {
+		case "gap/2":
+			return 4
+		case "gap/4":
+			return 8
+		case "gap/6":
+			return 12
+		case "gap/8":
+			return 16
+		}
 	}
 	return fallback
 }

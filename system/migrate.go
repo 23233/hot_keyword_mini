@@ -7,8 +7,10 @@ import (
 	"errors"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"hot_keyword/services"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/23233/ggg/ut"
@@ -36,6 +38,13 @@ func Migrate() error {
 		&models.WebViewTicket{},
 		&models.Product{},
 		&models.PaymentOrder{},
+		&models.ArticleCategory{},
+		&models.Article{},
+		&models.ArticlePurchase{},
+		&models.MembershipLevel{},
+		&models.UserMembership{},
+		&models.ArticleComment{},
+		&models.ContentAuditRecord{},
 	}
 
 	err := db.Mysql.AutoMigrate(migrateList...)
@@ -112,6 +121,70 @@ func EnsureInitialAdmin() error {
 	return db.Mysql.Create(&superAdmin).Error
 }
 
+// EnsureAIBreakthroughData 将默认小程序名称切换为 ai 破甲，并初始化三档会员与导航内容。
+func EnsureAIBreakthroughData() error {
+	if db.Mysql == nil {
+		return nil
+	}
+	const appID = "wx516563cfe994bbc6"
+	var app models.MiniApp
+	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		app = models.MiniApp{AppID: appID, AppName: "ai破甲", CurrentPage: "home", ReleaseMode: "normal", FallbackPageID: "home", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		if err := db.Mysql.Create(&app).Error; err != nil {
+			return err
+		}
+	} else if err := db.Mysql.Model(&app).Updates(map[string]interface{}{"app_name": "ai破甲", "updated_at": time.Now()}).Error; err != nil {
+		return err
+	}
+	if err := services.NewMembershipService().SeedDefaultPlans(appID); err != nil {
+		return err
+	}
+	if err := services.NewArticleService().SeedDefaultContent(appID); err != nil {
+		return err
+	}
+	if err := ensureAIBreakthroughPage(appID, "home", "tpl_ai_breakthrough_portal", "ai破甲"); err != nil {
+		return err
+	}
+	if err := ensureAIBreakthroughPage(appID, "article_detail", "tpl_ai_breakthrough_article", "AI 破甲文章"); err != nil {
+		return err
+	}
+	return ensureAIBreakthroughPage(appID, "membership", "tpl_ai_breakthrough_membership", "AI 破甲会员中心")
+}
+
+func ensureAIBreakthroughPage(appID, pageID, templateID, title string) error {
+	existingRevision := 0
+	if existing, err := services.NewSDUIService().GetRawPage(appID, pageID); err == nil {
+		existingRevision = existing.Revision
+		businessType := map[string]string{"tpl_ai_breakthrough_portal": "ai_breakthrough", "tpl_ai_breakthrough_article": "ai_article", "tpl_ai_breakthrough_membership": "ai_breakthrough"}[templateID]
+		// 只迁移本项目早期生成的旧 AI 破甲页面；后台后续自定义页面不被启动初始化覆盖。
+		if existing.BusinessType != businessType || existing.CampaignID != "template_derived" {
+			return nil
+		}
+		migrated := map[string]string{"tpl_ai_breakthrough_portal": "$entity.content", "tpl_ai_breakthrough_article": "content_discussion", "tpl_ai_breakthrough_membership": "content_offers"}[templateID]
+		upToDate := migrated != "" && strings.Contains(existing.Blocks, migrated) && strings.Contains(existing.Blocks, `"layout/flat"`) && existing.Theme == "light_clean"
+		if templateID == "tpl_ai_breakthrough_portal" {
+			upToDate = upToDate && strings.Contains(existing.Blocks, `"template_version":"3.1.0"`) && strings.Count(existing.Blocks, `"action":{"type":"navigate_page"`) >= 4
+		}
+		if migrated == "" || upToDate {
+			return nil
+		}
+	}
+	service := services.NewTemplateService()
+	page, err := service.ApplyTemplateToPage(templateID, appID, pageID, title)
+	if err != nil {
+		return err
+	}
+	page.Status = "published"
+	page.RequireAuth = false
+	if existingRevision > 0 {
+		page.Revision = existingRevision
+	}
+	return services.NewSDUIService().SavePageWithAudit(page, "system", "初始化 AI 破甲资讯模板", 0)
+}
+
 // SeedMultiTenantAndSDUIData 自举初始化多租户小程序与默认 SDUI 页面
 func SeedMultiTenantAndSDUIData() error {
 	defaultAppID := "wx516563cfe994bbc6"
@@ -124,7 +197,7 @@ func SeedMultiTenantAndSDUIData() error {
 		defaultApp := models.MiniApp{
 			AppID:          defaultAppID,
 			AppSecret:      defaultSecret,
-			AppName:        "猴王下山短剧",
+			AppName:        "ai破甲",
 			CurrentPage:    "home",
 			ReleaseMode:    "normal",
 			FallbackPageID: "home",

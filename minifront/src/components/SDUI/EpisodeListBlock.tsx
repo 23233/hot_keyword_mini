@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { View, Text, ScrollView } from '@tarojs/components'
 import { BlockItem, BlockAction } from '../../types/sdui'
+import { blockClassName } from './style'
 
 interface EpisodeListBlockProps {
   block: BlockItem
@@ -53,42 +54,23 @@ export const EpisodeListBlock: React.FC<EpisodeListBlockProps> = ({ block, onAct
 
   return (
     <View
-      className="sdui-episode-list-block"
-      style={{
-        borderRadius: block.style?.border_radius || '28rpx',
-        padding: '28rpx',
-        background: 'rgba(255, 255, 255, 0.05)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)'
-      }}
+      className={blockClassName('sdui-episode-list-block', block.style)}
+      style={block.style?.border_radius ? { borderRadius: block.style.border_radius } : undefined}
     >
-      <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20rpx' }}>
-        <Text style={{ fontSize: '30rpx', fontWeight: 600, color: '#fff' }}>{title}</Text>
-        <Text style={{ fontSize: '24rpx', color: 'rgba(255, 255, 255, 0.5)' }}>共 {total} 集全</Text>
+      <View className="sdui-episode-heading">
+        <Text className="sdui-episode-title">{title}</Text>
+        <Text className="sdui-episode-count">共 {total} 集全</Text>
       </View>
 
-      <ScrollView scrollX style={{ whiteSpace: 'nowrap', width: '100%' }}>
-        <View style={{ display: 'flex', gap: '16rpx', paddingBottom: '10rpx' }}>
+      <ScrollView scrollX className="sdui-episode-scroll">
+        <View className="sdui-episode-items">
           {episodes.map((num) => {
             const isCurrent = num === selected
             return (
               <View
                 key={num}
                 onClick={(e) => handleSelect(num, e)}
-                style={{
-                  minWidth: '88rpx',
-                  height: '88rpx',
-                  borderRadius: '16rpx',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: isCurrent ? 'linear-gradient(135deg, #FF9F0A, #FF375F)' : 'rgba(255, 255, 255, 0.08)',
-                  border: isCurrent ? '1px solid rgba(255, 159, 10, 0.8)' : '1px solid rgba(255, 255, 255, 0.06)',
-                  color: isCurrent ? '#fff' : 'rgba(255, 255, 255, 0.8)',
-                  fontSize: '28rpx',
-                  fontWeight: isCurrent ? 700 : 500,
-                  flexShrink: 0
-                }}
+                className={`sdui-episode-item ${isCurrent ? 'is-current' : ''}`}
               >
                 <Text>{num}</Text>
               </View>
