@@ -73,7 +73,7 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(a
 		if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err == nil && app.CurrentPage != "" && app.CurrentPage != "home" {
 			// 若当前激活的主页存在且为已发布状态，优先使用
 			var activePage models.DynamicPage
-			if err := db.Mysql.Where("app_id = ? AND page_id = ? AND status = 'published'", appID, app.CurrentPage).First(&activePage).Error; err == nil {
+			if err := db.Mysql.Where("app_id = ? AND page_id = ? AND status = 'published' AND hidden = ?", appID, app.CurrentPage, false).First(&activePage).Error; err == nil {
 				actualPageID = app.CurrentPage
 			}
 		}
@@ -85,23 +85,23 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(a
 	}
 
 	// 2. 状态门禁隔离: 客户端仅允许获取 published 状态，草稿和已下架必须被隔离拦截
-	if rawPage.Status != "published" {
+	if rawPage.Status != "published" || rawPage.Hidden {
 		// 尝试降级至兜底安全主页
 		if actualPageID != "home" {
-			if homePage, hErr := s.GetRawPage(appID, "home"); hErr == nil && homePage.Status == "published" {
+			if homePage, hErr := s.GetRawPage(appID, "home"); hErr == nil && homePage.Status == "published" && !homePage.Hidden {
 				rawPage = homePage
 			} else {
-				return nil, errors.New("目标页面处于草稿或已下架状态，无法对外提供访问")
+				return nil, errors.New("目标页面未发布、已隐藏或已下架，无法对外提供访问")
 			}
 		} else {
-			return nil, errors.New("目标页面处于草稿或已下架状态，无法对外提供访问")
+			return nil, errors.New("目标页面未发布、已隐藏或已下架，无法对外提供访问")
 		}
 	}
 
 	// 3. 过期检测
 	if rawPage.ExpiresAt != nil && rawPage.ExpiresAt.Before(time.Now()) {
 		if actualPageID != "home" {
-			if homePage, hErr := s.GetRawPage(appID, "home"); hErr == nil && homePage.Status == "published" {
+			if homePage, hErr := s.GetRawPage(appID, "home"); hErr == nil && homePage.Status == "published" && !homePage.Hidden {
 				rawPage = homePage
 			} else {
 				return nil, errors.New("页面已过期失效")
@@ -221,6 +221,7 @@ func (s *SDUIService) GetDynamicDraftEnvelope(appID, pageID string, queryParams 
 		PageID:       draft.PageID,
 		Revision:     draft.Revision,
 		Status:       draft.Status,
+		Hidden:       draft.Hidden,
 		Title:        draft.Title,
 		BusinessType: draft.BusinessType,
 		Intent:       draft.Intent,
@@ -254,6 +255,10 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 			blocks = []models.BlockItem{}
 		}
 	}
+	// WebView 动作只允许引用当前租户已登记且启用的 url_key，服务端在下发前解析为受控 HTTPS 地址。
+	if err := resolveWebViewActions(rawPage.AppID, blocks); err != nil {
+		return nil, fmt.Errorf("WebView 动作校验失败: %w", err)
+	}
 
 	// 2. 反序列化 ShareConfig
 	var shareConfig *models.PageShareConfig
@@ -269,6 +274,7 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 		PageID:       rawPage.PageID,
 		Revision:     rawPage.Revision,
 		Status:       rawPage.Status,
+		Hidden:       rawPage.Hidden,
 		Title:        rawPage.Title,
 		BusinessType: rawPage.BusinessType,
 		Intent:       rawPage.Intent,
@@ -321,6 +327,125 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 	return envelope, nil
 }
 
+// resolveWebViewActions 递归解析页面所有动作链中的 WebView 登记键。
+func resolveWebViewActions(appID string, blocks []models.BlockItem) error {
+	var resolveAction func(*models.BlockAction) error
+	resolveAction = func(action *models.BlockAction) error {
+		if action == nil {
+			return nil
+		}
+		if action.Type == "open_webview" {
+			payload, err := ResolveWebViewPayload(appID, action.Payload)
+			if err != nil {
+				return err
+			}
+			action.Payload = payload
+		}
+		for index := range action.OnSuccess {
+			if err := resolveAction(&action.OnSuccess[index]); err != nil {
+				return err
+			}
+		}
+		for index := range action.OnError {
+			if err := resolveAction(&action.OnError[index]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	var resolveBlock func(*models.BlockItem) error
+	resolveBlock = func(block *models.BlockItem) error {
+		if block == nil {
+			return nil
+		}
+		if err := resolveAction(block.Action); err != nil {
+			return err
+		}
+		for _, actions := range block.Events {
+			for index := range actions {
+				if err := resolveAction(&actions[index]); err != nil {
+					return err
+				}
+			}
+		}
+		for _, state := range []*models.BlockItem{block.Loading, block.Empty, block.Error, block.Fallback} {
+			if err := resolveBlock(state); err != nil {
+				return err
+			}
+		}
+		if block.Props != nil {
+			for _, key := range []string{"children", "blocks", "items"} {
+				raw, ok := block.Props[key]
+				if !ok {
+					continue
+				}
+				encoded, _ := json.Marshal(raw)
+				var children []models.BlockItem
+				if json.Unmarshal(encoded, &children) != nil {
+					continue
+				}
+				validChildren := len(children) > 0
+				for index := range children {
+					if children[index].ID == "" || children[index].Type == "" {
+						validChildren = false
+						break
+					}
+					if err := resolveBlock(&children[index]); err != nil {
+						return err
+					}
+				}
+				if !validChildren {
+					continue
+				}
+				updated, _ := json.Marshal(children)
+				var value []interface{}
+				if json.Unmarshal(updated, &value) == nil {
+					block.Props[key] = value
+				}
+			}
+			if raw, ok := block.Props["tabs"]; ok {
+				encoded, _ := json.Marshal(raw)
+				var tabs []map[string]interface{}
+				if json.Unmarshal(encoded, &tabs) == nil {
+					for index := range tabs {
+						childrenRaw, exists := tabs[index]["blocks"]
+						if !exists {
+							continue
+						}
+						childrenEncoded, _ := json.Marshal(childrenRaw)
+						var children []models.BlockItem
+						if json.Unmarshal(childrenEncoded, &children) != nil {
+							continue
+						}
+						for childIndex := range children {
+							if err := resolveBlock(&children[childIndex]); err != nil {
+								return err
+							}
+						}
+						updated, _ := json.Marshal(children)
+						var value []interface{}
+						if json.Unmarshal(updated, &value) == nil {
+							tabs[index]["blocks"] = value
+						}
+					}
+					updated, _ := json.Marshal(tabs)
+					var value []interface{}
+					if json.Unmarshal(updated, &value) == nil {
+						block.Props["tabs"] = value
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for index := range blocks {
+		if err := resolveBlock(&blocks[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // rebuildEnvelopeLayoutIR 使用信封当前的积木树重建布局 IR，确保截图与结构对照基于同一份协议内容；小程序运行时仍消费 page.blocks。
 func (s *SDUIService) rebuildEnvelopeLayoutIR(rawPage *models.DynamicPage, envelope *models.PageResponseEnvelope) {
 	if rawPage == nil || envelope == nil {
@@ -346,80 +471,60 @@ func (s *SDUIService) rebuildEnvelopeLayoutIR(rawPage *models.DynamicPage, envel
 
 // extractRequiredCapabilities 从页面积木列表中提取必要的能力标识
 func extractRequiredCapabilities(blocks []models.BlockItem) []string {
-	caps := map[string]bool{
-		"video":     true,
-		"clipboard": true,
+	set := map[string]bool{}
+	var scanAction func(*models.BlockAction)
+	scanAction = func(action *models.BlockAction) {
+		if action == nil {
+			return
+		}
+		if capability := actionCapability(action.Type); capability != "" {
+			set[capability] = true
+		}
+		for index := range action.OnSuccess {
+			scanAction(&action.OnSuccess[index])
+		}
+		for index := range action.OnError {
+			scanAction(&action.OnError[index])
+		}
 	}
-
-	var scanBlock func(b models.BlockItem)
-	scanBlock = func(b models.BlockItem) {
-		if b.Type == "video" || b.Type == "media_hero" {
-			caps["video"] = true
+	var scan func(models.BlockItem)
+	scan = func(block models.BlockItem) {
+		if capability := capabilityBlockKeys[block.Type]; capability != "" {
+			set[capability] = true
 		}
-		if b.Action != nil {
-			switch b.Action.Type {
-			case "copy_text":
-				caps["clipboard"] = true
-			case "request_payment":
-				caps["request_payment"] = true
-			case "subscribe_message":
-				caps["subscribe_message"] = true
-			case "open_channels_activity":
-				caps["channels"] = true
+		scanAction(block.Action)
+		for _, actions := range block.Events {
+			for index := range actions {
+				scanAction(&actions[index])
 			}
 		}
-		if b.Events != nil {
-			for _, actList := range b.Events {
-				for _, act := range actList {
-					switch act.Type {
-					case "copy_text":
-						caps["clipboard"] = true
-					case "request_payment":
-						caps["request_payment"] = true
-					case "subscribe_message":
-						caps["subscribe_message"] = true
-					case "open_channels_activity":
-						caps["channels"] = true
-					}
-				}
+		for _, state := range []*models.BlockItem{block.Loading, block.Empty, block.Error, block.Fallback} {
+			if state != nil {
+				scan(*state)
 			}
 		}
-		if b.Loading != nil {
-			scanBlock(*b.Loading)
-		}
-		if b.Empty != nil {
-			scanBlock(*b.Empty)
-		}
-		if b.Error != nil {
-			scanBlock(*b.Error)
-		}
-		if b.Fallback != nil {
-			scanBlock(*b.Fallback)
-		}
-		if b.Props != nil {
-			if childrenRaw, ok := b.Props["children"]; ok {
-				if childrenBytes, err := json.Marshal(childrenRaw); err == nil {
-					var children []models.BlockItem
-					if err := json.Unmarshal(childrenBytes, &children); err == nil {
-						for _, child := range children {
-							scanBlock(child)
+		if block.Props != nil {
+			for _, key := range []string{"children", "blocks", "items"} {
+				if raw, ok := block.Props[key]; ok {
+					var nested []models.BlockItem
+					if encoded, err := json.Marshal(raw); err == nil && json.Unmarshal(encoded, &nested) == nil {
+						for _, child := range nested {
+							scan(child)
 						}
 					}
 				}
 			}
 		}
 	}
-
-	for _, b := range blocks {
-		scanBlock(b)
+	for _, block := range blocks {
+		scan(block)
 	}
-
-	res := make([]string, 0, len(caps))
-	for c := range caps {
-		res = append(res, c)
+	result := make([]string, 0, len(set))
+	for capability := range set {
+		result = append(result, capability)
 	}
-	sort.Strings(res)
-	return res
+	sort.Strings(result)
+	return result
 }
 
 // seedDefaultPage 自举生成特定小程序的默认 SDUI 首页
@@ -548,11 +653,12 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 
 	// 存在则更新
 	updateMap := map[string]interface{}{
-		"app_name":     app.AppName,
-		"current_page": app.CurrentPage,
-		"release_mode": app.ReleaseMode,
-		"cos_cdn_url":  app.CosCdnUrl,
-		"updated_at":   time.Now(),
+		"app_name":         app.AppName,
+		"current_page":     app.CurrentPage,
+		"release_mode":     app.ReleaseMode,
+		"fallback_page_id": app.FallbackPageID,
+		"cos_cdn_url":      app.CosCdnUrl,
+		"updated_at":       time.Now(),
 	}
 	if app.AppSecret != "" {
 		updateMap["app_secret"] = app.AppSecret
@@ -615,7 +721,12 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 	}
 
 	// 1. 强制协议合法性与安全规则强校验
-	report := ValidateDynamicPage(page)
+	var report ValidationReport
+	if page.Status == "published" {
+		report = ValidateDynamicPageForRelease(page)
+	} else {
+		report = ValidateDynamicPage(page)
+	}
 	if !report.IsValid {
 		return fmt.Errorf("动态页面协议强校验未通过，阻断持久化: %s", strings.Join(report.Errors, "; "))
 	}
@@ -654,6 +765,7 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 			newRevision = existing.Revision + 1
 			updateData := map[string]interface{}{
 				"title":         page.Title,
+				"hidden":        page.Hidden,
 				"business_type": page.BusinessType,
 				"intent":        page.Intent,
 				"theme":         page.Theme,
@@ -683,6 +795,7 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 			PageID:       page.PageID,
 			Revision:     newRevision,
 			Title:        page.Title,
+			Hidden:       page.Hidden,
 			BusinessType: page.BusinessType,
 			Intent:       page.Intent,
 			Theme:        page.Theme,
@@ -741,6 +854,7 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 				PageID:       published.PageID,
 				Revision:     published.Revision,
 				Status:       "draft",
+				Hidden:       published.Hidden,
 				Title:        published.Title,
 				BusinessType: published.BusinessType,
 				Intent:       published.Intent,
@@ -831,6 +945,7 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 		PageID:       draft.PageID,
 		Revision:     draft.Revision,
 		Status:       "draft",
+		Hidden:       draft.Hidden,
 		Title:        draft.Title,
 		BusinessType: draft.BusinessType,
 		Intent:       draft.Intent,
@@ -886,6 +1001,7 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 	result := updateQuery.Updates(map[string]interface{}{
 		"revision":      newRevision,
 		"status":        "draft",
+		"hidden":        draft.Hidden,
 		"title":         draft.Title,
 		"business_type": draft.BusinessType,
 		"intent":        draft.Intent,
@@ -941,6 +1057,7 @@ func (s *SDUIService) PublishDraftWithRevision(appID, pageID, operator, remark s
 		AppID:        draft.AppID,
 		PageID:       draft.PageID,
 		Status:       "published", // 显式置为发布状态
+		Hidden:       draft.Hidden,
 		Title:        draft.Title,
 		BusinessType: draft.BusinessType,
 		Intent:       draft.Intent,
@@ -1007,6 +1124,21 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 		if !report.IsValid {
 			return fmt.Errorf("历史版本不符合当前协议，请迁移为新草稿后发布: %s", strings.Join(report.Errors, "; "))
 		}
+		var capabilityBlocks []models.BlockItem
+		if err := json.Unmarshal([]byte(targetRev.Blocks), &capabilityBlocks); err != nil {
+			return fmt.Errorf("历史版本能力依赖解析失败: %w", err)
+		}
+		var app models.MiniApp
+		if err := tx.Where("app_id = ?", appID).First(&app).Error; err != nil {
+			return err
+		}
+		matrix, err := CapabilityMatrixForApp(&app)
+		if err != nil {
+			return err
+		}
+		if capabilityReport := ValidatePageCapabilitiesForMatrix(capabilityBlocks, matrix, len(matrix) > 0); !capabilityReport.IsValid {
+			return fmt.Errorf("历史版本能力发布门禁未通过: %s", strings.Join(capabilityReport.Errors, "; "))
+		}
 
 		if err := tx.Where("app_id = ? AND page_id = ?", appID, pageID).First(&current).Error; err != nil {
 			return err
@@ -1015,6 +1147,7 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 		newRev := current.Revision + 1
 		updateData := map[string]interface{}{
 			"title":         targetRev.Title,
+			"hidden":        targetRev.Hidden,
 			"business_type": targetRev.BusinessType,
 			"intent":        targetRev.Intent,
 			"theme":         targetRev.Theme,
@@ -1041,6 +1174,7 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 			PageID:       pageID,
 			Revision:     newRev,
 			Title:        targetRev.Title,
+			Hidden:       targetRev.Hidden,
 			BusinessType: targetRev.BusinessType,
 			Intent:       targetRev.Intent,
 			Theme:        targetRev.Theme,
@@ -1063,6 +1197,7 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 		current.Revision = newRev
 		current.Blocks = targetRev.Blocks
 		current.Title = targetRev.Title
+		current.Hidden = targetRev.Hidden
 		current.BusinessType = targetRev.BusinessType
 		current.Intent = targetRev.Intent
 		current.RequireAuth = targetRev.RequireAuth
@@ -1087,6 +1222,13 @@ func (s *SDUIService) SetCurrentPage(appID, pageID string) error {
 		return errors.New("AppID 与 PageID 不能为空")
 	}
 
+	if db.Mysql == nil {
+		return errors.New("数据库未初始化")
+	}
+	var page models.DynamicPage
+	if err := db.Mysql.Where("app_id = ? AND page_id = ? AND status = ? AND hidden = ?", appID, pageID, "published", false).First(&page).Error; err != nil {
+		return errors.New("只有已发布且未隐藏的页面才能设为当前主页")
+	}
 	return db.Mysql.Model(&models.MiniApp{}).
 		Where("app_id = ?", appID).
 		Updates(map[string]interface{}{
@@ -1299,6 +1441,34 @@ func actionCapability(actionType string) string {
 		return "request_payment"
 	case "subscribe_message":
 		return "subscribe_message"
+	case "choose_media", "upload_file", "delete_media":
+		return "media_upload"
+	case "request_location", "choose_location", "open_map":
+		return "location"
+	case "open_wechat_service", "save_qr":
+		return "wechat_customer_service"
+	case "open_internal_chat":
+		return "internal_chat"
+	case "send_message", "mark_read":
+		return "internal_chat"
+	case "poll_messages", "connect_message", "upload_chat_media":
+		return "realtime_chat"
+	case "create_order", "confirm_order", "cancel_order", "confirm_receipt":
+		return "orders"
+	case "refresh_logistics":
+		return "logistics"
+	case "apply_after_sale", "upload_evidence":
+		return "after_sale"
+	case "accept_task", "reject_task", "submit_quote", "update_service_status":
+		return "service_orders"
+	case "open_membership":
+		return "membership"
+	case "load_ad":
+		return "ads"
+	case "refresh_wallet", "request_withdraw":
+		return "wallet"
+	case "open_webview":
+		return "webview"
 	default:
 		return ""
 	}

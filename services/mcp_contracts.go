@@ -43,6 +43,38 @@ func mcpBlockContracts() map[string]interface{} {
 	add([]string{"content_detail", "article_detail"}, "通用详情；从同源接口取数并按字段映射显示正文、试读和解锁态", []string{"resource_url", "fields: {title,meta,image,content,preview,readable,locked_reason,locked_title,unlock_label,purchase_value}", "preview_label", "loading_text", "error_text", "locked_action", "purchase_action"}, map[string]interface{}{"resource_url": "/api/v1/articles/{{$query.id}}", "fields": map[string]interface{}{"title": "title", "content": "markdown", "preview": "preview_markdown", "readable": "can_read", "purchase_value": "pay_sku"}})
 	add([]string{"offer_list", "membership_plan_list"}, "通用套餐列表；数据、价格文本和 SKU 都由服务端返回", []string{"title", "items|items_path", "fields: {key,title,summary,caption,price}", "purchase_action", "purchase_text"}, map[string]interface{}{"items_path": "$entity.content.offers", "fields": map[string]interface{}{"key": "key", "title": "title", "price": "price"}, "purchase_action": map[string]interface{}{"type": "request_payment", "payload": map[string]interface{}{"sku": "$item.purchase_value"}}})
 	add([]string{"discussion_thread", "comment_thread"}, "通用两级评论；一级自动加载，二级点击后懒加载", []string{"title", "list_url", "replies_url", "submit_url", "fields: {key,author,content,reply_count,reply_to}", "content_field", "parent_field", "require_auth", "placeholder"}, map[string]interface{}{"list_url": "/api/v1/articles/{{$query.id}}/comments", "replies_url": "/api/v1/comments/{{$item.id}}/replies", "submit_url": "/api/v1/articles/{{$query.id}}/comments", "fields": map[string]interface{}{"key": "id", "author": "nickname", "content": "content", "reply_count": "reply_count"}})
+	add([]string{"bottom_nav"}, "固定底部安全区导航，入口和显隐由页面协议配置", []string{"items: [{key,label,icon_url?,page_id?,query?,action?,hidden?}]", "active_key"}, map[string]interface{}{"active_key": "home", "items": []interface{}{map[string]interface{}{"key": "home", "label": "首页", "page_id": "home"}}})
+	add([]string{"floating_action"}, "固定安全区浮动操作入口", []string{"label", "icon_url?", "position: left|right"}, map[string]interface{}{"label": "客服", "position": "right"})
+	add([]string{"media_picker"}, "选择图片或视频并将结果交给受控上传动作", []string{"title", "items", "max_count", "hint"}, map[string]interface{}{"title": "上传图片", "max_count": 9})
+	add([]string{"upload_progress"}, "显示上传进度与状态", []string{"title", "progress: 0..100", "status_text"}, map[string]interface{}{"title": "正在上传", "progress": 40})
+	add([]string{"media_gallery"}, "展示可预览的通用媒体网格", []string{"title", "items: [{id?,url|image_url}]"}, map[string]interface{}{"title": "图片", "items": []interface{}{map[string]interface{}{"url": "https://cdn.example.com/a.jpg"}}})
+	add([]string{"location_picker"}, "显示腾讯地图位置并支持选点或导航", []string{"title", "address", "latitude", "longitude", "scale", "btn_text"}, map[string]interface{}{"title": "服务地点", "latitude": 39.9, "longitude": 116.4})
+	add([]string{"service_entry"}, "默认打开微信内置客服，也可切换小程序内客服", []string{"title", "description", "mode: wechat|internal", "session_from", "btn_text"}, map[string]interface{}{"title": "联系客服", "mode": "wechat"})
+	add([]string{"webview_entry", "webview_state"}, "展示已登记 WebView 入口或加载状态", []string{"title", "description", "btn_text", "disabled"}, map[string]interface{}{"title": "打开网页", "btn_text": "打开"})
+	add([]string{"payment_result"}, "展示支付结果状态摘要", []string{"title", "status", "content|description", "order_id"}, map[string]interface{}{"title": "支付结果", "status": "pending"})
+	add([]string{"price_breakdown"}, "展示订单价格明细摘要", []string{"title", "content|description", "items", "total"}, map[string]interface{}{"title": "价格明细", "total": "¥0.00"})
+	add([]string{"address_card"}, "展示通用服务地址摘要", []string{"title|name", "address", "latitude", "longitude", "content|description", "btn_text", "btn_action"}, map[string]interface{}{"title": "服务地址", "address": "待选择"})
+	add([]string{"qr_code"}, "展示已登记二维码信息和保存入口", []string{"title", "image_url|url", "content|description", "btn_text", "btn_action"}, map[string]interface{}{"title": "二维码"})
+	add([]string{"feature_gate"}, "按租户能力矩阵显示或隐藏功能分支", []string{"title", "capability", "enabled", "content|description", "fallback"}, map[string]interface{}{"title": "功能开关", "capability": "membership"})
+	add([]string{"compliance_panel"}, "展示隐私、类目和审核状态提示", []string{"title", "content|description", "policy_url", "status"}, map[string]interface{}{"title": "合规提示", "status": "local"})
+	add([]string{"chat_thread"}, "组合消息列表、未读摘要和消息输入的通用客服线程", []string{"title", "peer_name", "status", "unread_count", "messages|items", "thread_id", "send_action", "refresh_action"}, map[string]interface{}{"title": "在线客服", "messages": []interface{}{map[string]interface{}{"content": "您好"}}})
+	add([]string{"message_list"}, "展示通用消息列表", []string{"messages|items", "empty_text"}, map[string]interface{}{"messages": []interface{}{map[string]interface{}{"content": "消息"}}})
+	add([]string{"message_composer"}, "发送通用文本消息", []string{"placeholder", "send_text", "send_action"}, map[string]interface{}{"placeholder": "输入消息"})
+	add([]string{"unread_badge"}, "展示消息未读数", []string{"count|unread_count", "hide_zero"}, map[string]interface{}{"count": 2})
+	add([]string{"order_card"}, "展示订单状态摘要和受控操作", []string{"title", "order_id|id", "order_no", "amount", "status", "status_text", "updated_at", "action_text"}, map[string]interface{}{"title": "订单", "status": "pending"})
+	add([]string{"order_summary"}, "展示订单金额摘要", []string{"title", "total|amount", "action_text"}, map[string]interface{}{"title": "订单摘要", "total": "¥0.00"})
+	add([]string{"order_timeline"}, "展示订单状态时间线", []string{"title", "nodes|timeline"}, map[string]interface{}{"title": "订单进度", "nodes": []interface{}{map[string]interface{}{"title": "已创建"}}})
+	add([]string{"logistics_track"}, "展示物流轨迹和刷新入口", []string{"title", "order_id", "company", "tracking_no", "tracks|items"}, map[string]interface{}{"title": "物流轨迹", "tracks": []interface{}{}})
+	add([]string{"after_sale_form"}, "提交通用售后申请", []string{"title", "order_id", "reason", "placeholder", "submit_text"}, map[string]interface{}{"title": "申请售后", "order_id": "order-1"})
+	add([]string{"evidence_list"}, "展示售后证据并提供受控上传入口", []string{"title", "order_id", "evidence|items", "allow_upload"}, map[string]interface{}{"title": "凭证材料", "allow_upload": true})
+	add([]string{"service_card"}, "展示通用服务项目和接单入口", []string{"title|name", "description", "price", "status", "task_id|id", "action_text"}, map[string]interface{}{"title": "服务项目"})
+	add([]string{"task_card"}, "展示斗师待接任务", []string{"task_title|title", "description", "task_id|id", "action_text"}, map[string]interface{}{"task_title": "待接任务"})
+	add([]string{"quote_card"}, "展示服务报价和提交入口", []string{"title", "price|amount", "valid_until", "action_text"}, map[string]interface{}{"title": "服务报价", "price": "¥0.00"})
+	add([]string{"schedule_picker"}, "收集服务排期文本并提交受控状态动作", []string{"title", "value", "placeholder", "confirm_text"}, map[string]interface{}{"title": "选择服务时间"})
+	add([]string{"membership_card"}, "展示会员状态、有效期和权益", []string{"title|level_name", "status", "expire_at", "benefits", "action_text"}, map[string]interface{}{"title": "会员权益", "status": "inactive"})
+	add([]string{"ad_slot"}, "展示受控广告位占位和策略状态", []string{"slot_id", "label", "title", "description", "disabled"}, map[string]interface{}{"slot_id": "ad-1", "title": "内容推荐"})
+	add([]string{"wallet_card"}, "展示钱包余额和刷新入口", []string{"title", "balance", "action_text"}, map[string]interface{}{"title": "可用余额", "balance": "¥0.00"})
+	add([]string{"withdraw_form"}, "提交受控提现申请", []string{"title", "placeholder", "submit_text"}, map[string]interface{}{"title": "申请提现"})
 
 	add([]string{"result_table"}, "通用结果卡片；当前由通用渲染器显示核心图文", []string{"title", "rows", "content|description", "image_url", "btn_text", "btn_action"}, map[string]interface{}{"title": "查询结果", "content": "已查询到结果"})
 	add([]string{"contact_card"}, "显示联系人或客服信息", []string{"title|name", "subtitle", "content|description", "image_url", "btn_text", "btn_action"}, map[string]interface{}{"title": "联系客服", "content": "工作日 9:00-18:00"})
@@ -65,7 +97,7 @@ func mcpActionContracts() map[string]interface{} {
 		"navigate_page":          map[string]interface{}{"purpose": "打开 SDUI 页面", "payload": []string{"page_id", "query?", "id?", "open_type?: navigate|redirect|reLaunch"}},
 		"open_channels_activity": map[string]interface{}{"purpose": "打开微信视频号动态", "payload": []string{"feed_id", "finder_user_name"}},
 		"open_mini_program":      map[string]interface{}{"purpose": "打开其他小程序", "payload": []string{"target_app_id", "target_path?", "extra_data?", "env_version?"}},
-		"open_webview":           map[string]interface{}{"purpose": "打开 HTTP(S) H5 地址；当前服务端校验协议格式，实际域名仍需加入微信业务域名白名单", "payload": []string{"url|web_url", "title?"}},
+		"open_webview":           map[string]interface{}{"purpose": "打开当前 AppID 已登记且启用的 HTTPS H5 入口", "payload": []string{"url_key", "title?"}},
 		"preview_image":          map[string]interface{}{"purpose": "预览图片", "payload": []string{"current|url", "urls?"}},
 		"request":                map[string]interface{}{"purpose": "request_data 的兼容名称", "payload": []string{"endpoint 或同源 url", "method?", "path_params?", "query?", "body?", "idempotency_key?", "timeout_ms?", "response?: {data_path?,save_as?}"}},
 		"request_data":           map[string]interface{}{"purpose": "调用登记端点或同源相对接口并保存结果", "payload": []string{"endpoint 或同源 url", "method?", "path_params?", "query?", "body?", "idempotency_key?", "timeout_ms?", "target?", "response?: {data_path?,save_as?}"}},
@@ -79,5 +111,34 @@ func mcpActionContracts() map[string]interface{} {
 		"show_empty_state":       map[string]interface{}{"purpose": "将目标积木切换为 empty 分支", "payload": []string{"target"}},
 		"show_loading_state":     map[string]interface{}{"purpose": "将目标积木切换为 loading 分支", "payload": []string{"target"}},
 		"reset_block_state":      map[string]interface{}{"purpose": "将目标积木恢复 normal 分支", "payload": []string{"target"}},
+		"choose_media":           map[string]interface{}{"purpose": "调用微信媒体选择器", "payload": []string{"count?", "media_type?", "source_type?"}},
+		"upload_file":            map[string]interface{}{"purpose": "使用后端返回的 HTTPS 预签名地址上传媒体", "payload": []string{"file_path|temp_file_path", "presigned_url", "upload_headers?", "final_url|final_cos_file_url?"}},
+		"delete_media":           map[string]interface{}{"purpose": "通过受控端点删除已归属当前用户/业务的媒体", "payload": []string{"endpoint", "body?", "idempotency_key?"}},
+		"request_location":       map[string]interface{}{"purpose": "请求 GCJ-02 当前定位", "payload": []string{}},
+		"choose_location":        map[string]interface{}{"purpose": "打开微信位置选择器", "payload": []string{}},
+		"open_map":               map[string]interface{}{"purpose": "打开腾讯地图位置", "payload": []string{"latitude", "longitude", "name|title?", "address?", "scale?"}},
+		"open_wechat_service":    map[string]interface{}{"purpose": "打开微信原生客服会话；默认客服入口优先使用 Button open-type=contact", "payload": []string{"ext_info?", "corp_id?", "url?"}},
+		"save_qr":                map[string]interface{}{"purpose": "下载并保存已登记客服二维码", "payload": []string{"url|image_url"}},
+		"open_internal_chat":     map[string]interface{}{"purpose": "打开通用 SDUI 小程序内客服页", "payload": []string{"page_id?", "context?"}},
+		"send_message":           map[string]interface{}{"purpose": "发送聊天消息到受控会话端点", "payload": []string{"thread_id?", "content"}},
+		"mark_read":              map[string]interface{}{"purpose": "标记聊天会话已读", "payload": []string{"thread_id?"}},
+		"poll_messages":          map[string]interface{}{"purpose": "轮询受控聊天消息", "payload": []string{"thread_id?", "cursor?"}},
+		"connect_message":        map[string]interface{}{"purpose": "建立受控消息连接", "payload": []string{"thread_id?"}},
+		"upload_chat_media":      map[string]interface{}{"purpose": "上传聊天媒体到当前租户", "payload": []string{"thread_id?", "media_id?"}},
+		"create_order":           map[string]interface{}{"purpose": "创建业务订单", "payload": []string{"sku?", "amount?"}},
+		"confirm_order":          map[string]interface{}{"purpose": "确认订单", "payload": []string{"order_id|id"}},
+		"cancel_order":           map[string]interface{}{"purpose": "取消订单", "payload": []string{"order_id|id", "reason?"}},
+		"confirm_receipt":        map[string]interface{}{"purpose": "确认收货或服务完成", "payload": []string{"order_id|id"}},
+		"refresh_logistics":      map[string]interface{}{"purpose": "刷新物流轨迹", "payload": []string{"order_id|id"}},
+		"apply_after_sale":       map[string]interface{}{"purpose": "申请售后", "payload": []string{"order_id|id", "reason"}},
+		"upload_evidence":        map[string]interface{}{"purpose": "上传售后证据", "payload": []string{"order_id|id", "media_id?"}},
+		"accept_task":            map[string]interface{}{"purpose": "斗师接受服务任务", "payload": []string{"task_id|id"}},
+		"reject_task":            map[string]interface{}{"purpose": "斗师拒绝服务任务", "payload": []string{"task_id|id", "reason?"}},
+		"submit_quote":           map[string]interface{}{"purpose": "斗师提交服务报价", "payload": []string{"task_id|id", "price|amount"}},
+		"update_service_status":  map[string]interface{}{"purpose": "更新服务订单状态", "payload": []string{"task_id|order_id|id", "status|schedule?"}},
+		"open_membership":        map[string]interface{}{"purpose": "打开会员能力或开通入口", "payload": []string{"plan_id|sku?"}},
+		"load_ad":                map[string]interface{}{"purpose": "加载受控广告位", "payload": []string{"slot_id"}},
+		"refresh_wallet":         map[string]interface{}{"purpose": "刷新钱包余额", "payload": []string{}},
+		"request_withdraw":       map[string]interface{}{"purpose": "提交提现申请", "payload": []string{"amount"}},
 	}
 }

@@ -1407,12 +1407,12 @@ func CalculateAdaptiveBlockHeight(block *models.BlockItem, props map[string]inte
 		return 40 + rowCount*34, ""
 
 	// 27. 联系人与客服卡片
-	case "contact_card":
-		return 88, ""
+	case "contact_card", "service_entry":
+		return 112, "wechat_contact_button_stub"
 
 	// 28. 地图与地理位置卡片
-	case "map_card":
-		return 160, "map_view_stub"
+	case "map_card", "location_picker":
+		return 224, "tencent_map_view_stub"
 
 	// 29. 游戏头图与活动日程卡片
 	case "game_header":
@@ -1471,6 +1471,84 @@ func CalculateAdaptiveBlockHeight(block *models.BlockItem, props map[string]inte
 		return 520, ""
 	case "comment_thread", "discussion_thread":
 		return 300, ""
+	case "bottom_nav":
+		return 64, "fixed_bottom_navigation_stub"
+	case "floating_action":
+		return 52, "fixed_floating_action_stub"
+	case "media_picker":
+		return 150, "wechat_media_picker_stub"
+	case "upload_progress":
+		return 76, ""
+	case "media_gallery":
+		count := sliceLength(props["items"])
+		if count == 0 {
+			count = 1
+		}
+		return 42 + int(math.Ceil(float64(count)/3.0))*94, ""
+	case "webview_entry", "webview_state":
+		return 72, ""
+	case "chat_thread":
+		count := sliceLength(props["messages"])
+		if count == 0 {
+			count = sliceLength(props["items"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		return 150 + count*52, "sdui_chat_thread_stub"
+	case "message_list":
+		count := sliceLength(props["messages"])
+		if count == 0 {
+			count = sliceLength(props["items"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		return 48 + count*52, ""
+	case "message_composer":
+		return 58, ""
+	case "unread_badge":
+		return 28, ""
+	case "order_card", "order_summary":
+		return 150, ""
+	case "order_timeline":
+		count := sliceLength(props["nodes"])
+		if count == 0 {
+			count = sliceLength(props["timeline"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		return 56 + count*54, ""
+	case "logistics_track":
+		count := sliceLength(props["tracks"])
+		if count == 0 {
+			count = sliceLength(props["items"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		return 90 + count*52, ""
+	case "after_sale_form":
+		return 240, ""
+	case "evidence_list":
+		count := sliceLength(props["evidence"])
+		if count == 0 {
+			count = sliceLength(props["items"])
+		}
+		return 80 + count*44, ""
+	case "service_card", "task_card", "quote_card":
+		return 150, ""
+	case "schedule_picker":
+		return 180, ""
+	case "membership_card":
+		return 160, ""
+	case "ad_slot":
+		return 108, "wx_ad_slot_stub"
+	case "wallet_card":
+		return 150, ""
+	case "withdraw_form":
+		return 190, ""
 
 	default:
 		return 90, ""

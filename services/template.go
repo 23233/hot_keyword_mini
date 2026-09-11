@@ -250,7 +250,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 				"version":      "v2.5.0 全新公测",
 				"package_id":   "pkg_game_novice_888",
 				"claim_status": "unclaimed",
-				"redeem_code":  "点击立即授权领取",
+				"redeem_code":  "点击立即领取",
 				"remaining":    "仅剩 12% 剩余",
 			},
 			Style: &models.BlockStyle{
@@ -259,7 +259,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
-				RequireAuth: true,
+				RequireAuth: false,
 				Payload: map[string]interface{}{
 					"endpoint": "game.redeem",
 					"body": map[string]interface{}{
@@ -285,7 +285,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			ID:   "block_btn_game",
 			Type: "action_button",
 			Props: map[string]interface{}{
-				"text":  "🎮 登录领取独家公测礼包码",
+				"text":  "🎮 领取独家公测礼包码",
 				"badge": "限量礼包",
 			},
 			Style: &models.BlockStyle{
@@ -293,7 +293,7 @@ func initDefaultTemplates(r *TemplateRegistry) {
 			},
 			Action: &models.BlockAction{
 				Type:        "request_data",
-				RequireAuth: true,
+				RequireAuth: false,
 				Payload: map[string]interface{}{
 					"endpoint": "game.redeem",
 					"body": map[string]interface{}{

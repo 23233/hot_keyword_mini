@@ -52,6 +52,10 @@
           "description": "页面生命周期状态",
           "enum": ["draft", "published", "archived", "reviewing"]
         },
+        "hidden": {
+          "type": "boolean",
+          "description": "页面是否从公开路由、导航和首页目标中隐藏"
+        },
         "title": {
           "type": "string",
           "description": "页面主标题",
@@ -268,6 +272,35 @@
             "show_empty_state",
             "show_loading_state",
             "reset_block_state"
+            ,"choose_media"
+            ,"upload_file"
+            ,"delete_media"
+            ,"request_location"
+            ,"choose_location"
+            ,"open_map"
+            ,"open_wechat_service"
+            ,"save_qr"
+            ,"open_internal_chat"
+            ,"send_message"
+            ,"mark_read"
+            ,"poll_messages"
+            ,"connect_message"
+            ,"upload_chat_media"
+            ,"create_order"
+            ,"confirm_order"
+            ,"cancel_order"
+            ,"confirm_receipt"
+            ,"refresh_logistics"
+            ,"apply_after_sale"
+            ,"upload_evidence"
+            ,"accept_task"
+            ,"reject_task"
+            ,"submit_quote"
+            ,"update_service_status"
+            ,"open_membership"
+            ,"load_ad"
+            ,"refresh_wallet"
+            ,"request_withdraw"
           ]
         },
         "require_auth": {

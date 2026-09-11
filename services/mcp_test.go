@@ -13,29 +13,37 @@ func TestMCPToolDefinitions(t *testing.T) {
 	service := NewMCPService()
 	tools := service.GetToolDefinitions()
 
-	if len(tools) != 18 {
-		t.Fatalf("预期注册 18 个受控工具，实际为 %d", len(tools))
+	if len(tools) != 26 {
+		t.Fatalf("预期注册 26 个受控工具，实际为 %d", len(tools))
 	}
 
 	expectedTools := map[string]bool{
-		"sdui.app.list":            false,
-		"sdui.file.prepare_upload": false,
-		"sdui.page.list":           false,
-		"sdui.page.get":            false,
-		"sdui.template.list":       false,
-		"sdui.template.get":        false,
-		"sdui.template.save":       false,
-		"sdui.template.delete":     false,
-		"sdui.page.create":         false,
-		"sdui.page.patch":          false,
-		"sdui.page.validate":       false,
-		"sdui.page.preview":        false,
-		"sdui.page.screenshot":     false,
-		"sdui.page.publish":        false,
-		"sdui.page.revisions":      false,
-		"sdui.page.rollback":       false,
-		"sdui.page.set_current":    false,
-		"sdui.page.share_card":     false,
+		"sdui.app.list":             false,
+		"sdui.capability.list":      false,
+		"sdui.capability.validate":  false,
+		"sdui.capability.configure": false,
+		"sdui.acceptance.run":       false,
+		"sdui.webview.list":         false,
+		"sdui.webview.validate":     false,
+		"sdui.file.prepare_upload":  false,
+		"sdui.page.list":            false,
+		"sdui.page.get":             false,
+		"sdui.template.list":        false,
+		"sdui.template.get":         false,
+		"sdui.template.save":        false,
+		"sdui.template.delete":      false,
+		"sdui.page.create":          false,
+		"sdui.page.patch":           false,
+		"sdui.page.validate":        false,
+		"sdui.page.preview":         false,
+		"sdui.page.screenshot":      false,
+		"sdui.page.publish":         false,
+		"sdui.page.revisions":       false,
+		"sdui.page.rollback":        false,
+		"sdui.page.set_current":     false,
+		"sdui.page.share_card":      false,
+		"sdui.operation.execute":    false,
+		"sdui.payment.sandbox":      false,
 	}
 
 	for _, tool := range tools {
@@ -62,6 +70,60 @@ func TestMCPToolDefinitions(t *testing.T) {
 		if tool.Annotations["requiredScope"] != tool.RequiredScope {
 			t.Fatalf("工具 %s 的 annotations.requiredScope 与工具契约不一致", tool.Name)
 		}
+	}
+}
+
+// TestMCPWebViewToolContracts 验证 WebView 工具只读、按 AppID 隔离并要求 url_key。
+func TestMCPWebViewToolContracts(t *testing.T) {
+	tools := NewMCPService().GetToolDefinitions()
+	for _, name := range []string{"sdui.webview.list", "sdui.webview.validate"} {
+		var found *MCPToolDefinition
+		for index := range tools {
+			if tools[index].Name == name {
+				found = &tools[index]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("缺少 WebView 工具: %s", name)
+		}
+		if found.RequiredScope != "read" || found.Annotations["readOnlyHint"] != true || found.Annotations["destructiveHint"] != false {
+			t.Fatalf("WebView 工具只读契约错误: %+v", found)
+		}
+	}
+	if err := validateMCPArguments("sdui.webview.list", map[string]interface{}{}, tools); err == nil {
+		t.Fatal("webview.list 缺少 app_id 时应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.webview.validate", map[string]interface{}{"app_id": "wx-test"}, tools); err == nil {
+		t.Fatal("webview.validate 缺少 url_key 时应被拒绝")
+	}
+	if err := validateMCPArguments("sdui.webview.validate", map[string]interface{}{"app_id": "wx-test", "url_key": "game-home"}, tools); err != nil {
+		t.Fatalf("合法 WebView 参数不应被拒绝: %v", err)
+	}
+}
+
+// TestMCPAcceptanceToolContract 验证验收工具仅生成只读清单，不承担发布或能力启用职责。
+func TestMCPAcceptanceToolContract(t *testing.T) {
+	service := NewMCPService()
+	var found *MCPToolDefinition
+	for index := range service.GetToolDefinitions() {
+		tool := service.GetToolDefinitions()[index]
+		if tool.Name == "sdui.acceptance.run" {
+			found = &tool
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("缺少 sdui.acceptance.run 工具")
+	}
+	if found.RequiredScope != "read" || found.Annotations["readOnlyHint"] != true || found.Annotations["destructiveHint"] != false {
+		t.Fatalf("验收工具权限或只读标记错误: %+v", found)
+	}
+	if err := validateMCPArguments(found.Name, map[string]interface{}{}, service.GetToolDefinitions()); err == nil {
+		t.Fatal("验收工具缺少 app_id 时应被参数校验拒绝")
+	}
+	if err := validateMCPArguments(found.Name, map[string]interface{}{"app_id": "wx-test"}, service.GetToolDefinitions()); err != nil {
+		t.Fatalf("验收工具合法参数不应被拒绝: %v", err)
 	}
 }
 
@@ -194,7 +256,7 @@ func TestMCPCoverageResource(t *testing.T) {
 		t.Fatalf("MCP API 资源缺少 tools/call 响应信封契约")
 	}
 	coverage, ok := api["coverage"].(map[string]string)
-	if !ok || coverage["draft_creation"] != "sdui.page.create" || coverage["image_upload"] != "sdui.file.prepare_upload" {
+	if !ok || coverage["draft_creation"] != "sdui.page.create" || coverage["image_upload"] != "sdui.file.prepare_upload" || coverage["webview_registry"] != "sdui.webview.list + sdui.webview.validate" {
 		t.Fatalf("MCP 覆盖矩阵缺少核心页面和图片行为")
 	}
 	unsupported, ok := api["unsupported_or_admin_only"].([]string)

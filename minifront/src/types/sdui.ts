@@ -27,6 +27,35 @@ export type BlockActionType =
   | 'show_empty_state'       // 切换目标积木为空状态
   | 'show_loading_state'     // 切换目标积木为加载中状态
   | 'reset_block_state'      // 重置目标积木为正常状态
+  | 'choose_media'           // 选择图片或视频
+  | 'upload_file'            // 使用预签名地址上传媒体
+  | 'delete_media'           // 通过受控端点删除媒体
+  | 'request_location'       // 获取当前定位
+  | 'choose_location'        // 打开位置选择器
+  | 'open_map'               // 打开腾讯地图导航
+  | 'open_wechat_service'    // 打开微信内置客服
+  | 'save_qr'                // 保存客服二维码
+  | 'open_internal_chat'     // 打开小程序内客服页
+  | 'send_message'           // 发送聊天消息
+  | 'mark_read'              // 标记消息已读
+  | 'poll_messages'          // 轮询聊天消息
+  | 'connect_message'        // 建立实时消息连接
+  | 'upload_chat_media'      // 上传聊天媒体
+  | 'create_order'           // 创建业务订单
+  | 'confirm_order'          // 确认订单
+  | 'cancel_order'           // 取消订单
+  | 'confirm_receipt'        // 确认收货
+  | 'refresh_logistics'      // 刷新物流轨迹
+  | 'apply_after_sale'       // 申请售后
+  | 'upload_evidence'        // 上传售后证据
+  | 'accept_task'            // 接受服务任务
+  | 'reject_task'            // 拒绝服务任务
+  | 'submit_quote'           // 提交服务报价
+  | 'update_service_status'  // 更新服务状态
+  | 'open_membership'        // 打开会员能力
+  | 'load_ad'                // 加载广告位
+  | 'refresh_wallet'         // 刷新钱包
+  | 'request_withdraw'       // 申请提现
 
 // 交互前置确认弹窗配置
 export interface ActionConfirm {
@@ -108,6 +137,29 @@ export interface BlockItem {
   fallback?: BlockItem
 }
 
+// 租户通用能力状态。
+export type CapabilityState = 'disabled' | 'configured' | 'enabled' | 'blocked' | 'degraded'
+
+// 单个 AppID 的能力矩阵配置。
+export interface CapabilityMatrixEntry {
+  state: CapabilityState
+  protocol_version?: string
+  minimum_client_version?: string
+  review_status?: string
+  domain_keys?: string[]
+  reason?: string
+}
+
+// 公共能力注册定义，所有小程序运行时共享。
+export interface CapabilityDefinition {
+  key: string
+  version: string
+  blocks: string[]
+  actions: string[]
+  native: string[]
+  implementation_status: 'ready' | 'partial' | 'planned'
+}
+
 // 通用自由图文卡片组件属性定义 (custom / custom_block)
 export interface CustomBlockProps {
   title?: string
@@ -160,6 +212,8 @@ export interface DynamicPageDTO {
   revision: number
   // 页面发布状态 (published / draft)
   status: string
+  // 页面是否从公开路由、导航和首页目标中隐藏
+  hidden: boolean
   // 页面主标题
   title: string
   // 业务领域标签 (Tag/Category，仅作为业务分类与数据归因元数据，所有页面平权由通用积木编排)

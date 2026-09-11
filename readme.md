@@ -1,6 +1,18 @@
+<!-- readme.md -->
 # 通用 SDUI 动态组件与 AI 破甲资讯小程序系统
 
 本项目是面向微信小程序的通用服务端驱动动态引擎（Server-Driven UI, SDUI），支持资讯、会员、单篇付费文章、评论、短剧、游戏、查询和下载等页面由协议灵活编排。当前默认租户为“ai破甲”资讯导航站。系统采用 **Golang (Iris + Gorm)** 与 **Taro 4 + React**，界面遵循**苹果人机交互设计规范 (Apple HIG)**，并配备多租户管理工作台、MCP 编排服务和微信开发者工具验收脚本。
+
+> **开发权威基线**：后续通用能力、Block、Action、后台配置、MCP 编排、两个 AppID 的本地开发和视觉/微信验收，统一遵循 [SDUI通用能力平台开发与验收规范](./doc/SDUI通用能力平台开发与验收规范.md) `v1.0.2`。迁移分析报告仅用于记录取证和方案背景，与规范冲突时以规范为准。
+
+当前本地验收租户：
+
+- 设身处地游戏：`wx7a779add6a689881`
+- dcl/斗艺馆：`wx8b8e899d4829481`
+
+线上公共访问地址：`https://wx.a0free.com`。本地开发仍使用 `localhost`，生产部署通过 `PUBLIC_BASE_URL=https://wx.a0free.com` 注入。
+
+本地地图统一使用腾讯地图；客服默认使用微信小程序内置客服组件，同时预置小程序内客服能力。支付、上传、订单、物流、售后、斗师接单、会员、广告和提现等能力必须先按规范完成通用能力包，再通过租户矩阵启用。
 
 ---
 
@@ -213,10 +225,25 @@ COS_CDN_URL=https://默认CDN域名（可选）
 
 AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。推荐按“`sdui.app.list` -> `sdui.page.list/get` -> `sdui.template.list/get` -> `sdui.file.prepare_upload`（需要图片时） -> `sdui.page.create`（仅创建不存在的 page_id） -> `sdui.page.get` 取得最新 revision -> `sdui.page.patch(expected_revision)` -> `sdui.page.validate` -> `sdui.page.preview` -> `sdui.page.screenshot` -> 人工复核同一 revision -> `sdui.page.publish(expected_revision, confirmed: true)` -> `sdui.page.set_current`”执行；故障恢复使用 `sdui.page.revisions` 和 `sdui.page.rollback`。默认只写草稿，发布、回滚、切换主页和生成分享图必须同时具备 `release` 权限并传入 `confirmed: true`，由人完成最终核对。工具失败会返回机器可读的 `structuredContent.recovery`，应按建议修复后重试。
 
+`sdui.acceptance.run` 是只读验收编排工具：它按指定 `app_id` 汇总已发布页和草稿的协议校验、能力矩阵、Layout IR、Block/Action 覆盖及所需证据，不发布页面、不启用能力、不调用生产服务。它不能替代 `sdui.page.validate`、`sdui.page.preview`、`sdui.page.screenshot` 或微信开发者工具的实际执行。
+
 `tools/list` 中每个工具都包含机器可读的 `requiredScope` 以及 MCP `annotations.requiredScope`。`tools/call` 的业务成功和失败均使用顶层 `result`：成功时 `isError=false`，失败时 `isError=true` 且 `structuredContent` 包含 `code/tool/message/recovery`；只有 JSON-RPC 协议层错误使用顶层 `error`。Stdio 服务严格按一行一个 JSON-RPC 消息通信，stdout 只输出响应，启动提示和诊断信息只写入 stderr。
 
 MCP 的覆盖边界：它完整覆盖 SDUI 页面和资源的 AI 编排闭环，但不开放管理员账号、微信 AppSecret、支付私钥、商品金额、数据库迁移、任意 HTTP 代理或任意脚本执行。这些行为必须继续通过管理后台或专用服务完成。
 
 图片上传使用 `sdui.file.prepare_upload`：MCP 不接收二进制文件，只返回 10 分钟有效的预签名 PUT 地址、`uploadHeaders` 和最终 CDN 地址。AI 调用方必须按返回的 `uploadHeaders` 直接 PUT 图片到 `presignedUrl`，成功后使用 `finalCosFileUrl` 更新页面图片字段。对象统一使用 `miniapps/{app_id}/` 前缀，ACL 由 COS 控制台的 `miniapps/*` 规则管理。
+
+微信开发者工具验收脚本可复用于两个 AppID。先用对应 AppID 构建并同步 `dist/project.config.json`，再分别运行：
+
+```powershell
+$env:WECHAT_AGENT_APPID = "wx7a779add6a689881"
+pnpm --dir minifront run build:weapp
+$env:WECHAT_IDE_REQUIRED = "1"
+pnpm --dir minifront run test:wechat-agent
+
+$env:WECHAT_AGENT_APPID = "wx8b8e899d4829481a"
+pnpm --dir minifront run build:weapp
+pnpm --dir minifront run test:wechat-agent
+```
 
 验证记录：预签名上传、COS 签名读取以及关闭证书校验后的 CDN 读取在 2026-09-04 已通过，测试对象已清理；本机使用默认 TLS 校验访问 `minicdn.a0free.com` 仍返回 `SEC_E_CERT_EXPIRED`，需以 CDN 实际边缘节点证书状态为准。本轮文档与代码核对（2026-09-09）中，Go 项目已通过 `go test ./...` 与 `go build ./...`；小程序已通过 `pnpm --dir minifront run type-check`、`pnpm --dir minifront run test:sdui` 和 `pnpm --dir minifront run build:weapp`。

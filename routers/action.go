@@ -53,16 +53,6 @@ func ExecuteActionHandler(ctx iris.Context) {
 		}
 	}
 
-	// 敏感端点要求前置登录态校验
-	if req.Endpoint == "game.redeem" && openID == "" {
-		ctx.StatusCode(iris.StatusUnauthorized)
-		_ = ctx.JSON(iris.Map{
-			"code": 401,
-			"msg":  "执行兑换动作前必须完成微信登录授权",
-		})
-		return
-	}
-
 	actionService := services.NewActionEndpointService()
 	res, err := actionService.ExecuteActionEndpoint(appID, openID, req.Endpoint, req.Payload, req.IdempotencyKey)
 

@@ -11,7 +11,7 @@ import (
 )
 
 type createWebViewTicketRequest struct {
-	URL string `json:"url"`
+	URLKey string `json:"url_key"`
 }
 
 // CreateWebViewTicketHandler 为已登录小程序用户创建一次性 WebView 地址。
@@ -23,9 +23,9 @@ func CreateWebViewTicketHandler(ctx iris.Context) {
 		return
 	}
 	var req createWebViewTicketRequest
-	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.URLKey) == "" {
 		ctx.StatusCode(iris.StatusBadRequest)
-		_ = ctx.JSON(iris.Map{"code": 400, "msg": "WebView 地址不能为空"})
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "WebView url_key 不能为空"})
 		return
 	}
 	authHeader := ctx.GetHeader("Authorization")
@@ -40,7 +40,13 @@ func CreateWebViewTicketHandler(ctx iris.Context) {
 		_ = ctx.JSON(iris.Map{"code": 401, "msg": "登录态无效，请重新授权"})
 		return
 	}
-	target, err := services.NewWebViewTicketService().CreateTicket(appID, user.ID, req.URL)
+	entry, err := services.ValidateWebViewKey(appID, req.URLKey)
+	if err != nil {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+		return
+	}
+	target, err := services.NewWebViewTicketService().CreateTicket(appID, user.ID, entry.URL)
 	if err != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})

@@ -4,6 +4,7 @@ package routers
 import (
 	"encoding/json"
 	"fmt"
+	"hot_keyword/config"
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"hot_keyword/routers/middleware"
@@ -106,6 +107,18 @@ type SetCurrentPageReq struct {
 	AppID string `json:"app_id"`
 	// 目标主页 PageID
 	PageID string `json:"page_id"`
+}
+
+// ConfigureCapabilityReq 配置单个租户通用能力。
+type ConfigureCapabilityReq struct {
+	// 小程序 AppID。
+	AppID string `json:"app_id"`
+	// 公共能力键。
+	Capability string `json:"capability"`
+	// 能力配置。
+	Config models.CapabilityMatrixEntry `json:"config"`
+	// 启用能力时的人工确认。
+	Confirmed bool `json:"confirmed"`
 }
 
 // ApplyTemplateReq 套用行业模板请求入参
@@ -383,6 +396,69 @@ func RegisterAdminRoutes(party iris.Party) {
 		ctx.JSON(iris.Map{"code": 0, "msg": "小程序配置已保存"})
 	})
 
+	// 通用能力平台：读取指定 AppID 的公共能力注册与租户状态。
+	adminParty.Get("/capabilities", func(ctx iris.Context) {
+		appID := strings.TrimSpace(ctx.URLParam("app_id"))
+		capabilities, err := services.ListAppCapabilities(appID)
+		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "success", "data": capabilities})
+	})
+
+	// 通用能力平台：原子配置单项能力并写入审计。
+	adminParty.Post("/capability", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		var req ConfigureCapabilityReq
+		if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.AppID) == "" || strings.TrimSpace(req.Capability) == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "能力配置参数不完整"})
+			return
+		}
+		if req.Config.State == "enabled" && !req.Confirmed {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "启用能力必须人工确认 confirmed=true"})
+			return
+		}
+		operator := ctx.Values().GetStringDefault("admin_username", "admin")
+		if err := services.ConfigureAppCapability(req.AppID, req.Capability, req.Config, operator); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "能力配置已更新"})
+	})
+
+	// WebView 注册表：按 AppID 管理已审核 HTTPS 地址、url_key、用途、版本和启停状态。
+	adminParty.Get("/webviews", func(ctx iris.Context) {
+		appID := strings.TrimSpace(ctx.URLParam("app_id"))
+		entries, err := services.ListWebViews(appID)
+		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "data": entries})
+	})
+	adminParty.Post("/webviews", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		var req struct {
+			AppID   string                  `json:"app_id"`
+			Entries []services.WebViewEntry `json:"entries"`
+		}
+		if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.AppID) == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "WebView 注册参数不完整"})
+			return
+		}
+		if err := services.SaveWebViews(req.AppID, req.Entries); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "WebView 注册表已保存", "data": req.Entries})
+	})
+
 	// 商品管理：商品和金额只由后台配置，客户端不得传入金额。
 	adminParty.Get("/products", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
@@ -417,6 +493,99 @@ func RegisterAdminRoutes(party iris.Party) {
 			return
 		}
 		ctx.JSON(iris.Map{"code": 0, "data": product})
+	})
+
+	// 通用能力沙箱：管理后台可查看并执行本地动作，便于验收状态机与幂等结果。
+	adminParty.Get("/operations", func(ctx iris.Context) {
+		appID := strings.TrimSpace(ctx.URLParam("app_id"))
+		if appID == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			_ = ctx.JSON(iris.Map{"code": 400, "msg": "app_id 不能为空"})
+			return
+		}
+		var rows []models.PlatformOperation
+		query := db.Mysql.Where("app_id = ?", appID).Order("updated_at desc")
+		if endpoint := strings.TrimSpace(ctx.URLParam("endpoint")); endpoint != "" {
+			query = query.Where("kind = ?", endpoint)
+		}
+		if err := query.Limit(100).Find(&rows).Error; err != nil {
+			ctx.StatusCode(iris.StatusInternalServerError)
+			_ = ctx.JSON(iris.Map{"code": 500, "msg": "读取通用能力操作失败: " + err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "data": rows})
+	})
+	adminParty.Post("/operations/execute", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		var req struct {
+			AppID          string                 `json:"app_id"`
+			Endpoint       string                 `json:"endpoint"`
+			OpenID         string                 `json:"open_id"`
+			Payload        map[string]interface{} `json:"payload"`
+			IdempotencyKey string                 `json:"idempotency_key"`
+		}
+		if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.AppID) == "" || strings.TrimSpace(req.Endpoint) == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			_ = ctx.JSON(iris.Map{"code": 400, "msg": "app_id 和 endpoint 不能为空"})
+			return
+		}
+		openID := strings.TrimSpace(req.OpenID)
+		if openID == "" {
+			openID = "admin_sandbox"
+		}
+		result, err := services.NewActionEndpointService().ExecuteActionEndpoint(req.AppID, openID, req.Endpoint, req.Payload, req.IdempotencyKey)
+		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "data": result})
+	})
+	adminParty.Post("/payment/sandbox", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		if config.Cfg != nil && config.Cfg.IsProduction() {
+			ctx.StatusCode(iris.StatusNotFound)
+			_ = ctx.JSON(iris.Map{"code": 404, "msg": "生产环境不开放支付沙箱"})
+			return
+		}
+		var req struct {
+			AppID          string `json:"app_id"`
+			UserID         int64  `json:"user_id"`
+			OpenID         string `json:"open_id"`
+			SKU            string `json:"sku"`
+			OutTradeNo     string `json:"out_trade_no"`
+			Operation      string `json:"operation"`
+			IdempotencyKey string `json:"idempotency_key"`
+		}
+		if err := ctx.ReadJSON(&req); err != nil || req.AppID == "" || req.UserID <= 0 || req.Operation == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			_ = ctx.JSON(iris.Map{"code": 400, "msg": "app_id、user_id 和 operation 不能为空"})
+			return
+		}
+		service := services.NewPaymentService()
+		if strings.EqualFold(req.Operation, "create") {
+			if req.OpenID == "" {
+				req.OpenID = fmt.Sprintf("admin-user-%d", req.UserID)
+			}
+			order, err := service.CreateSandboxOrder(req.AppID, req.UserID, req.OpenID, req.SKU, req.IdempotencyKey)
+			if err != nil {
+				ctx.StatusCode(iris.StatusBadRequest)
+				_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+				return
+			}
+			ctx.JSON(iris.Map{"code": 0, "data": order})
+			return
+		}
+		if req.OutTradeNo == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			_ = ctx.JSON(iris.Map{"code": 400, "msg": "out_trade_no 不能为空"})
+			return
+		}
+		order, err := service.ApplySandboxTransition(req.AppID, req.UserID, req.OutTradeNo, req.Operation)
+		if err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "data": order})
 	})
 
 	// 6. 动态页面管理: 获取指定小程序的全部页面
@@ -478,6 +647,7 @@ func RegisterAdminRoutes(party iris.Party) {
 				PageID:       req.PageID,
 				Revision:     req.Revision,
 				Status:       "draft",
+				Hidden:       req.Hidden,
 				Title:        req.Title,
 				BusinessType: req.BusinessType,
 				Intent:       req.Intent,
@@ -545,7 +715,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			operator = "admin"
 		}
 
-		publishedPage, err := sduiService.PublishDraft(req.AppID, req.PageID, operator, req.Remark)
+		publishedPage, err := sduiService.PublishDraftWithRevision(req.AppID, req.PageID, operator, req.Remark, req.ExpectedRevision)
 		if err != nil {
 			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "发布草稿失败: " + err.Error()})
@@ -674,6 +844,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			AppID:        page.AppID,
 			PageID:       page.PageID,
 			Status:       "draft",
+			Hidden:       page.Hidden,
 			Title:        page.Title,
 			BusinessType: page.BusinessType,
 			Intent:       page.Intent,
@@ -789,7 +960,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			return
 		}
 
-		report := services.ValidateDynamicPage(&page)
+		report := services.ValidateDynamicPageForRelease(&page)
 		ctx.JSON(iris.Map{
 			"code": 0,
 			"msg":  "校验完成",

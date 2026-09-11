@@ -128,6 +128,8 @@ type DynamicPage struct {
 	Revision int `gorm:"column:revision;default:1;comment:修订版本号" json:"revision"`
 	// 状态: published(已发布) / draft(草稿) / archived(归档)
 	Status string `gorm:"column:status;size:32;default:'published';comment:页面状态" json:"status"`
+	// 是否从公开路由、导航与首页目标中隐藏。
+	Hidden bool `gorm:"column:hidden;default:false;index;comment:页面是否隐藏" json:"hidden"`
 	// 页面标题 (如: 猴王下山 - 精选剧场)
 	Title string `gorm:"column:title;size:128;not null;comment:页面标题" json:"title"`
 	// 业务领域类型: drama(短剧) / game(游戏) / query(查询) / download(资源下载) / custom(自定义)
@@ -175,6 +177,8 @@ type DynamicPageDraft struct {
 	Revision int `gorm:"column:revision;default:1;comment:草稿修订版本号" json:"revision"`
 	// 草稿状态: draft(草稿) / reviewing(待发布审查)
 	Status string `gorm:"column:status;size:32;default:'draft';comment:草稿状态" json:"status"`
+	// 发布后是否从公开路由、导航与首页目标中隐藏。
+	Hidden bool `gorm:"column:hidden;default:false;comment:页面是否隐藏" json:"hidden"`
 	// 页面标题
 	Title string `gorm:"column:title;size:128;not null;comment:页面标题" json:"title"`
 	// 业务领域类型: drama(短剧) / game(游戏) / query(查询) / download(资源下载) / custom(自定义)
@@ -224,6 +228,8 @@ type DynamicPageRevision struct {
 	Revision int `gorm:"column:revision;not null;index:idx_app_page_rev;comment:修订版本号" json:"revision"`
 	// 页面标题
 	Title string `gorm:"column:title;size:128;comment:页面标题" json:"title"`
+	// 页面隐藏状态快照。
+	Hidden bool `gorm:"column:hidden;default:false;comment:页面是否隐藏" json:"hidden"`
 	// 业务类型
 	BusinessType string `gorm:"column:business_type;size:64;comment:业务类型" json:"business_type"`
 	// 搜索意图
@@ -323,6 +329,8 @@ type DynamicPageDTO struct {
 	Revision int `json:"revision"`
 	// 页面状态
 	Status string `json:"status"`
+	// 页面是否隐藏。
+	Hidden bool `json:"hidden"`
 	// 页面标题
 	Title string `json:"title"`
 	// 业务领域类型

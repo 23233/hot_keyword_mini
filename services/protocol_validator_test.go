@@ -2,6 +2,7 @@
 package services
 
 import (
+	"encoding/json"
 	"hot_keyword/models"
 	"testing"
 )
@@ -37,6 +38,7 @@ func TestProtocolValidation_Valid(t *testing.T) {
 		t.Fatalf("积木数量应为 1，实际为 %d", report.BlockCount)
 	}
 }
+
 // TestProtocolValidation_InvalidIDConflict 测试积木 ID 重复冲突拦截
 func TestProtocolValidation_InvalidIDConflict(t *testing.T) {
 	page := &models.DynamicPage{
@@ -265,5 +267,44 @@ func TestProtocolValidation_RequestPayment(t *testing.T) {
 	report = ValidateDynamicPage(invalidPaymentPage)
 	if report.IsValid {
 		t.Fatalf("缺失 sku 的 request_payment 应当被拦截判定为非法")
+	}
+}
+
+// TestProtocolValidation_PlatformActionParams 验证平台原生动作在发布前拦截危险或不完整参数。
+func TestProtocolValidation_PlatformActionParams(t *testing.T) {
+	validActions := []models.BlockAction{
+		{Type: "upload_file", Payload: map[string]interface{}{"file_path": "$result.temp_files.0.tempFilePath", "presigned_url": "https://upload.example.com/object"}},
+		{Type: "delete_media", Payload: map[string]interface{}{"endpoint": "media.delete"}},
+		{Type: "open_map", Payload: map[string]interface{}{"latitude": 22.5431, "longitude": 114.0579, "scale": 16}},
+		{Type: "open_wechat_service", Payload: map[string]interface{}{"corp_id": "ww_test", "url": "https://work.weixin.qq.com/kfid/test"}},
+		{Type: "save_qr", Payload: map[string]interface{}{"image_url": "https://example.com/service.png"}},
+		{Type: "open_internal_chat", Payload: map[string]interface{}{"page_id": "customer_service"}},
+	}
+	invalidActions := []models.BlockAction{
+		{Type: "upload_file", Payload: map[string]interface{}{"file_path": "$result.path", "presigned_url": "http://upload.example.com/object"}},
+		{Type: "delete_media", Payload: map[string]interface{}{"endpoint": "/api/media/delete"}},
+		{Type: "open_map", Payload: map[string]interface{}{"latitude": 91, "longitude": 114.0579}},
+		{Type: "open_wechat_service", Payload: map[string]interface{}{"url": "https://work.weixin.qq.com/kfid/test"}},
+		{Type: "save_qr", Payload: map[string]interface{}{"url": "javascript:alert(1)"}},
+		{Type: "open_internal_chat", Payload: map[string]interface{}{"page_id": "../customer_service"}},
+	}
+
+	buildPage := func(action models.BlockAction) *models.DynamicPage {
+		blocks, err := json.Marshal([]models.BlockItem{{ID: "platform_action", Type: "action_button", Action: &action}})
+		if err != nil {
+			t.Fatalf("序列化平台动作失败: %v", err)
+		}
+		return &models.DynamicPage{AppID: "wx_platform_test", PageID: "home", Title: "平台动作验证", BusinessType: "custom", Blocks: string(blocks)}
+	}
+
+	for _, action := range validActions {
+		if report := ValidateDynamicPage(buildPage(action)); !report.IsValid {
+			t.Errorf("合法 %s 动作被拒绝: %v", action.Type, report.Errors)
+		}
+	}
+	for _, action := range invalidActions {
+		if report := ValidateDynamicPage(buildPage(action)); report.IsValid {
+			t.Errorf("非法 %s 动作未被拦截", action.Type)
+		}
 	}
 }

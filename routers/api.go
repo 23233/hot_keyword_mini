@@ -53,6 +53,9 @@ func registerAPIRoutes(party iris.Party) {
 	api.Post("/payment/orders", CreatePaymentOrderHandler)
 	api.Post("/payment/notify/{app_id:string}", PaymentNotifyHandler)
 	api.Get("/payment/orders/{out_trade_no:string}", PaymentOrderStatusHandler)
+	api.Post("/payment/sandbox/orders", CreateSandboxPaymentOrderHandler)
+	api.Post("/payment/sandbox/transition", TransitionSandboxPaymentHandler)
+	api.Post("/payment/sandbox/notify/{app_id:string}", SandboxPaymentNotifyHandler)
 
 	// 注册登录 WebView 一次性票据接口
 	api.Post("/webview/ticket", CreateWebViewTicketHandler)

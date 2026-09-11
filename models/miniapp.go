@@ -19,6 +19,10 @@ type MiniApp struct {
 	ReleaseMode string `gorm:"column:release_mode;size:16;default:'normal';comment:发布模式" json:"release_mode"`
 	// 故障或过期时的兜底页面ID (默认 home)
 	FallbackPageID string `gorm:"column:fallback_page_id;size:64;default:'home';comment:兜底页面ID" json:"fallback_page_id"`
+	// 租户能力矩阵 JSON；空值兼容旧租户，配置后启用严格发布门禁。
+	CapabilityMatrix string `gorm:"column:capability_matrix;type:text;comment:SDUI租户能力矩阵JSON" json:"capability_matrix,omitempty"`
+	// 已登记 WebView 入口 JSON；仅保存 url_key、HTTPS 地址、用途、版本和启用状态。
+	WebViewRegistry string `gorm:"column:webview_registry;type:text;comment:WebView登记入口JSON" json:"webview_registry,omitempty"`
 	// 小程序图片访问 CDN 根地址；需加入微信 downloadFile 合法域名
 	CosCdnUrl string `gorm:"column:cos_cdn_url;size:255;comment:小程序COS CDN访问根地址" json:"cos_cdn_url"`
 	// 创建时间

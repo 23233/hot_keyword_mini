@@ -34,6 +34,19 @@ export interface ActionContext {
   tenant?: any
 }
 
+const isHTTPSURL = (value: unknown): boolean => /^https:\/\/[^/\s?#]+(?:[/?#]\S*)?$/i.test(String(value || ''))
+const isEndpointName = (value: unknown): boolean => /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/.test(String(value || ''))
+
+function externalUploadHeaders(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const blocked = new Set(['authorization', 'cookie', 'x-wx-appid', 'x-app-id'])
+  const headers: Record<string, string> = {}
+  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+    if (!blocked.has(key.toLowerCase()) && (typeof item === 'string' || typeof item === 'number')) headers[key] = String(item)
+  })
+  return headers
+}
+
 /**
  * 安全深度读取对象属性
  */
@@ -501,9 +514,16 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
 
     // 网页 WebView H5 直达打开
     case 'open_webview': {
-      let targetUrl = payload.url || payload.web_url || ''
-      if (!targetUrl) {
-        Taro.showToast({ title: '链接地址为空', icon: 'none' })
+      const urlKey = String(payload.url_key || '')
+      if (!urlKey) {
+        Taro.showToast({ title: 'WebView 入口未配置', icon: 'none' })
+        actionSuccess = false
+        break
+      }
+
+      let targetUrl = String(payload.url || payload.web_url || '')
+      if (!targetUrl || !isHTTPSURL(targetUrl)) {
+        Taro.showToast({ title: 'WebView 入口不可用', icon: 'none' })
         actionSuccess = false
         break
       }
@@ -513,7 +533,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         const ticket = await request<{ url: string }>({
           url: '/api/v1/webview/ticket',
           method: 'POST',
-          data: { url: targetUrl }
+          data: { url_key: urlKey }
         })
         if (!ticket?.url) {
           throw new Error('未能获取一次性 WebView 地址')
@@ -623,8 +643,8 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         targetUrl += (targetUrl.includes('?') ? '&' : '?') + queryParts.join('&')
       }
 
-      // 5. 敏感或需鉴权端点前置登录门禁拦截
-      if (endpoint === 'game.redeem' || action.require_auth) {
+      // 5. 仅对协议明确声明 require_auth 的动作执行登录门禁；游戏兑换首发允许匿名领取
+      if (action.require_auth) {
         const session = await ensureSession()
         if (!session) {
           Taro.showToast({ title: '请先完成微信授权登录', icon: 'none' })
@@ -782,6 +802,146 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         }
       }
       Taro.showToast({ title: orderStatus === 'paid' ? '支付成功' : '支付已提交', icon: orderStatus === 'paid' ? 'success' : 'none' })
+      break
+    }
+
+    // 选择图片或视频，统一返回 tempFiles 供后续上传动作绑定。
+    case 'choose_media': {
+      if (Taro.getEnv() !== Taro.ENV_TYPE.WEAPP) throw new Error('当前环境不支持媒体选择')
+      const mediaType = Array.isArray(payload.media_type) ? payload.media_type.filter((item: unknown) => item === 'image' || item === 'video') : ['image']
+      const sourceType = Array.isArray(payload.source_type) ? payload.source_type.filter((item: unknown) => item === 'album' || item === 'camera') : ['album', 'camera']
+      if (mediaType.length === 0 || sourceType.length === 0) throw new Error('媒体类型或来源无效')
+      const result = await Taro.chooseMedia({
+        count: Math.max(1, Math.min(9, Number(payload.count || 9))),
+        mediaType,
+        sourceType
+      } as any)
+      actionResult = { temp_files: result.tempFiles || [] }
+      break
+    }
+
+    // 使用受控预签名地址上传文件，不携带用户会话或任意自定义请求头。
+    case 'upload_file': {
+      const filePath = String(resolveBindingValue(payload.file_path || payload.temp_file_path, context) || '')
+      const uploadUrl = String(resolveBindingValue(payload.presigned_url, context) || '')
+      if (!filePath || !isHTTPSURL(uploadUrl)) throw new Error('上传文件或预签名地址无效')
+      const fileData = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const manager = Taro.getFileSystemManager()
+        manager.readFile({ filePath, success: (result: any) => resolve(result.data as ArrayBuffer), fail: reject })
+      })
+      const result = await Taro.request({ url: uploadUrl, method: 'PUT', data: fileData, header: externalUploadHeaders(payload.upload_headers) })
+      if (result.statusCode < 200 || result.statusCode >= 300) throw new Error(`上传失败 (${result.statusCode})`)
+      actionResult = { url: payload.final_url || payload.final_cos_file_url || '', status_code: result.statusCode }
+      break
+    }
+
+    // 删除媒体必须走受控后端端点，客户端不直接操作对象存储。
+    case 'delete_media': {
+      const endpoint = String(payload.endpoint || action.endpoint || '')
+      if (!isEndpointName(endpoint)) throw new Error('删除媒体必须指定合法的受控端点')
+      actionResult = await request<any>({ url: '/api/v1/action/execute', method: 'POST', data: { endpoint, payload: payload.body || payload, idempotency_key: payload.idempotency_key || `media_delete_${Date.now()}` } })
+      break
+    }
+
+    case 'request_location': {
+      if (Taro.getEnv() !== Taro.ENV_TYPE.WEAPP) throw new Error('当前环境不支持定位')
+      const result = await Taro.getLocation({ type: 'gcj02', altitude: false })
+      actionResult = { latitude: result.latitude, longitude: result.longitude, accuracy: result.accuracy }
+      break
+    }
+
+    case 'choose_location': {
+      if (Taro.getEnv() !== Taro.ENV_TYPE.WEAPP) throw new Error('当前环境不支持位置选择')
+      const result = await Taro.chooseLocation({})
+      actionResult = { name: result.name, address: result.address, latitude: result.latitude, longitude: result.longitude }
+      break
+    }
+
+    case 'open_map': {
+      const latitude = Number(resolveBindingValue(payload.latitude, context))
+      const longitude = Number(resolveBindingValue(payload.longitude, context))
+      const scale = Number(payload.scale || 16)
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !Number.isFinite(scale) || scale < 3 || scale > 20) throw new Error('地图坐标或缩放级别无效')
+      await Taro.openLocation({ latitude, longitude, name: String(payload.name || payload.title || ''), address: String(payload.address || ''), scale })
+      break
+    }
+
+    // 非 open-type 入口可使用微信原生客服 API；默认客服按钮仍由组件 open-type=contact 承载。
+    case 'open_wechat_service': {
+      const api = typeof wx !== 'undefined' ? (wx as any).openCustomerServiceChat : undefined
+      if (typeof api !== 'function') throw new Error('当前微信版本不支持客服会话')
+      const extInfo = payload.ext_info && typeof payload.ext_info === 'object' ? payload.ext_info : { url: payload.url || '' }
+      const corpId = String(payload.corp_id || '')
+      if (!corpId || !isHTTPSURL(extInfo.url)) throw new Error('企业微信客服参数无效')
+      await new Promise<void>((resolve, reject) => api({
+        extInfo,
+        corpId,
+        success: () => resolve(),
+        fail: (error: any) => reject(new Error(error?.errMsg || '打开客服失败'))
+      }))
+      break
+    }
+
+    case 'save_qr': {
+      const url = String(resolveBindingValue(payload.url || payload.image_url, context) || '')
+      if (!isHTTPSURL(url)) throw new Error('二维码地址无效')
+      const downloaded = await Taro.downloadFile({ url })
+      if (downloaded.statusCode !== 200) throw new Error('二维码下载失败')
+      await Taro.saveImageToPhotosAlbum({ filePath: downloaded.tempFilePath })
+      Taro.showToast({ title: '二维码已保存', icon: 'success' })
+      break
+    }
+
+    case 'open_internal_chat': {
+      const pageId = String(payload.page_id || 'customer_service')
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(pageId)) throw new Error('内部客服页面标识无效')
+      const query = payload.context && typeof payload.context === 'object' ? payload.context : {}
+      const queryParts = [`page_id=${encodeURIComponent(pageId)}`, ...Object.entries(query).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)]
+      await Taro.navigateTo({ url: `/pages/dynamic/index?${queryParts.join('&')}` })
+      break
+    }
+
+    // 通用领域动作统一走后端登记端点；端点映射固定，禁止协议传入任意 URL。
+    case 'send_message':
+    case 'mark_read':
+    case 'poll_messages':
+    case 'connect_message':
+    case 'upload_chat_media':
+    case 'create_order':
+    case 'confirm_order':
+    case 'cancel_order':
+    case 'confirm_receipt':
+    case 'refresh_logistics':
+    case 'apply_after_sale':
+    case 'upload_evidence':
+    case 'accept_task':
+    case 'reject_task':
+    case 'submit_quote':
+    case 'update_service_status':
+    case 'open_membership':
+    case 'load_ad':
+    case 'refresh_wallet':
+    case 'request_withdraw': {
+      const endpointMap: Record<string, string> = {
+        send_message: 'chat.send', mark_read: 'chat.mark_read', poll_messages: 'chat.poll', connect_message: 'chat.connect', upload_chat_media: 'chat.upload_media',
+        create_order: 'order.create', confirm_order: 'order.confirm', cancel_order: 'order.cancel', confirm_receipt: 'order.confirm_receipt',
+        refresh_logistics: 'logistics.refresh', apply_after_sale: 'after_sale.apply', upload_evidence: 'after_sale.upload_evidence',
+        accept_task: 'service.accept_task', reject_task: 'service.reject_task', submit_quote: 'service.submit_quote', update_service_status: 'service.update_status',
+        open_membership: 'membership.open', load_ad: 'ads.load', refresh_wallet: 'wallet.refresh', request_withdraw: 'wallet.withdraw'
+      }
+      const endpoint = endpointMap[action.type]
+      if (!endpoint) throw new Error('未登记的领域动作')
+      if (['send_message', 'mark_read', 'poll_messages', 'connect_message', 'upload_chat_media', 'create_order', 'confirm_order', 'cancel_order', 'confirm_receipt', 'refresh_logistics', 'apply_after_sale', 'upload_evidence', 'accept_task', 'reject_task', 'submit_quote', 'update_service_status', 'open_membership', 'refresh_wallet', 'request_withdraw'].includes(action.type)) {
+        if (!(await ensureSession())) throw new Error('此动作必须在微信授权登录后执行')
+      }
+      const result = await request<any>({
+        url: '/api/v1/action/execute',
+        method: 'POST',
+        data: { endpoint, payload, idempotency_key: payload.idempotency_key || `${endpoint}_${Date.now()}` }
+      })
+      actionResult = result
+      if (payload.response?.save_as && context?.updateState) context.updateState(payload.response.save_as, result)
+      Taro.showToast({ title: result?.message || '操作已提交', icon: 'none' })
       break
     }
 

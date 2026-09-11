@@ -51,6 +51,109 @@ type paymentClientEntry struct {
 // NewPaymentService 创建支付服务。
 func NewPaymentService() *PaymentService { return &PaymentService{} }
 
+// CreateSandboxOrder 创建本地支付沙箱订单。沙箱不访问微信支付，也不要求商户参数。
+func (s *PaymentService) CreateSandboxOrder(appID string, userID int64, openID, productSKU, idempotencyKey string) (*models.PaymentOrder, error) {
+	if db.Mysql == nil || appID == "" || userID <= 0 || openID == "" || strings.TrimSpace(productSKU) == "" {
+		return nil, errors.New("支付沙箱订单参数不完整")
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = fmt.Sprintf("sandbox-%s-%d", productSKU, time.Now().UnixNano())
+	}
+	attach := "sandbox:" + idempotencyKey
+	var existing models.PaymentOrder
+	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; err == nil {
+		return &existing, nil
+	}
+	var product models.Product
+	if err := db.Mysql.Where("app_id = ? AND sku = ? AND status = ?", appID, productSKU, models.ProductStatusActive).First(&product).Error; err != nil {
+		return nil, errors.New("商品不存在或已下架")
+	}
+	now := time.Now()
+	order := &models.PaymentOrder{AppID: appID, UserID: userID, ProductID: product.ID, OutTradeNo: "S" + time.Now().Format("20060102150405") + strings.ToUpper(ut.RandomStr(10)), OpenID: openID, Description: product.Name, AmountFen: product.PriceFen, Status: models.PaymentOrderPending, Attach: attach, Sandbox: true, CreatedAt: now, UpdatedAt: now}
+	if err := db.Mysql.Create(order).Error; err != nil {
+		if isDuplicateKeyError(err) && db.Mysql.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error == nil {
+			return &existing, nil
+		}
+		return nil, fmt.Errorf("创建支付沙箱订单失败: %w", err)
+	}
+	return order, nil
+}
+
+// ApplySandboxTransition 模拟支付成功、失败、取消和退款，并复用正式权益发放逻辑。
+func (s *PaymentService) ApplySandboxTransition(appID string, userID int64, outTradeNo, transition string) (*models.PaymentOrder, error) {
+	if db.Mysql == nil || appID == "" || userID <= 0 || strings.TrimSpace(outTradeNo) == "" {
+		return nil, errors.New("支付沙箱参数不完整")
+	}
+	transition = strings.ToLower(strings.TrimSpace(transition))
+	var order models.PaymentOrder
+	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND out_trade_no = ? AND sandbox = ?", appID, userID, outTradeNo, true).First(&order).Error; err != nil {
+		return nil, errors.New("支付沙箱订单不存在")
+	}
+	if order.Status == models.PaymentOrderRefunded {
+		return &order, nil
+	}
+	now := time.Now()
+	updates := map[string]interface{}{"updated_at": now}
+	switch transition {
+	case "success", "pay", "paid":
+		if order.Status == models.PaymentOrderPaid {
+			return &order, nil
+		}
+		if order.Status != models.PaymentOrderPending {
+			return nil, fmt.Errorf("订单状态 %s 不允许支付", order.Status)
+		}
+		updates["status"] = models.PaymentOrderPaid
+		updates["transaction_id"] = "sandbox-tx-" + strings.ToLower(ut.RandomStr(10))
+		updates["paid_at"] = now
+	case "cancel", "closed":
+		if order.Status != models.PaymentOrderPending {
+			return nil, fmt.Errorf("订单状态 %s 不允许取消", order.Status)
+		}
+		updates["status"] = models.PaymentOrderClosed
+	case "fail", "failed":
+		if order.Status != models.PaymentOrderPending {
+			return nil, fmt.Errorf("订单状态 %s 不允许标记失败", order.Status)
+		}
+		updates["status"] = models.PaymentOrderFailed
+	case "refund", "refunded":
+		if order.Status != models.PaymentOrderPaid {
+			return nil, fmt.Errorf("订单状态 %s 不允许退款", order.Status)
+		}
+		updates["status"] = models.PaymentOrderRefunded
+		updates["refunded_at"] = now
+	default:
+		return nil, errors.New("支付沙箱状态仅支持 success、cancel、fail 或 refund")
+	}
+	if err := db.Mysql.Model(&order).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	if err := db.Mysql.First(&order, order.ID).Error; err != nil {
+		return nil, err
+	}
+	if order.Status == models.PaymentOrderPaid {
+		if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
+			return nil, fmt.Errorf("发放支付权益失败: %w", err)
+		}
+	}
+	return &order, nil
+}
+
+// ApplySandboxNotify 模拟微信支付回调，保持订单更新与正式回调相同的幂等语义。
+func (s *PaymentService) ApplySandboxNotify(appID, outTradeNo string, success bool) (*models.PaymentOrder, error) {
+	var order models.PaymentOrder
+	if db.Mysql == nil || appID == "" || outTradeNo == "" {
+		return nil, errors.New("支付沙箱回调参数不完整")
+	}
+	if err := db.Mysql.Where("app_id = ? AND out_trade_no = ? AND sandbox = ?", appID, outTradeNo, true).First(&order).Error; err != nil {
+		return nil, errors.New("支付沙箱订单不存在")
+	}
+	if success {
+		return s.ApplySandboxTransition(appID, order.UserID, outTradeNo, "success")
+	}
+	return s.ApplySandboxTransition(appID, order.UserID, outTradeNo, "fail")
+}
+
 // clientForApp 按小程序 AppID 构造并缓存独立微信支付客户端。
 func (s *PaymentService) clientForApp(ctx context.Context, app *models.MiniApp) (*core.Client, error) {
 	if app == nil || app.AppID == "" {
@@ -308,6 +411,9 @@ func (s *PaymentService) GetOrderStatus(ctx context.Context, appID string, userI
 		return &order, nil
 	}
 	if order.Status == models.PaymentOrderClosed || order.Status == models.PaymentOrderFailed {
+		return &order, nil
+	}
+	if order.Sandbox {
 		return &order, nil
 	}
 	client, err := s.clientForApp(ctx, &app)

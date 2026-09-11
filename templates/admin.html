@@ -701,13 +701,17 @@
                 <input type="checkbox" id="pageRequireAuth" onchange="onMetaInputChanged()" />
                 全页强制登录
               </label>
+              <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" id="pageHidden" onchange="onMetaInputChanged()" />
+                隐藏公开页面
+              </label>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">页面状态 (时效/下架管理)</label>
             <select id="pageStatus" class="form-select" onchange="onMetaInputChanged()">
               <option value="published">published (正常上线展示)</option>
-              <option value="offline">offline (下架·自动切换安全兜底主页)</option>
+              <option value="archived">archived (归档)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1559,6 +1563,7 @@
       document.getElementById('pageBusinessType').value = currentDynamicPage.business_type || 'drama';
       document.getElementById('pageTheme').value = currentDynamicPage.theme || 'dark_glass';
       document.getElementById('pageRequireAuth').checked = !!currentDynamicPage.require_auth;
+      document.getElementById('pageHidden').checked = !!currentDynamicPage.hidden;
       const statusSelect = document.getElementById('pageStatus');
       if (statusSelect) statusSelect.value = currentDynamicPage.status || 'published';
       const revDisplay = document.getElementById('pageRevisionDisplay');
@@ -2286,6 +2291,7 @@
       currentDynamicPage.business_type = document.getElementById('pageBusinessType').value;
       currentDynamicPage.theme = document.getElementById('pageTheme').value;
       currentDynamicPage.require_auth = document.getElementById('pageRequireAuth').checked;
+      currentDynamicPage.hidden = document.getElementById('pageHidden').checked;
       const statusSelect = document.getElementById('pageStatus');
       if (statusSelect) currentDynamicPage.status = statusSelect.value;
       renderSimulator();
@@ -2926,6 +2932,7 @@
         theme: currentDynamicPage.theme,
         accent_color: currentDynamicPage.accent_color || '#FF9F0A',
         require_auth: !!currentDynamicPage.require_auth,
+        hidden: !!currentDynamicPage.hidden,
         share_config: typeof currentDynamicPage.share_config === 'string' ? currentDynamicPage.share_config : JSON.stringify(currentDynamicPage.share_config || {}),
         blocks: JSON.stringify(currentDynamicPage.blocks || []),
         status: 'draft',
@@ -2971,6 +2978,7 @@
         theme: currentDynamicPage.theme,
         accent_color: currentDynamicPage.accent_color || '#FF9F0A',
         require_auth: !!currentDynamicPage.require_auth,
+        hidden: !!currentDynamicPage.hidden,
         share_config: typeof currentDynamicPage.share_config === 'string' ? currentDynamicPage.share_config : JSON.stringify(currentDynamicPage.share_config || {}),
         blocks: JSON.stringify(currentDynamicPage.blocks || []),
         status: 'published',

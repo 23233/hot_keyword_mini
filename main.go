@@ -57,6 +57,9 @@ func main() {
 		panic(err)
 	}
 	if shouldEnsureSDUIAcceptanceData(config.Pro, config.Cfg) {
+		if err = system.EnsureLocalSDUITenants(); err != nil {
+			panic(err)
+		}
 		if err = system.EnsureSDUIAcceptanceData(); err != nil {
 			panic(err)
 		}

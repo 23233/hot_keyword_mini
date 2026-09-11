@@ -140,3 +140,39 @@ test('通用、请求和订阅成功子链均在失败处停止', async () => {
   }
   assert.ok(!calls.some(call => call.options?.title === '不应继续'))
 })
+
+test('平台原生动作在运行时拒绝越界参数', async () => {
+  const { dispatchAction, calls } = loadActions()
+  for (const action of [
+    { type: 'upload_file', payload: { file_path: 'tmp/a.png', presigned_url: 'http://upload.example.com/a.png' } },
+    { type: 'delete_media', payload: { endpoint: '/api/media/delete' } },
+    { type: 'open_map', payload: { latitude: 91, longitude: 114 } },
+    { type: 'open_wechat_service', payload: { url: 'https://work.weixin.qq.com/kfid/test' } },
+    { type: 'save_qr', payload: { url: 'javascript:alert(1)' } },
+    { type: 'open_internal_chat', payload: { page_id: '../customer_service' } }
+  ]) {
+    assert.equal(await dispatchAction(action), false, `${action.type} 应拒绝非法参数`)
+  }
+  assert.equal(calls.filter(call => ['request', 'openLocation', 'downloadFile', 'navigateTo'].includes(String(call.method))).length, 0)
+})
+
+test('预签名上传只透传非敏感请求头', async () => {
+  let uploaded
+  const { dispatchAction } = loadActions({
+    taro: {
+      getFileSystemManager: () => ({ readFile: options => options.success({ data: new ArrayBuffer(4) }) }),
+      request: async options => { uploaded = options; return { statusCode: 200 } }
+    }
+  })
+  const result = await dispatchAction({
+    type: 'upload_file',
+    payload: {
+      file_path: 'tmp/a.png',
+      presigned_url: 'https://upload.example.com/a.png',
+      final_url: 'https://cdn.example.com/a.png',
+      upload_headers: { 'Content-Type': 'image/png', Authorization: 'Bearer forbidden', Cookie: 'forbidden' }
+    }
+  })
+  assert.equal(result.url, 'https://cdn.example.com/a.png')
+  assert.deepEqual({ ...uploaded.header }, { 'Content-Type': 'image/png' })
+})

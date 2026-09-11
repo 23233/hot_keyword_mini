@@ -4,8 +4,12 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"hot_keyword/db"
 	"hot_keyword/models"
+	"math"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -21,6 +25,127 @@ type ValidationReport struct {
 	Suggestions []string `json:"suggestions"`
 	// 积木组件总数
 	BlockCount int `json:"block_count"`
+	// 租户能力矩阵校验结果；发布校验时返回。
+	Capability *CapabilityValidationReport `json:"capability,omitempty"`
+}
+
+// ValidateDynamicPageForRelease 执行协议与租户能力矩阵的一致发布校验。
+func ValidateDynamicPageForRelease(page *models.DynamicPage) ValidationReport {
+	report := ValidateDynamicPage(page)
+	if page == nil || !report.IsValid {
+		return report
+	}
+	var blocks []models.BlockItem
+	if err := json.Unmarshal([]byte(page.Blocks), &blocks); err != nil {
+		report.IsValid = false
+		report.Errors = append(report.Errors, "页面能力依赖解析失败: "+err.Error())
+		return report
+	}
+	capabilityReport, err := ValidatePageCapabilities(page.AppID, blocks)
+	if err != nil {
+		report.IsValid = false
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	report.Capability = &capabilityReport
+	if !capabilityReport.IsValid {
+		report.IsValid = false
+		report.Errors = append(report.Errors, capabilityReport.Errors...)
+	}
+	if err := validateWebViewKeysForRelease(page.AppID, blocks); err != nil {
+		report.IsValid = false
+		report.Errors = append(report.Errors, err.Error())
+	}
+	return report
+}
+
+// validateWebViewKeysForRelease 校验发布页面引用的 WebView 入口属于当前租户且处于启用状态。
+func validateWebViewKeysForRelease(appID string, blocks []models.BlockItem) error {
+	if db.Mysql == nil {
+		return nil
+	}
+	var entries []WebViewEntry
+	loaded := false
+	loadEntries := func() error {
+		if loaded {
+			return nil
+		}
+		var err error
+		entries, err = ListWebViews(appID)
+		if err != nil {
+			return fmt.Errorf("WebView 登记表校验失败: %w", err)
+		}
+		loaded = true
+		return nil
+	}
+	var walkAction func(*models.BlockAction) error
+	walkAction = func(action *models.BlockAction) error {
+		if action == nil {
+			return nil
+		}
+		if action.Type == "open_webview" {
+			if err := loadEntries(); err != nil {
+				return err
+			}
+			urlKey, _ := action.Payload["url_key"].(string)
+			if _, err := findWebViewEntry(entries, urlKey); err != nil {
+				return fmt.Errorf("WebView url_key %q 不可用: %w", urlKey, err)
+			}
+		}
+		for index := range action.OnSuccess {
+			if err := walkAction(&action.OnSuccess[index]); err != nil {
+				return err
+			}
+		}
+		for index := range action.OnError {
+			if err := walkAction(&action.OnError[index]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	var walkBlock func(models.BlockItem) error
+	walkBlock = func(block models.BlockItem) error {
+		if err := walkAction(block.Action); err != nil {
+			return err
+		}
+		for _, actions := range block.Events {
+			for index := range actions {
+				if err := walkAction(&actions[index]); err != nil {
+					return err
+				}
+			}
+		}
+		for _, state := range []*models.BlockItem{block.Loading, block.Empty, block.Error, block.Fallback} {
+			if state != nil {
+				if err := walkBlock(*state); err != nil {
+					return err
+				}
+			}
+		}
+		if block.Props != nil {
+			for _, key := range []string{"children", "blocks", "items"} {
+				if raw, ok := block.Props[key]; ok {
+					encoded, _ := json.Marshal(raw)
+					var nested []models.BlockItem
+					if json.Unmarshal(encoded, &nested) == nil {
+						for _, child := range nested {
+							if err := walkBlock(child); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+		return nil
+	}
+	for _, block := range blocks {
+		if err := walkBlock(block); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // 合法原子积木类型白名单 (严格与 doc/sdui_dynamic_engine_architecture.md 和 schema 对齐)
@@ -63,6 +188,8 @@ var allowedBlockTypes = map[string]bool{
 	"server_status":        true,
 	"product_card":         true,
 	"download_card":        true,
+	"payment_result":       true,
+	"price_breakdown":      true,
 	"event_card":           true,
 	"poll":                 true,
 	"feed_list":            true,
@@ -76,6 +203,37 @@ var allowedBlockTypes = map[string]bool{
 	"content_detail":       true,
 	"offer_list":           true,
 	"discussion_thread":    true,
+	"bottom_nav":           true,
+	"floating_action":      true,
+	"media_picker":         true,
+	"upload_progress":      true,
+	"media_gallery":        true,
+	"location_picker":      true,
+	"address_card":         true,
+	"service_entry":        true,
+	"qr_code":              true,
+	"webview_entry":        true,
+	"webview_state":        true,
+	"feature_gate":         true,
+	"compliance_panel":     true,
+	"chat_thread":          true,
+	"message_list":         true,
+	"message_composer":     true,
+	"unread_badge":         true,
+	"order_card":           true,
+	"order_summary":        true,
+	"order_timeline":       true,
+	"logistics_track":      true,
+	"after_sale_form":      true,
+	"evidence_list":        true,
+	"service_card":         true,
+	"task_card":            true,
+	"quote_card":           true,
+	"schedule_picker":      true,
+	"membership_card":      true,
+	"ad_slot":              true,
+	"wallet_card":          true,
+	"withdraw_form":        true,
 
 	// 4. 通用自由编排/自定义卡片积木
 	"custom":       true,
@@ -121,7 +279,39 @@ var allowedActionTypes = map[string]bool{
 	"show_empty_state":       true,
 	"show_loading_state":     true,
 	"reset_block_state":      true,
+	"choose_media":           true,
+	"upload_file":            true,
+	"delete_media":           true,
+	"request_location":       true,
+	"choose_location":        true,
+	"open_map":               true,
+	"open_wechat_service":    true,
+	"save_qr":                true,
+	"open_internal_chat":     true,
+	"send_message":           true,
+	"mark_read":              true,
+	"poll_messages":          true,
+	"connect_message":        true,
+	"upload_chat_media":      true,
+	"create_order":           true,
+	"confirm_order":          true,
+	"cancel_order":           true,
+	"confirm_receipt":        true,
+	"refresh_logistics":      true,
+	"apply_after_sale":       true,
+	"upload_evidence":        true,
+	"accept_task":            true,
+	"reject_task":            true,
+	"submit_quote":           true,
+	"update_service_status":  true,
+	"open_membership":        true,
+	"load_ad":                true,
+	"refresh_wallet":         true,
+	"request_withdraw":       true,
 }
+
+var actionEndpointPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
+var dynamicPageIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 // ValidateDynamicPage 对传入的动态页面协议执行严格结构化校验与安全审计
 func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
@@ -229,6 +419,21 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 					report.IsValid = false
 					report.Errors = append(report.Errors, fmt.Sprintf("%s 跨小程序跳转缺少目标 target_app_id 或 app_id", pathPrefix))
 					report.Suggestions = append(report.Suggestions, "请配置跳转目标小程序的 AppID")
+				}
+			case "open_webview":
+				urlKey, _ := payload["url_key"].(string)
+				if strings.TrimSpace(urlKey) == "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("%s WebView 动作缺少 payload.url_key", pathPrefix))
+					report.Suggestions = append(report.Suggestions, "请使用已登记的 WebView url_key，不要直接下发网页地址")
+				}
+				if customURL, _ := payload["url"].(string); strings.TrimSpace(customURL) != "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("%s WebView 动作不得直接配置 payload.url", pathPrefix))
+				}
+				if customURL, _ := payload["web_url"].(string); strings.TrimSpace(customURL) != "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("%s WebView 动作不得直接配置 payload.web_url", pathPrefix))
 				}
 			case "request_data", "request":
 				endpoint, _ := payload["endpoint"].(string)
@@ -436,6 +641,21 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 			report.Errors = append(report.Errors, fmt.Sprintf("%s 缺少 target_app_id 或 app_id", path))
 		}
 	}
+	if action.Type == "open_webview" {
+		urlKey, _ := action.Payload["url_key"].(string)
+		if strings.TrimSpace(urlKey) == "" {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s 缺少 payload.url_key", path))
+		}
+		if customURL, _ := action.Payload["url"].(string); strings.TrimSpace(customURL) != "" {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s 不得直接配置 payload.url", path))
+		}
+		if customURL, _ := action.Payload["web_url"].(string); strings.TrimSpace(customURL) != "" {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s 不得直接配置 payload.web_url", path))
+		}
+	}
 	if action.Type == "copy_text" {
 		if !isValidCopyTextPayload(action.Payload) {
 			report.IsValid = false
@@ -446,6 +666,62 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 		if !isValidRequestPaymentPayload(action.Payload) {
 			report.IsValid = false
 			report.Errors = append(report.Errors, fmt.Sprintf("%s request_payment 动作缺少有效的商品 sku 标识", path))
+		}
+	}
+	if action.Type == "upload_file" {
+		filePath := action.Payload["file_path"]
+		if filePath == nil {
+			filePath = action.Payload["temp_file_path"]
+		}
+		if !isNonEmptyActionValue(filePath) || !isHTTPSActionValue(action.Payload["presigned_url"]) {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s upload_file 缺少有效文件路径或 HTTPS 预签名地址", path))
+		}
+	}
+	if action.Type == "delete_media" {
+		endpoint, _ := action.Payload["endpoint"].(string)
+		if !actionEndpointPattern.MatchString(endpoint) {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s delete_media 缺少合法的受控 endpoint", path))
+		}
+	}
+	if action.Type == "open_map" {
+		latitudeOK := isCoordinateActionValue(action.Payload["latitude"], -90, 90)
+		longitudeOK := isCoordinateActionValue(action.Payload["longitude"], -180, 180)
+		scaleOK := action.Payload["scale"] == nil || isCoordinateActionValue(action.Payload["scale"], 3, 20)
+		if !latitudeOK || !longitudeOK || !scaleOK {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s open_map 经纬度或缩放级别无效", path))
+		}
+	}
+	if action.Type == "open_wechat_service" {
+		corpID := action.Payload["corp_id"]
+		extURL := action.Payload["url"]
+		if extInfo, ok := action.Payload["ext_info"].(map[string]interface{}); ok {
+			extURL = extInfo["url"]
+		}
+		if !isNonEmptyActionValue(corpID) || !isHTTPSActionValue(extURL) {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s open_wechat_service 缺少 corp_id 或 HTTPS 客服地址", path))
+		}
+	}
+	if action.Type == "save_qr" {
+		imageURL := action.Payload["url"]
+		if imageURL == nil {
+			imageURL = action.Payload["image_url"]
+		}
+		if !isHTTPSActionValue(imageURL) {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s save_qr 缺少有效的 HTTPS 图片地址", path))
+		}
+	}
+	if action.Type == "open_internal_chat" {
+		if pageID := action.Payload["page_id"]; pageID != nil && !isBindingActionValue(pageID) {
+			value, ok := pageID.(string)
+			if !ok || !dynamicPageIDPattern.MatchString(value) {
+				report.IsValid = false
+				report.Errors = append(report.Errors, fmt.Sprintf("%s open_internal_chat 页面标识无效", path))
+			}
 		}
 	}
 	if action.Type == "subscribe_message" {
@@ -730,6 +1006,20 @@ func ValidatePageAgainstSchema(page *models.DynamicPage) ValidationReport {
 						report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s open_mini_program 动作 payload.target_app_id 或 app_id 不能为空", bPath))
 					}
 				}
+			} else if b.Action.Type == "open_webview" {
+				urlKey, _ := b.Action.Payload["url_key"].(string)
+				if strings.TrimSpace(urlKey) == "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s open_webview 动作 payload 必须包含 url_key", bPath))
+				}
+				if customURL, _ := b.Action.Payload["url"].(string); strings.TrimSpace(customURL) != "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s open_webview 动作不得直接配置 url", bPath))
+				}
+				if customURL, _ := b.Action.Payload["web_url"].(string); strings.TrimSpace(customURL) != "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("Schema 契约校验失败: %s open_webview 动作不得直接配置 web_url", bPath))
+				}
 			}
 		}
 
@@ -840,6 +1130,50 @@ func isValidRequestPaymentPayload(payload map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+// isBindingActionValue 判断动作参数是否为运行时受控绑定。
+func isBindingActionValue(value interface{}) bool {
+	if text, ok := value.(string); ok {
+		text = strings.TrimSpace(text)
+		return strings.HasPrefix(text, "$") || (strings.HasPrefix(text, "{{") && strings.HasSuffix(text, "}}"))
+	}
+	if binding, ok := value.(map[string]interface{}); ok {
+		path, _ := binding["path"].(string)
+		return strings.TrimSpace(path) != ""
+	}
+	return false
+}
+
+// isNonEmptyActionValue 校验非空静态值或受控绑定。
+func isNonEmptyActionValue(value interface{}) bool {
+	if isBindingActionValue(value) {
+		return true
+	}
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
+}
+
+// isHTTPSActionValue 校验静态 HTTPS URL 或受控绑定。
+func isHTTPSActionValue(value interface{}) bool {
+	if isBindingActionValue(value) {
+		return true
+	}
+	text, ok := value.(string)
+	if !ok {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(text))
+	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
+}
+
+// isCoordinateActionValue 校验坐标、缩放值或运行时受控绑定。
+func isCoordinateActionValue(value interface{}, min, max float64) bool {
+	if isBindingActionValue(value) {
+		return true
+	}
+	number, ok := toFloatStrict(value)
+	return ok && !math.IsNaN(number) && !math.IsInf(number, 0) && number >= min && number <= max
 }
 
 // validateEmbeddedActions 递归审计非 BlockItem 属性结构中嵌入的动作对象 (如 timeline 节点、item_grid 单元格)

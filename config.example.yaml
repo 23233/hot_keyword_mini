@@ -5,7 +5,7 @@
 app_env: "development"
 
 # 服务对外公共根地址。生产环境必须填写当前线上 HTTPS 域名，支付回调会自动拼接 AppID 路径。
-# 也可通过环境变量 PUBLIC_BASE_URL 覆盖，例如 https://jf.a0free.com
+# 也可通过环境变量 PUBLIC_BASE_URL 覆盖，线上公共地址为 https://wx.a0free.com
 public_base_url: ""
 
 # 腾讯云 COS 图片存储配置（Secret 建议通过环境变量注入）
@@ -32,7 +32,7 @@ redis_enable: true
 # ==============================================================================
 # 【生产环境强制环境变量清单 (必须注入且长度不少于 16 位)】
 # - APP_ENV: "production"
-# - PUBLIC_BASE_URL: "当前线上 HTTPS 公共域名，例如 https://jf.a0free.com"
+# - PUBLIC_BASE_URL: "当前线上 HTTPS 公共域名，正式地址为 https://wx.a0free.com"
 # - DB_PASSWORD: "真实的高强度MySQL密码"
 # - REDIS_PASSWORD: "真实的高强度Redis密码"
 # - JWT_SECRET: "高强度小程序用户JWT加密密钥 (不可使用默认占位符)"

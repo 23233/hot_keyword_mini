@@ -2,6 +2,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hot_keyword/db"
@@ -29,6 +30,7 @@ type ActionEndpointMeta struct {
 	// 执行处理器
 	Handler ActionEndpointHandler
 }
+
 // ActionEndpointService 受控业务端点调度服务
 type ActionEndpointService struct {
 	mu        sync.RWMutex
@@ -41,11 +43,11 @@ func NewActionEndpointService() *ActionEndpointService {
 		endpoints: make(map[string]ActionEndpointMeta),
 	}
 
-	// 注册官方内置受控端点: 游戏礼包兑换码核销与发放 (强制登录态鉴权，杜绝匿名恶意防刷)
+	// 注册官方内置受控端点: 游戏礼包兑换码领取与发放（首发允许匿名访问）
 	s.RegisterEndpoint(ActionEndpointMeta{
 		Name:        "game.redeem",
-		Description: "游戏独家礼包兑换码防超发事务领取",
-		RequireAuth: true, // 强制要求用户登录微信授权，杜绝匿名刷单
+		Description: "游戏独家礼包兑换码匿名领取与防超发事务",
+		RequireAuth: false,
 		Handler:     s.handleGameRedeem,
 	})
 
@@ -56,6 +58,34 @@ func NewActionEndpointService() *ActionEndpointService {
 		RequireAuth: false,
 		Handler:     s.handleQueryScore,
 	})
+
+	// 通用领域沙箱端点：用于本地协议、Block、MCP 和微信运行时验收。
+	// 这些端点只返回受控状态数据，不连接生产支付、资金、即时通讯或物流服务。
+	for _, meta := range []ActionEndpointMeta{
+		{Name: "chat.send", Description: "发送聊天消息沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "chat.poll", Description: "轮询聊天消息沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "chat.mark_read", Description: "标记聊天已读沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "chat.connect", Description: "建立聊天连接沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "chat.upload_media", Description: "上传聊天媒体沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "media.delete", Description: "删除当前用户媒体沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "order.create", Description: "创建订单沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "order.confirm", Description: "确认订单沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "order.cancel", Description: "取消订单沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "order.confirm_receipt", Description: "确认收货沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "logistics.refresh", Description: "刷新物流沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "after_sale.apply", Description: "申请售后沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "after_sale.upload_evidence", Description: "上传售后证据沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "service.accept_task", Description: "斗师接受任务沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "service.reject_task", Description: "斗师拒绝任务沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "service.submit_quote", Description: "斗师提交报价沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "service.update_status", Description: "更新服务状态沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "membership.open", Description: "开通会员沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "ads.load", Description: "加载受控广告位沙箱动作", RequireAuth: false, Handler: s.handlePlatformSandbox},
+		{Name: "wallet.refresh", Description: "刷新钱包沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+		{Name: "wallet.withdraw", Description: "申请提现沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
+	} {
+		s.RegisterEndpoint(meta)
+	}
 
 	return s
 }
@@ -98,6 +128,15 @@ func (s *ActionEndpointService) ExecuteActionEndpoint(appID, openID, endpoint st
 		idempotencyKey = fmt.Sprintf("idem_%s_%d", ut.RandomStr(12), time.Now().UnixNano())
 	}
 
+	// 将端点名以内部字段传给通用沙箱处理器，复制 Map 避免污染调用方状态。
+	if strings.HasPrefix(endpoint, "chat.") || strings.HasPrefix(endpoint, "media.") || strings.HasPrefix(endpoint, "order.") || strings.HasPrefix(endpoint, "logistics.") || strings.HasPrefix(endpoint, "after_sale.") || strings.HasPrefix(endpoint, "service.") || strings.HasPrefix(endpoint, "membership.") || strings.HasPrefix(endpoint, "ads.") || strings.HasPrefix(endpoint, "wallet.") {
+		cloned := make(map[string]interface{}, len(payload)+1)
+		for key, value := range payload {
+			cloned[key] = value
+		}
+		cloned["_endpoint"] = endpoint
+		payload = cloned
+	}
 	return meta.Handler(appID, openID, payload, idempotencyKey)
 }
 
@@ -131,7 +170,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 		}, nil
 	}
 
-	// 2. 防重检查: 同一用户对同一礼包限领一次
+	// 2. 防重检查: 同一访客标识对同一礼包限领一次；匿名访客由上层生成短期标识。
 	var userRecord models.GameRedeemRecord
 	if err := db.Mysql.Where("app_id = ? AND package_id = ? AND open_id = ?", appID, packageID, openID).First(&userRecord).Error; err == nil {
 		// 已领过，返回之前领取的兑换码，不额外扣减库存
@@ -232,4 +271,174 @@ func (s *ActionEndpointService) handleQueryScore(appID, openID string, payload m
 		"remark":      "成绩合格，恭喜通过！",
 		"query_time":  time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
+}
+
+// handlePlatformSandbox 返回统一领域能力的本地沙箱结果。
+// 沙箱只验证协议形状、权限和状态流，不把测试数据伪装成生产业务结果。
+func (s *ActionEndpointService) handlePlatformSandbox(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	endpoint := strings.TrimSpace(fmt.Sprint(payload["_endpoint"]))
+	if endpoint == "" {
+		endpoint = "platform.sandbox"
+	}
+	entityID := strings.TrimSpace(fmt.Sprint(payload["id"]))
+	if entityID == "" {
+		entityID = endpoint + "-" + strings.ToLower(ut.RandomStr(8))
+	}
+	if db.Mysql == nil {
+		status := "accepted"
+		switch endpoint {
+		case "order.cancel":
+			status = "cancelled"
+		case "order.confirm_receipt":
+			status = "completed"
+		case "after_sale.apply":
+			status = "requested"
+		case "wallet.withdraw":
+			status = "pending"
+		}
+		return platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey, payload, status), nil
+	}
+	var previous models.PlatformOperation
+	if err := db.Mysql.Where("app_id = ? AND open_id = ? AND kind = ? AND idempotency_key = ?", appID, openID, endpoint, idempotencyKey).First(&previous).Error; err == nil {
+		var result map[string]interface{}
+		if json.Unmarshal([]byte(previous.Result), &result) == nil {
+			result["idempotent"] = true
+			return result, nil
+		}
+	}
+	var current models.PlatformOperation
+	_ = db.Mysql.Where("app_id = ? AND open_id = ? AND kind LIKE ? AND entity_id = ?", appID, openID, endpointFamily(endpoint)+".%", entityID).Order("updated_at desc").First(&current).Error
+	status, err := nextPlatformStatus(endpoint, current.Status, payload)
+	if err != nil {
+		return nil, err
+	}
+	result := platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey, payload, status)
+	payloadJSON, _ := json.Marshal(payload)
+	resultJSON, _ := json.Marshal(result)
+	op := &models.PlatformOperation{AppID: appID, OpenID: openID, Kind: endpoint, EntityID: entityID, IdempotencyKey: idempotencyKey, Status: status, Payload: string(payloadJSON), Result: string(resultJSON), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := db.Mysql.Create(op).Error; err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return result, nil
+		}
+		return nil, fmt.Errorf("保存通用能力操作失败: %w", err)
+	}
+	return result, nil
+}
+
+func endpointFamily(endpoint string) string {
+	if index := strings.IndexByte(endpoint, '.'); index > 0 {
+		return endpoint[:index]
+	}
+	return endpoint
+}
+
+func nextPlatformStatus(endpoint, current string, payload map[string]interface{}) (string, error) {
+	if strings.HasPrefix(endpoint, "chat.") {
+		switch endpoint {
+		case "chat.send":
+			return "sent", nil
+		case "chat.poll":
+			return "connected", nil
+		case "chat.mark_read":
+			return "read", nil
+		case "chat.connect":
+			return "connected", nil
+		default:
+			return "uploaded", nil
+		}
+	}
+	if strings.HasPrefix(endpoint, "order.") {
+		next := map[string]string{"order.create": "created", "order.confirm": "confirmed", "order.cancel": "cancelled", "order.confirm_receipt": "completed"}[endpoint]
+		if next == "" {
+			return "accepted", nil
+		}
+		if current == "" && endpoint != "order.create" {
+			// 本地验收允许直接验证单个状态动作；真实业务流程仍从 order.create 开始。
+			if endpoint == "order.cancel" {
+				return "cancelled", nil
+			}
+			if endpoint == "order.confirm_receipt" {
+				return "completed", nil
+			}
+			return "created", nil
+		}
+		if current == "cancelled" && endpoint == "order.confirm_receipt" {
+			return "completed", nil
+		}
+		valid := current == "" || (endpoint == "order.confirm" && current == "created") || (endpoint == "order.cancel" && (current == "created" || current == "confirmed")) || (endpoint == "order.confirm_receipt" && current == "confirmed")
+		if !valid && current != next {
+			return "", fmt.Errorf("订单状态 %s 不能执行 %s", current, endpoint)
+		}
+		return next, nil
+	}
+	switch {
+	case endpoint == "logistics.refresh":
+		return "ready", nil
+	case endpoint == "media.delete":
+		return "deleted", nil
+	case endpoint == "after_sale.apply":
+		if current != "" && current != "completed" {
+			return "", errors.New("当前订单状态不允许申请售后")
+		}
+		return "requested", nil
+	case endpoint == "after_sale.upload_evidence":
+		return "evidence_uploaded", nil
+	case endpoint == "service.accept_task":
+		if current != "" && current != "pending" {
+			return "", errors.New("斗师任务当前状态不可接单")
+		}
+		return "accepted", nil
+	case endpoint == "service.reject_task":
+		return "rejected", nil
+	case endpoint == "service.submit_quote":
+		if _, ok := payload["price"]; !ok {
+			if _, ok = payload["amount"]; !ok {
+				return "", errors.New("报价金额不能为空")
+			}
+		}
+		return "quoted", nil
+	case endpoint == "service.update_status":
+		if value := strings.TrimSpace(fmt.Sprint(payload["status"])); value != "" {
+			return value, nil
+		}
+		return "in_service", nil
+	case endpoint == "membership.open":
+		return "pending", nil
+	case endpoint == "ads.load":
+		return "ready", nil
+	case endpoint == "wallet.refresh":
+		return "ready", nil
+	case endpoint == "wallet.withdraw":
+		if raw, exists := payload["amount"]; exists {
+			amount, _ := raw.(float64)
+			if amount <= 0 {
+				return "", errors.New("提现金额必须大于 0")
+			}
+		}
+		return "pending", nil
+	default:
+		return "accepted", nil
+	}
+}
+
+func platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey string, payload map[string]interface{}, status string) map[string]interface{} {
+	if status == "" {
+		status = "accepted"
+	}
+	result := map[string]interface{}{"sandbox": true, "app_id": appID, "open_id": openID, "id": entityID, "status": status, "endpoint": endpoint, "idempotency": idempotencyKey, "message": "本地通用能力沙箱已执行", "updated_at": time.Now().Format(time.RFC3339)}
+	switch endpoint {
+	case "chat.send":
+		result["message_id"] = "msg-" + strings.ToLower(ut.RandomStr(8))
+	case "logistics.refresh":
+		result["tracks"] = []map[string]interface{}{{"status": "已创建物流单", "time": time.Now().Format(time.RFC3339)}}
+	case "wallet.refresh":
+		result["balance_fen"] = int64(0)
+	}
+	if len(payload) > 0 {
+		result["payload"] = payload
+	}
+	return result
 }

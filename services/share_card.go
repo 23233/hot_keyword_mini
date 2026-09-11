@@ -118,6 +118,7 @@ func (s *ShareCardService) RenderDraftLayoutIRScreenshot(appID, pageID, deviceNa
 		PageID:       draft.PageID,
 		Revision:     draft.Revision,
 		Status:       draft.Status,
+		Hidden:       draft.Hidden,
 		Title:        draft.Title,
 		BusinessType: draft.BusinessType,
 		Intent:       draft.Intent,

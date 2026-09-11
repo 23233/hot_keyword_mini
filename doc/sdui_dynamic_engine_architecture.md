@@ -94,7 +94,7 @@
 - `open_channels_activity`：直达微信视频号原生动态（支持 `feed_id` / `finder_user_name`）
 - `open_mini_program`：跨小程序矩阵互跳（支持 `target_app_id` / `target_path` / `extra_data`）
 - `preview_image`：全屏大图预览（支持 `current` / `urls`）
-- `open_webview`：微信原生 H5 容器打开（支持 `url` 换取一次性短期凭证；当前服务端仅校验 HTTP(S) 格式，微信业务域名白名单仍需在平台配置）
+- `open_webview`：微信原生 H5 容器打开（动作只提交当前 AppID 已登记的 `url_key`，服务端解析为 HTTPS 地址；需要登录时再换取一次性短期凭证）
 - `request_data`：受控业务数据请求与事务触发（支持 `endpoint` / `query` / `body` / `response.save_as`）
 - `request_payment`：创建商品订单并调起微信支付（支持 `sku` / `idempotency_key`）
 - `require_auth`：前置强制登录拦截
@@ -379,7 +379,7 @@ X-Client-Capabilities: custom,custom_block,image,text,rich_text,container,stack,
 - 失败时的用户提示和降级动作；
 - 域名、AppID、页面路径等白名单约束。
 
-协议不得下发任意脚本、远程组件、任意小程序路径或任意网页域名。当前 `open_webview` 服务端只接受 HTTP(S) 地址，实际可访问域名还必须加入微信业务域名白名单；服务端域名白名单尚未在本版本实现，不能将协议中的任意 HTTP(S) 地址视为已完成租户白名单校验。`open_mini_program` 只能跳转已审核的 AppID 和路径。动作参数的字段命名必须统一，不能同时出现 `feed_id` 与 `feedId`。
+协议不得下发任意脚本、远程组件、任意小程序路径或任意网页域名。`open_webview` 只能引用当前 AppID 已登记且启用的 `url_key`，登记项必须是无查询参数的 HTTPS 地址；实际可访问域名仍必须加入微信业务域名白名单。`open_mini_program` 只能跳转已审核的 AppID 和路径。动作参数的字段命名必须统一，不能同时出现 `feed_id` 与 `feedId`。
 
 #### 3.9.1 图片资源存储与 CDN 访问行为
 

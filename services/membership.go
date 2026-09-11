@@ -169,6 +169,16 @@ func (s *MembershipService) ApplyPaidOrder(order *models.PaymentOrder) error {
 	})
 }
 
+// ReversePaidOrder 撤销本地退款订单已发放的权益；仅回收仍由该订单持有的权益，避免覆盖后续购买。
+func (s *MembershipService) ReversePaidOrder(order *models.PaymentOrder) error {
+	if order == nil || order.AppID == "" || order.UserID <= 0 { return errors.New("会员退款订单参数不完整") }
+	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND order_id = ?", order.AppID, order.UserID, order.ID).Delete(&models.ArticlePurchase{}).Error; err != nil { return err }
+	var membership models.UserMembership
+	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND last_order_id = ?", order.AppID, order.UserID, order.ID).First(&membership).Error; errors.Is(err, gorm.ErrRecordNotFound) { return nil } else if err != nil { return err }
+	now := time.Now()
+	return db.Mysql.Model(&membership).Updates(map[string]interface{}{"level": 0, "expires_at": now, "updated_at": now}).Error
+}
+
 // calculateMembershipGrant 纯计算会员顺延、升级折算和订单幂等结果。
 func calculateMembershipGrant(current *models.UserMembership, plan models.MembershipLevel, order *models.PaymentOrder, now time.Time) (models.UserMembership, bool, error) {
 	if order == nil || plan.Level <= 0 || plan.DurationDays <= 0 {

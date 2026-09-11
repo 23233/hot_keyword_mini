@@ -13,6 +13,7 @@ const cliPath = process.env.WECHAT_DEVTOOLS_CLI || 'C:\\Program Files (x86)\\Ten
 const ideCliPath = process.env.WECHAT_IDE_CLI || 'C:\\Program Files (x86)\\Tencent\\微信web开发者工具\\wechatide.cmd'
 const required = process.env.WECHAT_AGENT_REQUIRED === '1'
 const ideRequired = process.env.WECHAT_IDE_REQUIRED === '1'
+const targetAppId = process.env.WECHAT_AGENT_APPID || 'wx516563cfe994bbc6'
 
 function runAgent(args) {
   return execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', cliPath, ...args], {
@@ -154,7 +155,7 @@ function labDom() {
 test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, async () => {
   runWechatIDE(['open_project_window', '--project', wechatProjectRoot, '--window-mode', 'liteMode'])
   const pageId = process.env.WECHAT_AGENT_PAGE_ID || 'component_lab_acceptance_20260907'
-  const backend = await fetch(`http://127.0.0.1:8080/api/v1/page/${pageId}`, { headers: { 'X-WX-AppID': 'wx516563cfe994bbc6' } }).then(response => response.json())
+  const backend = await fetch(`http://127.0.0.1:8080/api/v1/page/${pageId}`, { headers: { 'X-WX-AppID': targetAppId } }).then(response => response.json())
   assert.ok(backend.page, '后端未返回验收页面')
   runWechatIDE(['simulator_open_page', '--project', wechatProjectRoot, '--page', 'pages/dynamic/index', '--query', `page_id=${pageId}`])
   assert.match(labDom(), /lab_action_request_payment/)
@@ -206,7 +207,7 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
     assert.ok(calls.some(call => call.method === 'showShareMenu'))
     assert.match(calls.find(call => call.method === 'previewImage').options.urls[0], /assets\/sdui-component-lab.png$/)
     const expected = await fetch('http://127.0.0.1:8080/api/v1/action/execute', {
-      method: 'POST', headers: { 'X-WX-AppID': 'wx516563cfe994bbc6', 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'X-WX-AppID': targetAppId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint: 'query.score', payload: { query_value: 'SDUI-QUERY' } })
     }).then(response => response.json())
     assert.equal(expected.data.status, 'success')
@@ -226,7 +227,7 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
   tapAction('open_webview')
   const webview = currentPageEventually(page => page.path === 'pages/webview/index')
   assert.equal(webview.path, 'pages/webview/index')
-  assert.equal(decodeURIComponent(webview.query.url), 'https://example.com')
+  assert.equal(decodeURIComponent(webview.query.url), 'https://wx.a0free.com')
 })
 
 test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ideRequired }, () => {
@@ -282,7 +283,7 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
 
   const networkResult = readWechatNetwork('grep component_lab_acceptance_20260907')
   assert.match(networkResult, /http:\/\/127\.0\.0\.1:8080\/api\/v1\/page\/component_lab_acceptance_20260907/, '模拟器未请求本地 SDUI 接口')
-  assert.match(networkResult, /"X-WX-AppID":"wx516563cfe994bbc6"/, '模拟器请求缺少目标 AppID')
+  assert.match(networkResult, new RegExp(`"X-WX-AppID":"${targetAppId}"`), '模拟器请求缺少目标 AppID')
   assert.match(networkResult, /"X-Client-Capabilities":"[^"]*grid[^"]*tabs[^"]*carousel[^"]*"/, '模拟器请求缺少复杂布局能力声明')
   assert.match(networkResult, /"status":200/, '本地 SDUI 接口未返回 200')
 
@@ -352,7 +353,7 @@ test('微信开发者工具 MCP AI 破甲首页与文章权限验收', { skip: !
 
   const homeNetwork = readWechatNetwork('grep /api/v1/page/home')
   assert.match(homeNetwork, /http:\/\/127\.0\.0\.1:8080\/api\/v1\/page\/home/, '首页未请求本地 SDUI 接口')
-  assert.match(homeNetwork, /"X-WX-AppID":"wx516563cfe994bbc6"/, '首页请求缺少目标 AppID')
+  assert.match(homeNetwork, new RegExp(`"X-WX-AppID":"${targetAppId}"`), '首页请求缺少目标 AppID')
   assert.match(homeNetwork, /"status":200/, '首页 SDUI 接口未返回 200')
 
   const homeScreenshotPath = path.join(process.env.TEMP || process.cwd(), 'wechat-mcp-ai-home.png')

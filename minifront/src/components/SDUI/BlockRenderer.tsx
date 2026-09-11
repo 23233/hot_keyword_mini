@@ -25,6 +25,37 @@ import {
   DownloadCardBlock
 } from './BusinessBlocks'
 import { CollectionNavBlock, ContentFeedBlock, ContentDetailBlock, DiscussionThreadBlock, OfferListBlock } from './ContentBlocks'
+import {
+  BottomNavBlock,
+  ContactServiceBlock,
+  FloatingActionBlock,
+  GameHeaderBlock,
+  MediaGalleryBlock,
+  MediaPickerBlock,
+  TencentMapBlock,
+  UploadProgressBlock,
+  WebViewEntryBlock
+} from './PlatformBlocks'
+import {
+  AfterSaleFormBlock,
+  AdSlotBlock,
+  ChatThreadBlock,
+  EvidenceListBlock,
+  LogisticsTrackBlock,
+  MembershipCardBlock,
+  MessageComposerBlock,
+  MessageListBlock,
+  OrderCardBlock,
+  OrderSummaryBlock,
+  OrderTimelineBlock,
+  QuoteCardBlock,
+  SchedulePickerBlock,
+  ServiceCardBlock,
+  TaskCardBlock,
+  UnreadBadgeBlock,
+  WalletCardBlock,
+  WithdrawFormBlock
+} from './DomainBlocks'
 import { evaluateCondition } from '../../utils/condition'
 import { resolveBindingValue, resolveBlockPropsBindings } from '../../utils/action'
 import { utilityClasses } from './style'
@@ -312,11 +343,76 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       case 'download_card':
         return <DownloadCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
 
+      // 跨小程序复用的平台能力块
+      case 'bottom_nav':
+        return <BottomNavBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'floating_action':
+        return <FloatingActionBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'game_header':
+        return <GameHeaderBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'media_picker':
+        return <MediaPickerBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'upload_progress':
+        return <UploadProgressBlock block={resolvedBlock} />
+      case 'media_gallery':
+        return <MediaGalleryBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'map_card':
+      case 'location_picker':
+        return <TencentMapBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'contact_card':
+      case 'service_entry':
+        return <ContactServiceBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'webview_entry':
+      case 'webview_state':
+        return <WebViewEntryBlock block={resolvedBlock} onAction={handleWrappedAction} />
+
+      // 通用聊天、交易、履约、会员和资金能力块。业务数据与动作均由协议提供。
+      case 'chat_thread':
+        return <ChatThreadBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'message_list':
+        return <MessageListBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'message_composer':
+        return <MessageComposerBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'unread_badge':
+        return <UnreadBadgeBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'order_card':
+        return <OrderCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'order_summary':
+        return <OrderSummaryBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'order_timeline':
+        return <OrderTimelineBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'logistics_track':
+        return <LogisticsTrackBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'after_sale_form':
+        return <AfterSaleFormBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'evidence_list':
+        return <EvidenceListBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'service_card':
+        return <ServiceCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'task_card':
+        return <TaskCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'quote_card':
+        return <QuoteCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'schedule_picker':
+        return <SchedulePickerBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'membership_card':
+        return <MembershipCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'ad_slot':
+        return <AdSlotBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'wallet_card':
+        return <WalletCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'withdraw_form':
+        return <WithdrawFormBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'payment_result':
+      case 'price_breakdown':
+      case 'address_card':
+      case 'qr_code':
+      case 'feature_gate':
+      case 'compliance_panel':
+        return <GenericBlock block={resolvedBlock} onAction={handleWrappedAction} />
+
       // 已纳入协议的业务扩展块使用通用渲染器，确保不会出现空白页
       case 'result_table':
-      case 'contact_card':
-      case 'map_card':
-      case 'game_header':
       case 'event_card':
       case 'poll':
       case 'feed_list':

@@ -121,6 +121,12 @@ func PatchDynamicPageDraftWithRevisionBy(appID, pageID string, expectedRevision 
 					return nil, fmt.Errorf("补丁[%d] /require_auth 必须是布尔值", idx)
 				}
 				draft.RequireAuth = value
+			case "/hidden":
+				value, ok := op.Value.(bool)
+				if !ok {
+					return nil, fmt.Errorf("补丁[%d] /hidden 必须是布尔值", idx)
+				}
+				draft.Hidden = value
 			case "/share_config":
 				if value, ok := op.Value.(string); ok {
 					draft.ShareConfig = value
@@ -248,6 +254,7 @@ func PatchDynamicPage(appID, pageID string, ops []PatchOp) (*models.DynamicPage,
 		PageID:       draft.PageID,
 		Revision:     draft.Revision,
 		Status:       draft.Status,
+		Hidden:       draft.Hidden,
 		Title:        draft.Title,
 		BusinessType: draft.BusinessType,
 		Intent:       draft.Intent,

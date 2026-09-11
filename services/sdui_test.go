@@ -52,10 +52,24 @@ func TestValidation_AllStandardBlocksAndActions(t *testing.T) {
 			return map[string]interface{}{"endpoint": "game.redeem"}
 		case "request_payment":
 			return map[string]interface{}{"sku": "product_sku_matrix"}
+		case "open_webview":
+			return map[string]interface{}{"url_key": "component-lab"}
 		case "set_state", "toggle_state":
 			return map[string]interface{}{"key": "is_open", "value": true}
 		case "show_error_state", "show_empty_state", "show_loading_state", "reset_block_state":
 			return map[string]interface{}{"target": "matrix_target"}
+		case "upload_file":
+			return map[string]interface{}{"file_path": "$result.temp_file_path", "presigned_url": "https://upload.example.com/object"}
+		case "delete_media":
+			return map[string]interface{}{"endpoint": "media.delete"}
+		case "open_map":
+			return map[string]interface{}{"latitude": 22.5431, "longitude": 114.0579, "scale": 16}
+		case "open_wechat_service":
+			return map[string]interface{}{"corp_id": "ww_matrix", "url": "https://work.weixin.qq.com/kfid/matrix"}
+		case "save_qr":
+			return map[string]interface{}{"url": "https://example.com/customer-service.png"}
+		case "open_internal_chat":
+			return map[string]interface{}{"page_id": "customer_service"}
 		default:
 			return map[string]interface{}{}
 		}
@@ -114,6 +128,19 @@ func TestValidation_StateActionsRequireTargets(t *testing.T) {
 	report := ValidateDynamicPage(page)
 	if report.IsValid || len(report.Errors) < 2 {
 		t.Fatalf("缺失状态目标必须阻断发布: %+v", report)
+	}
+}
+
+// TestValidation_WebViewRequiresRegistryKey 验证 WebView 不能绕过登记表直接下发 URL。
+func TestValidation_WebViewRequiresRegistryKey(t *testing.T) {
+	page := &models.DynamicPage{AppID: "wx_webview", PageID: "webview", Title: "WebView", BusinessType: "custom", Intent: "watch", Theme: "light_clean", Blocks: `[{"id":"web","type":"action_button","action":{"type":"open_webview","payload":{"url":"https://wx.a0free.com"}}}]`}
+	report := ValidateDynamicPage(page)
+	if report.IsValid || !strings.Contains(strings.Join(report.Errors, " "), "url_key") {
+		t.Fatalf("缺少 url_key 或直接 URL 的 WebView 动作必须被拒绝: %+v", report)
+	}
+	page.Blocks = `[{"id":"web","type":"action_button","action":{"type":"open_webview","payload":{"url_key":"component-lab"}}}]`
+	if report := ValidateDynamicPage(page); !report.IsValid {
+		t.Fatalf("合法 WebView url_key 不应被协议校验拒绝: %+v", report)
 	}
 }
 
@@ -431,6 +458,7 @@ func TestDynamicDraftEnvelopeAssembly(t *testing.T) {
 		PageID:       "draft_preview_1",
 		Revision:     2,
 		Status:       "draft",
+		Hidden:       true,
 		Title:        "待审核的新版首页",
 		BusinessType: "drama",
 		Blocks: `[
@@ -452,6 +480,9 @@ func TestDynamicDraftEnvelopeAssembly(t *testing.T) {
 	}
 	if envelope.Page.Status != "draft" {
 		t.Fatalf("草稿信封状态应保留 draft")
+	}
+	if !envelope.Page.Hidden {
+		t.Fatalf("草稿信封必须保留页面隐藏状态")
 	}
 	if len(envelope.Page.Blocks) != 1 || envelope.Page.Blocks[0].ID != "hero_1" {
 		t.Fatalf("草稿积木树未正确组装")

@@ -40,16 +40,21 @@ type PaymentOrder struct {
 	PrepayID      string     `gorm:"column:prepay_id;size:128" json:"-"`
 	Attach        string     `gorm:"column:attach;size:128;uniqueIndex:idx_payment_idem" json:"attach,omitempty"`
 	PaidAt        *time.Time `gorm:"column:paid_at" json:"paid_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	// 是否由本地支付沙箱创建。
+	Sandbox bool `gorm:"column:sandbox;not null;default:false;index" json:"sandbox"`
+	// 退款完成时间。
+	RefundedAt *time.Time `gorm:"column:refunded_at" json:"refunded_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 // PaymentOrderStatus 支付订单状态常量。
 const (
-	PaymentOrderPending = "pending"
-	PaymentOrderPaid    = "paid"
-	PaymentOrderClosed  = "closed"
-	PaymentOrderFailed  = "failed"
+	PaymentOrderPending  = "pending"
+	PaymentOrderPaid     = "paid"
+	PaymentOrderClosed   = "closed"
+	PaymentOrderFailed   = "failed"
+	PaymentOrderRefunded = "refunded"
 )
 
 // TableName 返回支付订单表名。

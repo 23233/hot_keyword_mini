@@ -32,6 +32,22 @@ func TestEndpointRegistry(t *testing.T) {
 		t.Fatalf("应成功签发兑换码")
 	}
 }
+
+// TestAnonymousGameRedeem 验证游戏兑换码首发链路允许匿名领取。
+func TestAnonymousGameRedeem(t *testing.T) {
+	service := NewActionEndpointService()
+	result, err := service.ExecuteActionEndpoint("wx-game-anonymous", "", "game.redeem", map[string]interface{}{
+		"package_id": "pkg_game_novice_888",
+	}, "idem-anonymous-1")
+	if err != nil {
+		t.Fatalf("匿名领取兑换码失败: %v", err)
+	}
+	data, ok := result.(map[string]interface{})
+	if !ok || data["code"] == "" {
+		t.Fatalf("匿名领取未返回兑换码: %#v", result)
+	}
+}
+
 // TestActionEndpointValidation 测试入参校验
 func TestActionEndpointValidation(t *testing.T) {
 	service := NewActionEndpointService()
@@ -68,5 +84,32 @@ func TestQueryScoreEndpoint(t *testing.T) {
 	// 2. 空关键词校验
 	if _, err := service.ExecuteActionEndpoint("wx516563cfe994bbc6", "", "query.score", map[string]interface{}{}, ""); err == nil {
 		t.Fatalf("空 query_value 应报错")
+	}
+}
+
+// TestPlatformSandboxEndpoints 验证通用领域端点统一执行权限、租户和状态回显。
+func TestPlatformSandboxEndpoints(t *testing.T) {
+	service := NewActionEndpointService()
+	for _, item := range []struct {
+		endpoint string
+		status   string
+	}{
+		{endpoint: "chat.send", status: "accepted"},
+		{endpoint: "order.cancel", status: "cancelled"},
+		{endpoint: "order.confirm_receipt", status: "completed"},
+		{endpoint: "after_sale.apply", status: "requested"},
+		{endpoint: "wallet.withdraw", status: "pending"},
+	} {
+		result, err := service.ExecuteActionEndpoint("wx-platform-test", "user-1", item.endpoint, map[string]interface{}{"id": "entity-1"}, "idem-1")
+		if err != nil {
+			t.Fatalf("端点 %s 执行失败: %v", item.endpoint, err)
+		}
+		data, ok := result.(map[string]interface{})
+		if !ok || data["sandbox"] != true || data["status"] != item.status || data["app_id"] != "wx-platform-test" {
+			t.Fatalf("端点 %s 返回不符合沙箱契约: %#v", item.endpoint, result)
+		}
+	}
+	if _, err := service.ExecuteActionEndpoint("wx-platform-test", "", "chat.send", nil, ""); err == nil {
+		t.Fatal("聊天端点必须拒绝未登录请求")
 	}
 }

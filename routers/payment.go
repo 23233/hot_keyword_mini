@@ -2,6 +2,7 @@
 package routers
 
 import (
+	"hot_keyword/config"
 	"hot_keyword/db"
 	"hot_keyword/jwtToken"
 	"hot_keyword/models"
@@ -123,4 +124,116 @@ func PaymentNotifyHandler(ctx iris.Context) {
 		return
 	}
 	ctx.StatusCode(iris.StatusNoContent)
+}
+
+// CreateSandboxPaymentOrderHandler 创建本地支付沙箱订单，仅允许开发环境使用。
+func CreateSandboxPaymentOrderHandler(ctx iris.Context) {
+	if config.Cfg != nil && config.Cfg.IsProduction() {
+		ctx.StatusCode(iris.StatusNotFound)
+		_ = ctx.JSON(iris.Map{"code": 404, "msg": "生产环境不开放支付沙箱"})
+		return
+	}
+	appID, userID, openID, ok := paymentUser(ctx)
+	if !ok {
+		return
+	}
+	var req createPaymentOrderRequest
+	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.SKU) == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "商品 SKU 不能为空"})
+		return
+	}
+	order, err := services.NewPaymentService().CreateSandboxOrder(appID, userID, openID, req.SKU, req.IdempotencyKey)
+	if err != nil {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+		return
+	}
+	_ = ctx.JSON(iris.Map{"code": 0, "data": iris.Map{"order": order, "sandbox": true}})
+}
+
+// TransitionSandboxPaymentHandler 推进本地支付沙箱订单状态。
+func TransitionSandboxPaymentHandler(ctx iris.Context) {
+	if config.Cfg != nil && config.Cfg.IsProduction() {
+		ctx.StatusCode(iris.StatusNotFound)
+		_ = ctx.JSON(iris.Map{"code": 404, "msg": "生产环境不开放支付沙箱"})
+		return
+	}
+	appID, userID, _, ok := paymentUser(ctx)
+	if !ok {
+		return
+	}
+	var req struct {
+		OutTradeNo string `json:"out_trade_no"`
+		Transition string `json:"transition"`
+	}
+	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.OutTradeNo) == "" || strings.TrimSpace(req.Transition) == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "订单号和状态不能为空"})
+		return
+	}
+	order, err := services.NewPaymentService().ApplySandboxTransition(appID, userID, req.OutTradeNo, req.Transition)
+	if err != nil {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+		return
+	}
+	_ = ctx.JSON(iris.Map{"code": 0, "data": iris.Map{"order": order, "sandbox": true}})
+}
+
+// SandboxPaymentNotifyHandler 模拟微信支付通知，供本地回调验收使用。
+func SandboxPaymentNotifyHandler(ctx iris.Context) {
+	if config.Cfg != nil && config.Cfg.IsProduction() {
+		ctx.StatusCode(iris.StatusNotFound)
+		_ = ctx.JSON(iris.Map{"code": 404, "msg": "生产环境不开放支付沙箱"})
+		return
+	}
+	appID := strings.TrimSpace(ctx.Params().Get("app_id"))
+	var req struct {
+		OutTradeNo string `json:"out_trade_no"`
+		Success    bool   `json:"success"`
+	}
+	if err := ctx.ReadJSON(&req); err != nil || appID == "" || strings.TrimSpace(req.OutTradeNo) == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "支付沙箱回调参数无效"})
+		return
+	}
+	order, err := services.NewPaymentService().ApplySandboxNotify(appID, req.OutTradeNo, req.Success)
+	if err != nil {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+		return
+	}
+	_ = ctx.JSON(iris.Map{"code": 0, "data": iris.Map{"order": order, "sandbox": true}})
+}
+
+func paymentUser(ctx iris.Context) (string, int64, string, bool) {
+	appID, err := middleware.RequireTenantAppID(ctx)
+	if err != nil {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+		return "", 0, "", false
+	}
+	authHeader := ctx.GetHeader("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		ctx.StatusCode(iris.StatusUnauthorized)
+		_ = ctx.JSON(iris.Map{"code": 401, "msg": "请先完成微信登录"})
+		return "", 0, "", false
+	}
+	_, user, claims, err := jwtToken.ValidateTokenSessionAndTenant(strings.TrimPrefix(authHeader, "Bearer "), appID)
+	if err != nil || user == nil {
+		ctx.StatusCode(iris.StatusUnauthorized)
+		_ = ctx.JSON(iris.Map{"code": 401, "msg": "登录态无效，请重新授权"})
+		return "", 0, "", false
+	}
+	openID := user.WechatOpenID
+	if openID == "" {
+		openID, _ = claims["openId"].(string)
+	}
+	if openID == "" {
+		ctx.StatusCode(iris.StatusUnauthorized)
+		_ = ctx.JSON(iris.Map{"code": 401, "msg": "登录态缺少微信用户标识"})
+		return "", 0, "", false
+	}
+	return appID, user.ID, openID, true
 }
