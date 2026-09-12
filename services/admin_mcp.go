@@ -19,13 +19,13 @@ var AdminMCPOperations = []string{
 	"app.get", "app.save", "capability.get", "capability.save", "webview.get", "webview.save",
 	"product.list", "product.save", "category.list", "category.save", "category.archive",
 	"membership.list", "membership.save", "membership.archive", "article.list", "article.save", "article.archive",
-	"comment.list", "comment.moderate", "operation.list", "drama.list", "drama.save",
+	"comment.list", "comment.moderate", "operation.list", "config.get", "config.save", "drama.list", "drama.save", "ai_breakthrough.seed",
 }
 
 var adminMCPReadOperations = map[string]bool{
 	"app.get": true, "capability.get": true, "webview.get": true, "product.list": true,
 	"category.list": true, "membership.list": true, "article.list": true, "comment.list": true,
-	"operation.list": true, "drama.list": true,
+	"operation.list": true, "config.get": true, "drama.list": true,
 }
 
 // ExecuteAdminMCPOperation 通过统一服务层代理管理后台操作，不接受任意 SQL、URL 或脚本。
@@ -168,18 +168,30 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		err := db.Mysql.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error
 		return rows, err
 	case "comment.moderate":
-		id, ok := payload["id"].(float64)
+		id, ok := numericID(payload["id"])
 		if !ok || id <= 0 {
 			return nil, errors.New("评论 id 无效")
 		}
-		if err := NewCommentService().Moderate(appID, int64(id), textPayload(payload, "status"), textPayload(payload, "reason")); err != nil {
+		if err := NewCommentService().Moderate(appID, id, textPayload(payload, "status"), textPayload(payload, "reason")); err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{"status": "updated", "id": int64(id)}, nil
+		return map[string]interface{}{"status": "updated", "id": id}, nil
 	case "operation.list":
 		var rows []models.PlatformOperation
 		err := db.Mysql.Where("app_id = ?", appID).Order("updated_at desc").Limit(100).Find(&rows).Error
 		return rows, err
+	case "config.get":
+		return getAdminConfig()
+	case "config.save":
+		return saveAdminConfig(payload)
+	case "ai_breakthrough.seed":
+		if err := NewMembershipService().SeedDefaultPlans(appID); err != nil {
+			return nil, err
+		}
+		if err := NewArticleService().SeedDefaultContent(appID); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"status": "seeded", "app_id": appID}, nil
 	case "drama.list":
 		var rows []models.Drama
 		err := db.Mysql.Order("id desc").Find(&rows).Error
@@ -230,16 +242,82 @@ func normalizeStatus(value string) string {
 
 // archiveRow 统一执行可恢复的后台停用操作。
 func archiveRow(app string, payload map[string]interface{}, model interface{}, label string) (interface{}, error) {
-	id, ok := payload["id"].(float64)
+	id, ok := numericID(payload["id"])
 	if !ok || id <= 0 {
 		return nil, fmt.Errorf("%s id 无效", label)
 	}
-	result := db.Mysql.Model(model).Where("app_id = ? AND id = ?", app, int64(id)).Update("status", "inactive")
+	status := "inactive"
+	if label == "文章" {
+		status = "archived"
+	}
+	result := db.Mysql.Model(model).Where("app_id = ? AND id = ?", app, id).Update("status", status)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return map[string]interface{}{"status": "inactive", "id": int64(id)}, nil
+	return map[string]interface{}{"status": status, "id": id}, nil
+}
+
+func numericID(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return int64(v), v == float64(int64(v))
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case json.Number:
+		i, err := v.Int64()
+		return i, err == nil
+	default:
+		return 0, false
+	}
+}
+
+type adminConfigPayload struct {
+	DisplayMode    string                 `json:"display_mode"`
+	WebviewURL     string                 `json:"webview_url"`
+	PageTitle      string                 `json:"page_title"`
+	PageSubtitle   string                 `json:"page_subtitle"`
+	Announcement   string                 `json:"announcement"`
+	ShareTitle     string                 `json:"share_title"`
+	ShareDesc      string                 `json:"share_desc"`
+	ShareCover     string                 `json:"share_cover"`
+	ActionChannels []models.ActionChannel `json:"action_channels"`
+	FloatingButton *models.FloatingButton `json:"floating_button"`
+}
+
+func getAdminConfig() (interface{}, error) {
+	drama, err := NewDramaService().GetDefaultDrama()
+	if err != nil {
+		return nil, err
+	}
+	var cfg models.PageConfig
+	if err := db.Mysql.Where("drama_id = ?", drama.ID).First(&cfg).Error; err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"drama": drama, "config": cfg}, nil
+}
+
+func saveAdminConfig(payload map[string]interface{}) (interface{}, error) {
+	var input adminConfigPayload
+	if err := decodePayload(payload, &input); err != nil {
+		return nil, err
+	}
+	drama, err := NewDramaService().GetDefaultDrama()
+	if err != nil {
+		return nil, err
+	}
+	channels, _ := json.Marshal(input.ActionChannels)
+	updates := map[string]interface{}{"display_mode": input.DisplayMode, "webview_url": input.WebviewURL, "page_title": input.PageTitle, "page_subtitle": input.PageSubtitle, "announcement": input.Announcement, "share_title": input.ShareTitle, "share_desc": input.ShareDesc, "share_cover": input.ShareCover, "action_channels": string(channels), "updated_at": time.Now()}
+	if input.FloatingButton != nil {
+		raw, _ := json.Marshal(input.FloatingButton)
+		updates["floating_button"] = string(raw)
+	}
+	if result := db.Mysql.Model(&models.PageConfig{}).Where("drama_id = ?", drama.ID).Updates(updates); result.Error != nil {
+		return nil, result.Error
+	}
+	return getAdminConfig()
 }
