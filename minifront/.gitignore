@@ -1,6 +1,7 @@
+# .gitignore
 node_modules/
 dist/
-agent/
+/agent/
 .taro/
 .temp/
 *.log

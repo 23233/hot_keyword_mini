@@ -1,0 +1,7 @@
+{
+  "apis": [
+    { "name": "get-dom", "description": "读取当前小程序页面 DOM" },
+    { "name": "render", "description": "渲染当前小程序页面截图" },
+    { "name": "card-click", "description": "点击当前页面交互目标" }
+  ]
+}
