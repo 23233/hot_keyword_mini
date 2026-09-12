@@ -10,7 +10,6 @@ import (
 	"github.com/kataras/realip"
 	"hot_keyword/routers"
 	"hot_keyword/routers/middleware"
-	"hot_keyword/services"
 	"io/fs"
 	"strings"
 
@@ -65,12 +64,6 @@ func main() {
 			panic(err)
 		}
 	}
-	if config.Cfg.IsProduction() {
-		if err = services.CheckAllProductionReadiness(config.Cfg); err != nil {
-			panic(err)
-		}
-	}
-
 	app := iris.New()
 	app.Use(iris.Compression)
 	app.Use(irisRecover.New())

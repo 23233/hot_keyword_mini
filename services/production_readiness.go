@@ -95,27 +95,6 @@ func CheckProductionReadiness(appID string, cfg *config.Config) (ProductionReadi
 	return report, nil
 }
 
-// CheckAllProductionReadiness 检查全部已注册租户并汇总阻断原因。
-func CheckAllProductionReadiness(cfg *config.Config) error {
-	if db.Mysql == nil {
-		return fmt.Errorf("数据库未初始化")
-	}
-	var apps []models.MiniApp
-	if err := db.Mysql.Select("app_id").Order("app_id asc").Find(&apps).Error; err != nil {
-		return err
-	}
-	for _, app := range apps {
-		report, err := CheckProductionReadiness(app.AppID, cfg)
-		if err != nil {
-			return err
-		}
-		if !report.Ready {
-			return fmt.Errorf("小程序 %s 未通过生产预检，缺少=%v，无效=%v", app.AppID, report.Missing, report.Invalid)
-		}
-	}
-	return nil
-}
-
 func capabilityEnabled(matrix map[string]models.CapabilityMatrixEntry, key string) bool {
 	return matrix[key].State == "enabled"
 }
