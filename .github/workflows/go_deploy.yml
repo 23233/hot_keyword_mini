@@ -54,12 +54,19 @@ jobs:
           cache: pnpm
           cache-dependency-path: minifront/pnpm-lock.yaml
 
-      - name: 验证小程序
-        run: |
-          pnpm --dir minifront install --frozen-lockfile
-          pnpm --dir minifront run type-check
-          pnpm --dir minifront run test:sdui
-          TARO_APP_API_BASE_URL=https://wx.a0free.com pnpm --dir minifront run build:weapp
+      - name: 安装小程序依赖
+        run: pnpm --dir minifront install --frozen-lockfile
+
+      - name: 检查小程序类型
+        run: pnpm --dir minifront run type-check
+
+      - name: 测试 SDUI
+        run: pnpm --dir minifront run test:sdui
+
+      - name: 构建微信小程序
+        run: pnpm --dir minifront run build:weapp
+        env:
+          TARO_APP_API_BASE_URL: https://wx.a0free.com
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
