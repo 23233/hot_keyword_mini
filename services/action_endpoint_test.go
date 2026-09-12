@@ -94,13 +94,16 @@ func TestPlatformSandboxEndpoints(t *testing.T) {
 		endpoint string
 		status   string
 	}{
-		{endpoint: "chat.send", status: "accepted"},
-		{endpoint: "order.cancel", status: "cancelled"},
-		{endpoint: "order.confirm_receipt", status: "completed"},
+		{endpoint: "chat.send", status: "sent"},
+		{endpoint: "order.create", status: "created"},
 		{endpoint: "after_sale.apply", status: "requested"},
 		{endpoint: "wallet.withdraw", status: "pending"},
 	} {
-		result, err := service.ExecuteActionEndpoint("wx-platform-test", "user-1", item.endpoint, map[string]interface{}{"id": "entity-1"}, "idem-1")
+		payload := map[string]interface{}{"id": "entity-1"}
+		if item.endpoint == "wallet.withdraw" {
+			payload["amount"] = float64(100)
+		}
+		result, err := service.ExecuteActionEndpoint("wx-platform-test", "user-1", item.endpoint, payload, "idem-"+item.endpoint)
 		if err != nil {
 			t.Fatalf("端点 %s 执行失败: %v", item.endpoint, err)
 		}
@@ -111,5 +114,38 @@ func TestPlatformSandboxEndpoints(t *testing.T) {
 	}
 	if _, err := service.ExecuteActionEndpoint("wx-platform-test", "", "chat.send", nil, ""); err == nil {
 		t.Fatal("聊天端点必须拒绝未登录请求")
+	}
+}
+
+// TestPlatformDomainStateMachines 验证订单、售后、斗师和提现领域状态机。
+func TestPlatformDomainStateMachines(t *testing.T) {
+	tests := []struct {
+		name, endpoint, current, want string
+		payload                       map[string]interface{}
+		wantErr                       bool
+	}{
+		{"创建订单", "order.create", "", "created", nil, false},
+		{"确认订单", "order.confirm", "created", "confirmed", nil, false},
+		{"确认收货", "order.confirm_receipt", "confirmed", "completed", nil, false},
+		{"取消后禁止收货", "order.confirm_receipt", "cancelled", "", nil, true},
+		{"无订单禁止取消", "order.cancel", "", "", nil, true},
+		{"申请售后", "after_sale.apply", "completed", "requested", nil, false},
+		{"售后上传证据", "after_sale.upload_evidence", "requested", "evidence_uploaded", nil, false},
+		{"无售后单禁止上传", "after_sale.upload_evidence", "", "", nil, true},
+		{"斗师接单", "service.accept_task", "pending", "accepted", nil, false},
+		{"斗师报价", "service.submit_quote", "accepted", "quoted", map[string]interface{}{"amount": float64(100)}, false},
+		{"未接单禁止报价", "service.submit_quote", "pending", "", map[string]interface{}{"amount": float64(100)}, true},
+		{"开始服务", "service.update_status", "paid", "in_service", map[string]interface{}{"status": "in_service"}, false},
+		{"非法跨级完成", "service.update_status", "quoted", "", map[string]interface{}{"status": "completed"}, true},
+		{"有效提现", "wallet.withdraw", "", "pending", map[string]interface{}{"amount": float64(100)}, false},
+		{"拒绝零元提现", "wallet.withdraw", "", "", map[string]interface{}{"amount": float64(0)}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := nextPlatformStatus(tt.endpoint, tt.current, tt.payload)
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Fatalf("状态机返回 status=%q err=%v", got, err)
+			}
+		})
 	}
 }

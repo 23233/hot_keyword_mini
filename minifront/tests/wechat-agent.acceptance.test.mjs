@@ -345,6 +345,18 @@ test('微信开发者工具 MCP AI 破甲首页与文章权限验收', { skip: !
   const homeDom = String(toolResult(runWechatIDERead([
     'automation_element_action', '--project', wechatProjectRoot, '--action', 'outerWxml', '--selector', '.sdui-home-blocks-container'
   ]), 'automation_element_action'))
+  if (targetAppId !== 'wx516563cfe994bbc6') {
+    assert.ok(homeDom.length > 200, '租户首页没有渲染有效 SDUI 内容')
+    const homeNetwork = readWechatNetwork('grep /api/v1/page/home')
+    assert.match(homeNetwork, new RegExp(`"X-WX-AppID":"${targetAppId}"`), '首页请求缺少目标 AppID')
+    assert.match(homeNetwork, /"status":200/, '租户首页 SDUI 接口未返回 200')
+    const screenshotPath = path.join(process.env.TEMP || process.cwd(), `wechat-mcp-home-${targetAppId}.png`)
+    assert.equal(toolResult(runWechatIDE([
+      'simulator_screenshot', '--project', wechatProjectRoot, '--optimize', 'false', '--path', screenshotPath, '--wait', '1'
+    ]), 'simulator_screenshot').success, true)
+    assert.ok(statSync(screenshotPath).size > 10_000, '租户首页截图为空')
+    return
+  }
   for (const expected of ['精选', '最新', '深度', '工具', '会员', 'AI 破甲：从热点信息到可验证结论', '会员专享：AI 产品拆解周报', '单篇解锁：AI 产品深度拆解', '单篇 ¥19.90']) {
     assert.match(homeDom, new RegExp(expected), `AI 破甲首页缺少真实内容: ${expected}`)
   }

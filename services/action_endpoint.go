@@ -288,16 +288,9 @@ func (s *ActionEndpointService) handlePlatformSandbox(appID, openID string, payl
 		entityID = endpoint + "-" + strings.ToLower(ut.RandomStr(8))
 	}
 	if db.Mysql == nil {
-		status := "accepted"
-		switch endpoint {
-		case "order.cancel":
-			status = "cancelled"
-		case "order.confirm_receipt":
-			status = "completed"
-		case "after_sale.apply":
-			status = "requested"
-		case "wallet.withdraw":
-			status = "pending"
+		status, err := nextPlatformStatus(endpoint, "", payload)
+		if err != nil {
+			return nil, err
 		}
 		return platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey, payload, status), nil
 	}
@@ -355,20 +348,7 @@ func nextPlatformStatus(endpoint, current string, payload map[string]interface{}
 		if next == "" {
 			return "accepted", nil
 		}
-		if current == "" && endpoint != "order.create" {
-			// 本地验收允许直接验证单个状态动作；真实业务流程仍从 order.create 开始。
-			if endpoint == "order.cancel" {
-				return "cancelled", nil
-			}
-			if endpoint == "order.confirm_receipt" {
-				return "completed", nil
-			}
-			return "created", nil
-		}
-		if current == "cancelled" && endpoint == "order.confirm_receipt" {
-			return "completed", nil
-		}
-		valid := current == "" || (endpoint == "order.confirm" && current == "created") || (endpoint == "order.cancel" && (current == "created" || current == "confirmed")) || (endpoint == "order.confirm_receipt" && current == "confirmed")
+		valid := (endpoint == "order.create" && current == "") || (endpoint == "order.confirm" && current == "created") || (endpoint == "order.cancel" && (current == "created" || current == "confirmed")) || (endpoint == "order.confirm_receipt" && current == "confirmed")
 		if !valid && current != next {
 			return "", fmt.Errorf("订单状态 %s 不能执行 %s", current, endpoint)
 		}
@@ -385,6 +365,9 @@ func nextPlatformStatus(endpoint, current string, payload map[string]interface{}
 		}
 		return "requested", nil
 	case endpoint == "after_sale.upload_evidence":
+		if current != "requested" && current != "evidence_required" && current != "evidence_uploaded" {
+			return "", errors.New("售后单当前状态不允许上传证据")
+		}
 		return "evidence_uploaded", nil
 	case endpoint == "service.accept_task":
 		if current != "" && current != "pending" {
@@ -392,8 +375,14 @@ func nextPlatformStatus(endpoint, current string, payload map[string]interface{}
 		}
 		return "accepted", nil
 	case endpoint == "service.reject_task":
+		if current != "" && current != "pending" && current != "offered" {
+			return "", errors.New("斗师任务当前状态不可拒绝")
+		}
 		return "rejected", nil
 	case endpoint == "service.submit_quote":
+		if current != "accepted" && current != "quoted" {
+			return "", errors.New("斗师任务必须接单后才能报价")
+		}
 		if _, ok := payload["price"]; !ok {
 			if _, ok = payload["amount"]; !ok {
 				return "", errors.New("报价金额不能为空")
@@ -401,10 +390,15 @@ func nextPlatformStatus(endpoint, current string, payload map[string]interface{}
 		}
 		return "quoted", nil
 	case endpoint == "service.update_status":
-		if value := strings.TrimSpace(fmt.Sprint(payload["status"])); value != "" {
+		value := strings.TrimSpace(fmt.Sprint(payload["status"]))
+		allowed := map[string]map[string]bool{
+			"quoted": {"paid": true}, "paid": {"in_service": true},
+			"in_service": {"awaiting_confirmation": true}, "awaiting_confirmation": {"completed": true, "disputed": true},
+		}
+		if value != "" && allowed[current][value] {
 			return value, nil
 		}
-		return "in_service", nil
+		return "", fmt.Errorf("斗师任务状态 %s 不能更新为 %s", current, value)
 	case endpoint == "membership.open":
 		return "pending", nil
 	case endpoint == "ads.load":
@@ -412,11 +406,10 @@ func nextPlatformStatus(endpoint, current string, payload map[string]interface{}
 	case endpoint == "wallet.refresh":
 		return "ready", nil
 	case endpoint == "wallet.withdraw":
-		if raw, exists := payload["amount"]; exists {
-			amount, _ := raw.(float64)
-			if amount <= 0 {
-				return "", errors.New("提现金额必须大于 0")
-			}
+		raw, exists := payload["amount"]
+		amount, ok := raw.(float64)
+		if !exists || !ok || amount <= 0 {
+			return "", errors.New("提现金额必须大于 0")
 		}
 		return "pending", nil
 	default:

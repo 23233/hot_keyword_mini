@@ -253,10 +253,12 @@ func EnsureLocalSDUITenants() error {
 		} else if err != nil {
 			return err
 		}
-		if strings.TrimSpace(app.CapabilityMatrix) == "" {
+		// 本地验收租户必须启用全部 ready 能力，才能验证公共运行时和发布门禁。
+		if app.CapabilityMatrix != matrix {
 			if err := db.Mysql.Model(&app).Updates(map[string]interface{}{"capability_matrix": matrix, "updated_at": time.Now()}).Error; err != nil {
 				return err
 			}
+			app.CapabilityMatrix = matrix
 		}
 		if strings.TrimSpace(app.WebViewRegistry) == "" {
 			registry, _ := json.Marshal([]services.WebViewEntry{{URLKey: "component-lab", URL: "https://wx.a0free.com", Purpose: "SDUI 组件验收 WebView", Version: "2026.09", Enabled: true}})
@@ -267,11 +269,35 @@ func EnsureLocalSDUITenants() error {
 		if err := ensureSDUIAcceptanceDraft(item.AppID, item.Name+" SDUI 组件验收"); err != nil {
 			return err
 		}
+		if err := ensureSDUIAcceptancePage(item.AppID, item.Name+" SDUI 组件验收"); err != nil {
+			return err
+		}
 	}
 	if err := ensureLocalGameDataAndPages("wx7a779add6a689881"); err != nil {
 		return err
 	}
 	return ensureLocalDCLPages("wx8b8e899d4829481a")
+}
+
+// ensureSDUIAcceptancePage 为本地验收租户同步公开验收页，供真实微信运行时读取。
+func ensureSDUIAcceptancePage(appID, title string) error {
+	const pageID = "component_lab_acceptance_20260907"
+	page, err := services.NewTemplateService().ApplyTemplateToPage("tpl_sdui_component_lab", appID, pageID, title)
+	if err != nil {
+		return err
+	}
+	page.Status = "published"
+	page.Hidden = false
+	page.RequireAuth = false
+	if existing, findErr := services.NewSDUIService().GetRawPage(appID, pageID); findErr == nil {
+		if existing.Title == page.Title && existing.Blocks == page.Blocks && existing.Status == page.Status && !existing.Hidden {
+			return nil
+		}
+		page.Revision = existing.Revision
+	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return findErr
+	}
+	return services.NewSDUIService().SavePageWithAudit(page, "system", "同步租户 SDUI 验收页", 0)
 }
 
 // ensureLocalGameDataAndPages 初始化设身处地游戏的本地礼包数据和四个首发页面。

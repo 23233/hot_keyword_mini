@@ -90,40 +90,21 @@ func (s *PaymentService) ApplySandboxTransition(appID string, userID int64, outT
 	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND out_trade_no = ? AND sandbox = ?", appID, userID, outTradeNo, true).First(&order).Error; err != nil {
 		return nil, errors.New("支付沙箱订单不存在")
 	}
-	if order.Status == models.PaymentOrderRefunded {
+	nextStatus, idempotent, err := nextSandboxPaymentStatus(order.Status, transition)
+	if err != nil {
+		return nil, err
+	}
+	if idempotent {
 		return &order, nil
 	}
 	now := time.Now()
-	updates := map[string]interface{}{"updated_at": now}
-	switch transition {
-	case "success", "pay", "paid":
-		if order.Status == models.PaymentOrderPaid {
-			return &order, nil
-		}
-		if order.Status != models.PaymentOrderPending {
-			return nil, fmt.Errorf("订单状态 %s 不允许支付", order.Status)
-		}
-		updates["status"] = models.PaymentOrderPaid
+	updates := map[string]interface{}{"updated_at": now, "status": nextStatus}
+	switch nextStatus {
+	case models.PaymentOrderPaid:
 		updates["transaction_id"] = "sandbox-tx-" + strings.ToLower(ut.RandomStr(10))
 		updates["paid_at"] = now
-	case "cancel", "closed":
-		if order.Status != models.PaymentOrderPending {
-			return nil, fmt.Errorf("订单状态 %s 不允许取消", order.Status)
-		}
-		updates["status"] = models.PaymentOrderClosed
-	case "fail", "failed":
-		if order.Status != models.PaymentOrderPending {
-			return nil, fmt.Errorf("订单状态 %s 不允许标记失败", order.Status)
-		}
-		updates["status"] = models.PaymentOrderFailed
-	case "refund", "refunded":
-		if order.Status != models.PaymentOrderPaid {
-			return nil, fmt.Errorf("订单状态 %s 不允许退款", order.Status)
-		}
-		updates["status"] = models.PaymentOrderRefunded
+	case models.PaymentOrderRefunded:
 		updates["refunded_at"] = now
-	default:
-		return nil, errors.New("支付沙箱状态仅支持 success、cancel、fail 或 refund")
 	}
 	if err := db.Mysql.Model(&order).Updates(updates).Error; err != nil {
 		return nil, err
@@ -137,6 +118,29 @@ func (s *PaymentService) ApplySandboxTransition(appID string, userID int64, outT
 		}
 	}
 	return &order, nil
+}
+
+// nextSandboxPaymentStatus 校验支付沙箱状态迁移，并标记重复回调。
+func nextSandboxPaymentStatus(current, transition string) (string, bool, error) {
+	transition = strings.ToLower(strings.TrimSpace(transition))
+	targets := map[string]string{
+		"success": models.PaymentOrderPaid, "pay": models.PaymentOrderPaid, "paid": models.PaymentOrderPaid,
+		"cancel": models.PaymentOrderClosed, "closed": models.PaymentOrderClosed,
+		"fail": models.PaymentOrderFailed, "failed": models.PaymentOrderFailed,
+		"refund": models.PaymentOrderRefunded, "refunded": models.PaymentOrderRefunded,
+	}
+	target, ok := targets[transition]
+	if !ok {
+		return "", false, errors.New("支付沙箱状态仅支持 success、cancel、fail 或 refund")
+	}
+	if current == target {
+		return target, true, nil
+	}
+	allowed := current == models.PaymentOrderPending && target != models.PaymentOrderRefunded || current == models.PaymentOrderPaid && target == models.PaymentOrderRefunded
+	if !allowed {
+		return "", false, fmt.Errorf("订单状态 %s 不允许迁移为 %s", current, target)
+	}
+	return target, false, nil
 }
 
 // ApplySandboxNotify 模拟微信支付回调，保持订单更新与正式回调相同的幂等语义。

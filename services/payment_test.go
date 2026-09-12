@@ -60,3 +60,29 @@ func TestProductSKUIndexIsPerApp(t *testing.T) {
 	}
 	t.Fatal("未找到商品联合唯一索引")
 }
+
+// TestSandboxPaymentStateMachine 验证支付成功、失败、取消、退款和重复通知状态机。
+func TestSandboxPaymentStateMachine(t *testing.T) {
+	tests := []struct {
+		name, current, transition, want string
+		idempotent, wantErr             bool
+	}{
+		{"支付成功", models.PaymentOrderPending, "success", models.PaymentOrderPaid, false, false},
+		{"重复成功回调", models.PaymentOrderPaid, "success", models.PaymentOrderPaid, true, false},
+		{"支付失败", models.PaymentOrderPending, "fail", models.PaymentOrderFailed, false, false},
+		{"用户取消", models.PaymentOrderPending, "cancel", models.PaymentOrderClosed, false, false},
+		{"支付后退款", models.PaymentOrderPaid, "refund", models.PaymentOrderRefunded, false, false},
+		{"重复退款", models.PaymentOrderRefunded, "refund", models.PaymentOrderRefunded, true, false},
+		{"未支付退款", models.PaymentOrderPending, "refund", "", false, true},
+		{"已关闭再支付", models.PaymentOrderClosed, "success", "", false, true},
+		{"非法动作", models.PaymentOrderPending, "unknown", "", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, idempotent, err := nextSandboxPaymentStatus(tt.current, tt.transition)
+			if (err != nil) != tt.wantErr || got != tt.want || idempotent != tt.idempotent {
+				t.Fatalf("迁移结果 status=%q idempotent=%v err=%v", got, idempotent, err)
+			}
+		})
+	}
+}
