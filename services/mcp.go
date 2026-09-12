@@ -311,7 +311,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.operation.execute",
-			Description: "执行通用聊天、订单、物流、售后、斗师、广告或钱包沙箱动作并持久化幂等结果",
+			Description: "执行游戏兑换和查询等通用动作；管理领域写操作请使用 sdui.admin.execute",
 			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "endpoint"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "endpoint": map[string]interface{}{"type": "string"}, "id": map[string]interface{}{"type": "string"}, "payload": map[string]interface{}{"type": "object"}, "idempotency_key": map[string]interface{}{"type": "string"}}},
 		},
 		{
@@ -323,6 +323,11 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 			Name:        "sdui.production.readiness",
 			Description: "只读检查指定小程序上线所需生产配置，不返回任何密钥原文",
 			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}}},
+		},
+		{
+			Name:        "sdui.admin.execute",
+			Description: "内部高权限管理操作：配置小程序、能力、WebView、商品、会员、栏目、文章、评论、短剧和运营记录；管理员账号与 MCP Token 永不开放",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "operation", "confirmed"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "operation": map[string]interface{}{"type": "string", "enum": AdminMCPOperations}, "payload": map[string]interface{}{"type": "object"}, "confirmed": map[string]interface{}{"type": "boolean", "description": "写操作必须为 true；只读操作可为 false"}}},
 		},
 	}
 	for index := range tools {
@@ -339,6 +344,8 @@ func mcpToolRequiredScope(name string) string {
 	switch name {
 	case "sdui.app.list", "sdui.capability.list", "sdui.capability.validate", "sdui.acceptance.run", "sdui.production.readiness", "sdui.webview.list", "sdui.webview.validate", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.template.get", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.revisions":
 		return "read"
+	case "sdui.admin.execute":
+		return "release"
 	case "sdui.file.prepare_upload", "sdui.template.save", "sdui.template.delete", "sdui.page.create", "sdui.page.patch":
 		return "write:draft"
 	case "sdui.capability.configure", "sdui.page.publish", "sdui.page.rollback", "sdui.page.set_current", "sdui.page.share_card":
@@ -1013,6 +1020,32 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, err
 		}
 		return CheckProductionReadiness(appID, config.Cfg)
+
+	case "sdui.admin.execute":
+		if !hasScope(scopes, "release") {
+			return nil, errors.New("权限不足: 需要 release 权限以执行管理操作")
+		}
+		confirmed, ok := args["confirmed"].(bool)
+		if !ok {
+			return nil, errors.New("confirmed 必须为布尔值")
+		}
+		appID, err := resolveMCPAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		operation, _ := args["operation"].(string)
+		payload, _ := args["payload"].(map[string]interface{})
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		if !adminMCPReadOperations[operation] && !confirmed {
+			return nil, errors.New("管理写操作必须传入 confirmed=true 二次确认")
+		}
+		result, err := ExecuteAdminMCPOperation(actorID, appID, operation, payload)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"app_id": appID, "operation": operation, "data": result}, nil
 
 	case "sdui.webview.list":
 		if !hasScope(scopes, "read") {
@@ -2127,6 +2160,8 @@ func sanitizeMCPArgs(args map[string]interface{}) map[string]interface{} {
 		lowerK := strings.ToLower(k)
 		if strings.Contains(lowerK, "secret") || strings.Contains(lowerK, "password") || strings.Contains(lowerK, "token") || strings.Contains(lowerK, "key") {
 			sanitized[k] = "******"
+		} else if nested, ok := v.(map[string]interface{}); ok {
+			sanitized[k] = sanitizeMCPArgs(nested)
 		} else if str, ok := v.(string); ok && len(str) > 120 {
 			sanitized[k] = str[:120] + "...(截断)"
 		} else {

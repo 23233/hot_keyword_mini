@@ -86,6 +86,7 @@
 - **`sdui.page.revisions` / `sdui.page.rollback`**：读取历史版本并在人工确认后原子回滚；
 - **`sdui.page.set_current`**：将已发布页面切换为小程序当前主页；
 - **`sdui.page.share_card`**：生成并持久化好友/朋友圈分享图；
+- **`sdui.admin.execute`**：内部高权限代理管理后台的租户配置、能力、WebView、商品、会员、栏目、文章、评论、短剧和运营记录操作；写操作必须 `confirmed: true`。管理员账号和 MCP Token 管理永久禁止通过 MCP 执行；
 - **标准资源**：通过 `resources/list`、`resources/read` 提供 `sdui://api` 与 `sdui://rules`，AI 可直接读取完整接口和 SDUI 规则；
 - **双通道接入**：支持 HTTP 端点 `POST /api/v1/mcp` 与独立 Stdio 命令行服务 `go run ./cmd/mcp-server`。
 
@@ -229,7 +230,7 @@ AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。�
 
 `tools/list` 中每个工具都包含机器可读的 `requiredScope` 以及 MCP `annotations.requiredScope`。`tools/call` 的业务成功和失败均使用顶层 `result`：成功时 `isError=false`，失败时 `isError=true` 且 `structuredContent` 包含 `code/tool/message/recovery`；只有 JSON-RPC 协议层错误使用顶层 `error`。Stdio 服务严格按一行一个 JSON-RPC 消息通信，stdout 只输出响应，启动提示和诊断信息只写入 stderr。
 
-MCP 的覆盖边界：它完整覆盖 SDUI 页面和资源的 AI 编排闭环，但不开放管理员账号、微信 AppSecret、支付私钥、商品金额、数据库迁移、任意 HTTP 代理或任意脚本执行。这些行为必须继续通过管理后台或专用服务完成。
+MCP 的安全边界：内部 MCP 可通过 `sdui.admin.execute` 代理已登记的管理后台业务操作，但不开放管理员账号和 MCP Token 管理；不允许任意数据库迁移、任意 HTTP 代理或任意脚本执行。敏感配置写入必须显式二次确认并记录审计。
 
 ### 7. 生产上线预检
 

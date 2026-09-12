@@ -13,8 +13,8 @@ func TestMCPToolDefinitions(t *testing.T) {
 	service := NewMCPService()
 	tools := service.GetToolDefinitions()
 
-	if len(tools) != 27 {
-		t.Fatalf("预期注册 27 个受控工具，实际为 %d", len(tools))
+	if len(tools) != 28 {
+		t.Fatalf("预期注册 28 个受控工具，实际为 %d", len(tools))
 	}
 
 	expectedTools := map[string]bool{
@@ -45,6 +45,7 @@ func TestMCPToolDefinitions(t *testing.T) {
 		"sdui.operation.execute":    false,
 		"sdui.payment.sandbox":      false,
 		"sdui.production.readiness": false,
+		"sdui.admin.execute":        false,
 	}
 
 	for _, tool := range tools {
@@ -71,6 +72,29 @@ func TestMCPToolDefinitions(t *testing.T) {
 		if tool.Annotations["requiredScope"] != tool.RequiredScope {
 			t.Fatalf("工具 %s 的 annotations.requiredScope 与工具契约不一致", tool.Name)
 		}
+	}
+}
+
+// TestMCPAdminExecuteBoundary 验证内部管理工具要求二次确认且永久拒绝管理员/令牌管理。
+func TestMCPAdminExecuteBoundary(t *testing.T) {
+	service := NewMCPService()
+	if _, err := service.ExecuteToolWithContext("internal", "wx-test", []string{"release"}, "sdui.admin.execute", map[string]interface{}{"app_id": "wx-test", "operation": "product.save", "payload": map[string]interface{}{}, "confirmed": false}); err == nil || !strings.Contains(err.Error(), "confirmed") {
+		t.Fatal("管理写操作缺少二次确认时未拒绝")
+	}
+	if _, err := ExecuteAdminMCPOperation("internal", "wx-test", "mcp_token.delete", nil); err == nil || !strings.Contains(err.Error(), "Token") {
+		t.Fatal("MCP Token 管理未永久拒绝")
+	}
+	if _, err := ExecuteAdminMCPOperation("internal", "wx-test", "admin.create", nil); err == nil || !strings.Contains(err.Error(), "管理员") {
+		t.Fatal("管理员用户管理未永久拒绝")
+	}
+}
+
+// TestMCPSensitiveAuditRedaction 验证管理配置嵌套载荷不会写入明文审计日志对象。
+func TestMCPSensitiveAuditRedaction(t *testing.T) {
+	redacted := sanitizeMCPArgs(map[string]interface{}{"payload": map[string]interface{}{"app_secret": "secret", "payment_private_key": "pem"}})
+	payload := redacted["payload"].(map[string]interface{})
+	if payload["app_secret"] != "******" || payload["payment_private_key"] != "******" {
+		t.Fatal("嵌套敏感字段未脱敏")
 	}
 }
 
