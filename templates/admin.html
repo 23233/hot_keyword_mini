@@ -541,6 +541,8 @@
     .modal-dialog {
       width: 520px;
       max-width: 90vw;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
       background: #1c1c1e;
       border-radius: 24px;
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -549,6 +551,22 @@
       flex-direction: column;
       gap: 20px;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    }
+
+    @media (max-width: 600px) {
+      .modal-dialog {
+        max-width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+        padding: 20px;
+      }
+
+      .modal-dialog .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .modal-actions {
+        flex-wrap: wrap;
+      }
     }
 
     .toast-msg {
@@ -1143,10 +1161,10 @@
     </div>
   </div>
 
-  <!-- 新增小程序模态框 -->
+  <!-- 新增或更新小程序模态框 -->
   <div class="modal-overlay" id="addAppModal">
     <div class="modal-dialog">
-      <div style="font-size:18px; font-weight:700;">添加新小程序主体</div>
+      <div style="font-size:18px; font-weight:700;">新增或更新小程序主体</div>
       <div class="form-group">
         <label class="form-label">小程序 AppID (唯一标识)</label>
         <input type="text" id="newAppId" class="form-input" placeholder="如 wx1234567890abcdef" />
@@ -1163,9 +1181,21 @@
         <label class="form-label">图片 CDN 根地址（需加入小程序合法域名）</label>
         <input type="url" id="newAppCosCdnUrl" class="form-input" placeholder="https://cdn.example.com" />
       </div>
-      <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">支付商户号</label><input id="newPaymentMchId" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">商户证书序列号</label><input id="newPaymentSerial" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">支付 API v3 Key</label><input type="password" id="newPaymentV3Key" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">腾讯地图 Key</label><input type="password" id="newTencentMapKey" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">微信客服企业 ID</label><input id="newCustomerCorpId" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">微信客服 HTTPS 链接</label><input type="url" id="newCustomerURL" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">订阅模板 ID（逗号分隔）</label><input id="newSubscribeTemplateIds" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">广告位 ID（逗号分隔）</label><input id="newAdUnitIds" class="form-input" /></div>
+      </div>
+      <div class="form-group"><label class="form-label">支付商户私钥 PEM</label><textarea id="newPaymentPrivateKey" class="form-input" rows="4"></textarea></div>
+      <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+        <button class="btn-ctrl" onclick="checkProductionReadiness()">生产预检</button>
         <button class="btn-ctrl" onclick="closeAddAppModal()">取消</button>
-        <button class="btn-save" onclick="submitAddApp()">确定添加</button>
+        <button class="btn-save" onclick="submitAddApp()">保存配置</button>
       </div>
     </div>
   </div>
@@ -3190,7 +3220,18 @@
         const res = await adminFetch('/api/v1/admin/apps', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ app_id: appId, app_secret: appSecret, app_name: appName, cos_cdn_url: cosCdnUrl })
+          body: JSON.stringify({
+            app_id: appId, app_secret: appSecret, app_name: appName, cos_cdn_url: cosCdnUrl,
+            payment_mch_id: document.getElementById('newPaymentMchId').value.trim(),
+            payment_mch_serial_no: document.getElementById('newPaymentSerial').value.trim(),
+            payment_api_v3_key: document.getElementById('newPaymentV3Key').value.trim(),
+            payment_private_key: document.getElementById('newPaymentPrivateKey').value.trim(),
+            tencent_map_key: document.getElementById('newTencentMapKey').value.trim(),
+            customer_service_corp_id: document.getElementById('newCustomerCorpId').value.trim(),
+            customer_service_url: document.getElementById('newCustomerURL').value.trim(),
+            subscribe_template_ids: document.getElementById('newSubscribeTemplateIds').value.trim(),
+            ad_unit_ids: document.getElementById('newAdUnitIds').value.trim()
+          })
         });
         const json = await res.json();
         if (json.code === 0) {
@@ -3205,6 +3246,15 @@
       } catch (e) {
         alert('提交异常: ' + e.message);
       }
+    }
+
+    async function checkProductionReadiness() {
+      const appId = document.getElementById('newAppId').value.trim() || currentAppId;
+      const res = await adminFetch(`/api/v1/admin/production-readiness?app_id=${encodeURIComponent(appId)}`);
+      const json = await res.json();
+      if (json.code !== 0) return alert(json.msg || '生产预检失败');
+      const report = json.data;
+      alert(report.ready ? '生产预检通过' : `生产预检未通过\n缺少：${report.missing.join('、') || '无'}\n格式无效：${report.invalid.join('、') || '无'}`);
     }
 
     // 弹窗控制：添加动态页面

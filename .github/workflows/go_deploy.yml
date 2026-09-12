@@ -37,8 +37,29 @@ jobs:
           go-version-file: './go.mod'
 
       - run: go version
-      - name: Install dependencies
-        run: go get .
+      - name: 验证后端
+        run: |
+          go test ./...
+          go build ./...
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: minifront/pnpm-lock.yaml
+
+      - name: 验证小程序
+        run: |
+          pnpm --dir minifront install --frozen-lockfile
+          pnpm --dir minifront run type-check
+          pnpm --dir minifront run test:sdui
+          TARO_APP_API_BASE_URL=https://wx.a0free.com pnpm --dir minifront run build:weapp
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2

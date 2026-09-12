@@ -318,10 +318,15 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 			Description: "创建或推进本地支付沙箱订单，覆盖成功、取消、失败、退款和会员权益发放",
 			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "operation"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "operation": map[string]interface{}{"type": "string", "enum": []string{"create", "success", "cancel", "fail", "refund"}}, "user_id": map[string]interface{}{"type": "integer", "minimum": 1}, "openid": map[string]interface{}{"type": "string"}, "sku": map[string]interface{}{"type": "string"}, "out_trade_no": map[string]interface{}{"type": "string"}, "idempotency_key": map[string]interface{}{"type": "string"}}},
 		},
+		{
+			Name:        "sdui.production.readiness",
+			Description: "只读检查指定小程序上线所需生产配置，不返回任何密钥原文",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}}},
+		},
 	}
 	for index := range tools {
 		name := tools[index].Name
-		readOnly := name == "sdui.acceptance.run" || strings.HasSuffix(name, ".list") || strings.HasSuffix(name, ".get") || strings.HasSuffix(name, ".validate") || strings.HasSuffix(name, ".preview") || strings.HasSuffix(name, ".screenshot") || strings.HasSuffix(name, ".revisions")
+		readOnly := name == "sdui.acceptance.run" || name == "sdui.production.readiness" || strings.HasSuffix(name, ".list") || strings.HasSuffix(name, ".get") || strings.HasSuffix(name, ".validate") || strings.HasSuffix(name, ".preview") || strings.HasSuffix(name, ".screenshot") || strings.HasSuffix(name, ".revisions")
 		tools[index].RequiredScope = mcpToolRequiredScope(name)
 		tools[index].Annotations = map[string]interface{}{"readOnlyHint": readOnly, "destructiveHint": strings.HasSuffix(name, ".delete") || strings.HasSuffix(name, ".rollback"), "openWorldHint": false, "requiredScope": tools[index].RequiredScope, "required_scope": tools[index].RequiredScope}
 	}
@@ -331,7 +336,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 // mcpToolRequiredScope 返回工具执行所需的最小权限范围，供 AI 在调用前规划授权。
 func mcpToolRequiredScope(name string) string {
 	switch name {
-	case "sdui.app.list", "sdui.capability.list", "sdui.capability.validate", "sdui.acceptance.run", "sdui.webview.list", "sdui.webview.validate", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.template.get", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.revisions":
+	case "sdui.app.list", "sdui.capability.list", "sdui.capability.validate", "sdui.acceptance.run", "sdui.production.readiness", "sdui.webview.list", "sdui.webview.validate", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.template.get", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.revisions":
 		return "read"
 	case "sdui.file.prepare_upload", "sdui.template.save", "sdui.template.delete", "sdui.page.create", "sdui.page.patch":
 		return "write:draft"
@@ -997,6 +1002,16 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			},
 			"next_steps": []string{"逐页执行 page.validate、capability.validate、page.preview、page.screenshot", "在微信开发者工具中按同一 AppID 执行主流程与失败流程", "仅在人工确认且具备 release 权限后发布"},
 		}, nil
+
+	case "sdui.production.readiness":
+		if !hasScope(scopes, "read") {
+			return nil, errors.New("权限不足: 需要 read 权限以检查生产配置")
+		}
+		appID, err := resolveMCPAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		return CheckProductionReadiness(appID, config.Cfg)
 
 	case "sdui.webview.list":
 		if !hasScope(scopes, "read") {
