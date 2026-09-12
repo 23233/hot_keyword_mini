@@ -41,12 +41,16 @@ func Migrate() error {
 		&models.Product{},
 		&models.PaymentOrder{},
 		&models.PlatformOperation{},
+		&models.DomainRecord{},
+		&models.ChatMessage{},
+		&models.WalletEntry{},
 		&models.WalletAccount{},
 		&models.ArticleCategory{},
 		&models.Article{},
 		&models.ArticlePurchase{},
 		&models.MembershipLevel{},
 		&models.UserMembership{},
+		&models.MembershipGrant{},
 		&models.ArticleComment{},
 		&models.ContentAuditRecord{},
 	}
@@ -55,6 +59,22 @@ func Migrate() error {
 	if err != nil {
 		log.Fatalf("无法自动迁移数据库: %v", err)
 		return err
+	}
+	// 联合索引建立成功后移除旧的全局唯一索引，允许不同租户复用等级和 SKU。
+	for _, item := range []struct {
+		model any
+		name  string
+	}{
+		{&models.MembershipLevel{}, "idx_membership_app_level"},
+		{&models.MembershipLevel{}, "idx_membership_app_sku"},
+		{&models.ArticleCategory{}, "idx_article_category_app_slug"},
+		{&models.Article{}, "idx_article_app_slug"},
+	} {
+		if db.Mysql.Migrator().HasIndex(item.model, item.name) {
+			if err := db.Mysql.Migrator().DropIndex(item.model, item.name); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MembershipService 会员套餐、权益和购买后续处理服务。
@@ -105,78 +106,111 @@ func (s *MembershipService) SavePlan(plan *models.MembershipLevel) error {
 	})
 }
 
-// ApplyPaidOrder 按会员商品等级写入支付成功后的权益。
-// 同等级购买顺延；升级按剩余天数乘以原等级/新等级折算后叠加。
+// ApplyPaidOrder 在事务中按订单发放权益，订单重放不重复续期。
 func (s *MembershipService) ApplyPaidOrder(order *models.PaymentOrder) error {
+	return db.Mysql.Transaction(func(tx *gorm.DB) error { return applyOrderGrant(tx, order, false) })
+}
+
+// ReversePaidOrder 在事务中撤销指定订单并重算剩余权益。
+func (s *MembershipService) ReversePaidOrder(order *models.PaymentOrder) error {
+	return db.Mysql.Transaction(func(tx *gorm.DB) error { return applyOrderGrant(tx, order, true) })
+}
+
+// applyOrderGrant 与支付状态共用事务；用户权益行锁串行化同一用户的并发支付。
+func applyOrderGrant(tx *gorm.DB, order *models.PaymentOrder, reverse bool) error {
 	if order == nil || order.AppID == "" || order.UserID <= 0 {
 		return errors.New("会员权益订单参数不完整")
 	}
-	var product models.Product
-	if err := db.Mysql.Where("id = ? AND app_id = ?", order.ProductID, order.AppID).First(&product).Error; err != nil {
-		return err
+	if (!reverse && order.Status != models.PaymentOrderPaid) || (reverse && order.Status != models.PaymentOrderRefunded) {
+		return errors.New("订单状态与权益操作不一致")
 	}
-	var articles []models.Article
-	if err := db.Mysql.Where("app_id = ? AND is_paid = ? AND pay_sku = ? AND status IN ?", order.AppID, true, product.SKU, []string{"published", "archived"}).Find(&articles).Error; err != nil {
-		return err
-	}
-	if len(articles) > 1 {
-		return fmt.Errorf("商品 SKU %s 绑定了多篇文章", product.SKU)
-	}
-	if len(articles) == 1 {
-		article := articles[0]
-		return db.Mysql.Transaction(func(tx *gorm.DB) error {
-			var existing models.ArticlePurchase
-			if err := tx.Where("app_id = ? AND user_id = ? AND article_id = ?", order.AppID, order.UserID, article.ID).First(&existing).Error; err == nil {
-				return nil
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			now := time.Now()
-			return tx.Create(&models.ArticlePurchase{AppID: order.AppID, UserID: order.UserID, ArticleID: article.ID, OrderID: order.ID, PurchasedAt: now, CreatedAt: now, UpdatedAt: now}).Error
-		})
-	}
-	var plan models.MembershipLevel
-	// 历史订单即使对应套餐已下架，也必须按购买时的 SKU 发放权益。
-	if err := db.Mysql.Where("app_id = ? AND sku = ?", order.AppID, product.SKU).First(&plan).Error; err != nil {
-		return fmt.Errorf("商品 SKU %s 未绑定有效会员或文章权益", product.SKU)
-	}
-	if plan.Level <= 0 || plan.DurationDays <= 0 {
-		return errors.New("会员套餐等级或有效期配置无效")
-	}
-
 	now := time.Now()
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
-		var current models.UserMembership
-		err := tx.Where("app_id = ? AND user_id = ?", order.AppID, order.UserID).First(&current).Error
+	seed := models.UserMembership{AppID: order.AppID, UserID: order.UserID, StartedAt: now, ExpiresAt: now, CreatedAt: now, UpdatedAt: now}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&seed).Error; err != nil {
+		return err
+	}
+	var current models.UserMembership
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("app_id = ? AND user_id = ?", order.AppID, order.UserID).First(&current).Error; err != nil {
+		return err
+	}
+	var grant models.MembershipGrant
+	err := tx.Where("order_id = ? AND app_id = ? AND user_id = ?", order.ID, order.AppID, order.UserID).First(&grant).Error
+	if reverse {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			membership, _, grantErr := calculateMembershipGrant(nil, plan, order, now)
-			if grantErr != nil {
-				return grantErr
-			}
-			return tx.Create(&membership).Error
+			return errors.New("退款订单缺少权益记录，须先迁移历史权益")
 		}
 		if err != nil {
 			return err
 		}
-		membership, changed, grantErr := calculateMembershipGrant(&current, plan, order, now)
-		if grantErr != nil {
-			return grantErr
-		}
-		if !changed {
+		if grant.ReversedAt != nil {
 			return nil
 		}
-		return tx.Save(&membership).Error
-	})
-}
-
-// ReversePaidOrder 撤销本地退款订单已发放的权益；仅回收仍由该订单持有的权益，避免覆盖后续购买。
-func (s *MembershipService) ReversePaidOrder(order *models.PaymentOrder) error {
-	if order == nil || order.AppID == "" || order.UserID <= 0 { return errors.New("会员退款订单参数不完整") }
-	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND order_id = ?", order.AppID, order.UserID, order.ID).Delete(&models.ArticlePurchase{}).Error; err != nil { return err }
-	var membership models.UserMembership
-	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND last_order_id = ?", order.AppID, order.UserID, order.ID).First(&membership).Error; errors.Is(err, gorm.ErrRecordNotFound) { return nil } else if err != nil { return err }
-	now := time.Now()
-	return db.Mysql.Model(&membership).Updates(map[string]interface{}{"level": 0, "expires_at": now, "updated_at": now}).Error
+		if err := tx.Model(&grant).Update("reversed_at", now).Error; err != nil {
+			return err
+		}
+	} else {
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var product models.Product
+		if err := tx.Where("id = ? AND app_id = ?", order.ProductID, order.AppID).First(&product).Error; err != nil {
+			return err
+		}
+		grant = models.MembershipGrant{AppID: order.AppID, UserID: order.UserID, OrderID: order.ID, GrantedAt: now}
+		if order.PaidAt != nil {
+			grant.GrantedAt = *order.PaidAt
+		}
+		var articles []models.Article
+		if err := tx.Where("app_id = ? AND is_paid = ? AND pay_sku = ? AND status IN ?", order.AppID, true, product.SKU, []string{"published", "archived"}).Find(&articles).Error; err != nil {
+			return err
+		}
+		if len(articles) > 1 {
+			return errors.New("商品绑定多个文章权益")
+		}
+		if len(articles) == 1 {
+			grant.ArticleID = articles[0].ID
+		} else {
+			var plan models.MembershipLevel
+			if err := tx.Where("app_id = ? AND sku = ?", order.AppID, product.SKU).First(&plan).Error; err != nil {
+				return fmt.Errorf("商品未绑定权益: %w", err)
+			}
+			if plan.Level <= 0 || plan.DurationDays <= 0 {
+				return errors.New("会员套餐无效")
+			}
+			grant.Level, grant.DurationDays = plan.Level, plan.DurationDays
+		}
+		if err := tx.Create(&grant).Error; err != nil {
+			return err
+		}
+	}
+	if grant.ArticleID > 0 {
+		if reverse {
+			return tx.Where("app_id = ? AND user_id = ? AND order_id = ?", order.AppID, order.UserID, order.ID).Delete(&models.ArticlePurchase{}).Error
+		}
+		purchase := models.ArticlePurchase{AppID: order.AppID, UserID: order.UserID, ArticleID: grant.ArticleID, OrderID: order.ID, PurchasedAt: grant.GrantedAt, CreatedAt: now, UpdatedAt: now}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&purchase).Error
+	}
+	var grants []models.MembershipGrant
+	if err := tx.Where("app_id = ? AND user_id = ? AND article_id = 0 AND reversed_at IS NULL", order.AppID, order.UserID).Order("granted_at asc, id asc").Find(&grants).Error; err != nil {
+		return err
+	}
+	var calculated *models.UserMembership
+	for _, entry := range grants {
+		plan := models.MembershipLevel{Level: entry.Level, DurationDays: entry.DurationDays}
+		snapshot := models.PaymentOrder{ID: entry.OrderID, AppID: entry.AppID, UserID: entry.UserID}
+		next, _, err := calculateMembershipGrant(calculated, plan, &snapshot, entry.GrantedAt)
+		if err != nil {
+			return err
+		}
+		calculated = &next
+	}
+	if calculated == nil {
+		calculated = &models.UserMembership{StartedAt: now, ExpiresAt: now}
+	}
+	return tx.Model(&current).Updates(map[string]interface{}{"level": calculated.Level, "started_at": calculated.StartedAt, "expires_at": calculated.ExpiresAt, "last_order_id": calculated.LastOrderID, "updated_at": now}).Error
 }
 
 // calculateMembershipGrant 纯计算会员顺延、升级折算和订单幂等结果。

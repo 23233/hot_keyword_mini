@@ -2,7 +2,6 @@
 package services
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hot_keyword/db"
@@ -85,6 +84,16 @@ func NewActionEndpointService() *ActionEndpointService {
 		{Name: "wallet.withdraw", Description: "申请提现沙箱动作", RequireAuth: true, Handler: s.handlePlatformSandbox},
 	} {
 		s.RegisterEndpoint(meta)
+	}
+	for _, name := range []string{"domain.list", "service.apply", "service.configure", "service.request", "chat.recall", "media.prepare"} {
+		s.RegisterEndpoint(ActionEndpointMeta{Name: name, Description: "通用领域持久化操作", RequireAuth: true, Handler: func(appID, openID string, p map[string]interface{}, key string) (interface{}, error) {
+			copy := map[string]interface{}{}
+			for k, v := range p {
+				copy[k] = v
+			}
+			copy["_endpoint"] = name
+			return s.handlePlatformSandbox(appID, openID, copy, key)
+		}})
 	}
 
 	return s
@@ -273,52 +282,27 @@ func (s *ActionEndpointService) handleQueryScore(appID, openID string, payload m
 	}, nil
 }
 
-// handlePlatformSandbox 返回统一领域能力的本地沙箱结果。
-// 沙箱只验证协议形状、权限和状态流，不把测试数据伪装成生产业务结果。
+// handlePlatformSandbox 兼容既有入口；数据库可用时执行真实持久化领域逻辑。
 func (s *ActionEndpointService) handlePlatformSandbox(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
-	if payload == nil {
-		payload = map[string]interface{}{}
-	}
-	endpoint := strings.TrimSpace(fmt.Sprint(payload["_endpoint"]))
-	if endpoint == "" {
-		endpoint = "platform.sandbox"
-	}
-	entityID := strings.TrimSpace(fmt.Sprint(payload["id"]))
-	if entityID == "" {
-		entityID = endpoint + "-" + strings.ToLower(ut.RandomStr(8))
-	}
+	endpoint := domainText(payload, "_endpoint")
 	if db.Mysql == nil {
 		status, err := nextPlatformStatus(endpoint, "", payload)
 		if err != nil {
 			return nil, err
 		}
-		return platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey, payload, status), nil
+		return platformSandboxResult(appID, openID, endpoint, domainText(payload, "id"), idempotencyKey, payload, status), nil
 	}
-	var previous models.PlatformOperation
-	if err := db.Mysql.Where("app_id = ? AND open_id = ? AND kind = ? AND idempotency_key = ?", appID, openID, endpoint, idempotencyKey).First(&previous).Error; err == nil {
-		var result map[string]interface{}
-		if json.Unmarshal([]byte(previous.Result), &result) == nil {
-			result["idempotent"] = true
-			return result, nil
+	var user models.User
+	if err := db.Mysql.Where("app_id = ? AND wechat_openid = ?", appID, openID).First(&user).Error; err != nil {
+		return nil, domainError("UNAUTHORIZED", "用户尚未登录")
+	}
+	clean := make(map[string]interface{}, len(payload))
+	for k, v := range payload {
+		if k != "_endpoint" {
+			clean[k] = v
 		}
 	}
-	var current models.PlatformOperation
-	_ = db.Mysql.Where("app_id = ? AND open_id = ? AND kind LIKE ? AND entity_id = ?", appID, openID, endpointFamily(endpoint)+".%", entityID).Order("updated_at desc").First(&current).Error
-	status, err := nextPlatformStatus(endpoint, current.Status, payload)
-	if err != nil {
-		return nil, err
-	}
-	result := platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey, payload, status)
-	payloadJSON, _ := json.Marshal(payload)
-	resultJSON, _ := json.Marshal(result)
-	op := &models.PlatformOperation{AppID: appID, OpenID: openID, Kind: endpoint, EntityID: entityID, IdempotencyKey: idempotencyKey, Status: status, Payload: string(payloadJSON), Result: string(resultJSON), CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Mysql.Create(op).Error; err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return result, nil
-		}
-		return nil, fmt.Errorf("保存通用能力操作失败: %w", err)
-	}
-	return result, nil
+	return ExecuteDomainOperation(appID, user.ID, openID, endpoint, clean, idempotencyKey, false)
 }
 
 func endpointFamily(endpoint string) string {

@@ -200,6 +200,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	// 挂载管理员登录与账户生命周期 CRUD 路由
 	RegisterAdminUserRoutes(adminParty)
 	RegisterMCPTokenRoutes(adminParty)
+	RegisterDomainAdminRoutes(adminParty)
 	RegisterAIBreakthroughAdminRoutes(adminParty)
 
 	dramaService := services.NewDramaService()

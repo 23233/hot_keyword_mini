@@ -6,8 +6,8 @@ import "time"
 // ArticleCategory AI 破甲资讯栏目。
 type ArticleCategory struct {
 	ID        int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	AppID     string    `gorm:"column:app_id;size:64;not null;index" json:"app_id"`
-	Slug      string    `gorm:"column:slug;size:64;not null;uniqueIndex:idx_article_category_app_slug" json:"slug"`
+	AppID     string    `gorm:"column:app_id;size:64;not null;index;uniqueIndex:idx_category_tenant_slug" json:"app_id"`
+	Slug      string    `gorm:"column:slug;size:64;not null;uniqueIndex:idx_category_tenant_slug" json:"slug"`
 	Name      string    `gorm:"column:name;size:128;not null" json:"name"`
 	Summary   string    `gorm:"column:summary;size:255" json:"summary"`
 	Sort      int       `gorm:"column:sort;default:0" json:"sort"`
@@ -22,9 +22,9 @@ func (ArticleCategory) TableName() string { return "article_categories" }
 // Article AI 破甲资讯文章。
 type Article struct {
 	ID         int64  `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	AppID      string `gorm:"column:app_id;size:64;not null;index" json:"app_id"`
+	AppID      string `gorm:"column:app_id;size:64;not null;index;uniqueIndex:idx_article_tenant_slug" json:"app_id"`
 	CategoryID int64  `gorm:"column:category_id;index" json:"category_id"`
-	Slug       string `gorm:"column:slug;size:128;not null;uniqueIndex:idx_article_app_slug" json:"slug"`
+	Slug       string `gorm:"column:slug;size:128;not null;uniqueIndex:idx_article_tenant_slug" json:"slug"`
 	Title      string `gorm:"column:title;size:255;not null" json:"title"`
 	Summary    string `gorm:"column:summary;size:500" json:"summary"`
 	CoverURL   string `gorm:"column:cover_url;size:512" json:"cover_url"`
@@ -53,10 +53,10 @@ func (Article) TableName() string { return "articles" }
 // MembershipLevel 会员等级及其可售套餐配置。
 type MembershipLevel struct {
 	ID           int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	AppID        string    `gorm:"column:app_id;size:64;not null;index" json:"app_id"`
-	Level        int       `gorm:"column:level;not null;uniqueIndex:idx_membership_app_level" json:"level"`
+	AppID        string    `gorm:"column:app_id;size:64;not null;index;uniqueIndex:idx_membership_tenant_level;uniqueIndex:idx_membership_tenant_sku" json:"app_id"`
+	Level        int       `gorm:"column:level;not null;uniqueIndex:idx_membership_tenant_level" json:"level"`
 	Name         string    `gorm:"column:name;size:128;not null" json:"name"`
-	SKU          string    `gorm:"column:sku;size:64;not null;uniqueIndex:idx_membership_app_sku" json:"sku"`
+	SKU          string    `gorm:"column:sku;size:64;not null;uniqueIndex:idx_membership_tenant_sku" json:"sku"`
 	PriceFen     int64     `gorm:"column:price_fen;not null" json:"price_fen"`
 	DurationDays int       `gorm:"column:duration_days;not null" json:"duration_days"`
 	Description  string    `gorm:"column:description;size:500" json:"description"`

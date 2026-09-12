@@ -8,7 +8,7 @@
 当前本地验收租户：
 
 - 设身处地游戏：`wx7a779add6a689881`
-- dcl/斗艺馆：`wx8b8e899d4829481`
+- dcl/斗艺馆：`wx8b8e899d4829481a`
 
 线上公共访问地址：`https://wx.a0free.com`。本地开发仍使用 `localhost`，生产部署通过 `PUBLIC_BASE_URL=https://wx.a0free.com` 注入。
 
@@ -213,7 +213,7 @@ COS_BUCKET_URL=https://<bucket-appid>.cos.<region>.myqcloud.com
 COS_CDN_URL=https://默认CDN域名（可选）
 ```
 
-管理后台新增或编辑小程序时，在“图片 CDN 根地址”填写该小程序已加入微信合法域名白名单的 HTTPS 地址。每次上传会按 `miniapps/{app_id}/...` 生成独立对象路径，并返回当前小程序 CDN 地址；COS 存储桶需要允许后台来源的 PUT CORS 请求。未配置 COS 时开发环境仍可启动，但图片上传接口会返回“COS 服务未配置”，生产环境会在启动阶段阻断缺失的 COS 凭据。
+管理后台新增或编辑小程序时，在“图片 CDN 根地址”填写该小程序已加入微信合法域名白名单的 HTTPS 地址。每次上传会按 `miniapps/{app_id}/...` 生成独立对象路径，并返回当前小程序 CDN 地址；COS 存储桶需要允许后台来源的 PUT CORS 请求。未配置 COS 时服务仍可启动，图片上传接口会返回“COS 服务未配置”。
 
 管理后台上传接口为 `POST /api/v1/admin/files/presigned-upload-url`，请求字段为 `appId`、`fileName`、`fileSize`、`contentType`、`ownerType`，返回 `presignedUrl`、`finalCosFileUrl` 和 `fileKey`。接口需要管理员 Bearer Token，仅允许 JPG、PNG、WebP、GIF，单张图片不超过 10 MB。分享卡片由服务端生成后也写入 `miniapps/{app_id}/share/`。
 

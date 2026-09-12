@@ -1771,6 +1771,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if id, ok := args["id"].(string); ok && strings.TrimSpace(id) != "" {
 			payload["id"] = id
 		}
+		if endpoint != "game.redeem" && endpoint != "query.score" && endpoint != "ads.load" { return nil, errors.New("MCP 通用动作仅允许只读或游戏兑换端点；领域写操作必须经过对应工具和状态机") }
 		result, err := NewActionEndpointService().ExecuteActionEndpoint(appID, "mcp_sandbox", endpoint, payload, fmt.Sprint(args["idempotency_key"]))
 		if err != nil {
 			return nil, err

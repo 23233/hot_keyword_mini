@@ -2,6 +2,7 @@
 package services
 
 import (
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -109,8 +110,9 @@ func validRSAPrivateKey(value string) bool {
 	if block == nil {
 		return false
 	}
-	if _, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
-		return true
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		_, ok := key.(*rsa.PrivateKey)
+		return ok
 	}
 	_, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	return err == nil

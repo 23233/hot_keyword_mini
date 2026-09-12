@@ -1,0 +1,924 @@
+{
+  "generatedAt": "2026-09-12T11:37:33.439Z",
+  "baseRevision": "9be6c64c526d273b5bfdee705239b58a99497bfd",
+  "modifiedFiles": [
+    "models/ai_breakthrough.go",
+    "readme.md",
+    "routers/admin.go",
+    "services/action_endpoint.go",
+    "services/mcp.go",
+    "services/membership.go",
+    "services/payment.go",
+    "services/production_readiness.go",
+    "services/production_readiness_test.go",
+    "services/sdui.go",
+    "system/migrate.go"
+  ],
+  "sourceHashes": {
+    "models/ai_breakthrough.go": "7a3f79ca299fe5fb1d41c7cb5ff5ba61e1a90f80de3b33caf943195ed1bd4b77",
+    "readme.md": "37480adbc29aa078836b2c4fa3dac74acc6edac302256503255ba184528bea6b",
+    "routers/admin.go": "acaa7eba92f54d93b954a8423a8c23df3ed89a62904ba45fe5dcd3450a7455aa",
+    "services/action_endpoint.go": "4bc03e848dbd3d93bf6a91be727ae359231e41b455c81b0210077c95a19a8bdd",
+    "services/mcp.go": "4568b364f904799de0c150ed7ed0e4bba020a2352f085f3be948678264fe1155",
+    "services/membership.go": "870626825f54af8b7e408b00a7c4f1410fe6a3af4edaacff8e0f79fe141231f5",
+    "services/payment.go": "3f978331852126d7d1bfb0e050bd3cd96597fbf04a7f4fbd8f903f5044a3043e",
+    "services/production_readiness.go": "4c4a4a75e6b772378e9b74cc32c2b6016017ecb09a99ca7c7fecbc3e1ec15325",
+    "services/production_readiness_test.go": "84420d1e4fc83198e37eed54c3e8664e68c7596c7ea1c95aaa1564def1c281f7",
+    "services/sdui.go": "057bc7c3c80b4d377b1f84011b8848b1deaab884696977442f22c881d86b746c",
+    "system/migrate.go": "34f4627067501e55cda864bd966b718ccca422a9181a46d6cf1d104ab40ce889",
+    "services/acceptance_database_test.go": "34a87c354a3b991661877d850977a7896fb5e0a9ae34869fc9e1c8f5805f77b2",
+    "scripts/acceptance-evidence.mjs": "18d8cc6515e6c902329105f20df6ab59e632c2007329cd3f2d4475fdcc19b1cf"
+  },
+  "results": [
+    {
+      "name": "Go测试",
+      "command": "go test ./... -count=1 -json",
+      "exitCode": 0,
+      "tests": [
+        {
+          "name": "TestShouldEnsureSDUIAcceptanceData",
+          "package": "hot_keyword",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance",
+          "package": "hot_keyword/services",
+          "status": "skip"
+        },
+        {
+          "name": "TestEndpointRegistry",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAnonymousGameRedeem",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestActionEndpointValidation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestQueryScoreEndpoint",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformSandboxEndpoints",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/创建订单",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/确认订单",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/确认收货",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/取消后禁止收货",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/无订单禁止取消",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/申请售后",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/售后上传证据",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/无售后单禁止上传",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/斗师接单",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/斗师报价",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/未接单禁止报价",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/开始服务",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/非法跨级完成",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/有效提现",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines/拒绝零元提现",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPlatformDomainStateMachines",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAdminPasswordHashAndVerify",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAdminTokenGenerationAndParse",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAdminLoginValidation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestHashToken",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestGenerateRandomToken",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestReplayAttackDetection",
+          "package": "hot_keyword/services",
+          "status": "skip"
+        },
+        {
+          "name": "TestGenAccessToken",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCapabilityRegistryCoverage",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestRequiredCapabilitiesForBlocks",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestClientAndTenantCapabilitiesAreSeparated",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePageCapabilitiesForMatrix",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestDisabledCapabilityCannotPublish",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestBuildCapabilityMatrix",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestIsTrustedCOSURL/合法_CDN",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestIsTrustedCOSURL/禁止_HTTP",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestIsTrustedCOSURL/禁止域名前缀欺骗",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestIsTrustedCOSURL/禁止外部域名",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestIsTrustedCOSURL",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestGetEpisodeTitle",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestGetMockRecommendations",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestGetMockGalleryList",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestDefaultDeviceParams_WechatBaseline",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_DataBindingAndRepeat",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestResolveBlockPropsBindings_TabAndBusinessKeys",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_ConditionEvaluation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_RepeatConditionKeepsItemContext",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_BlockStateVariants",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_NestedChildrenPreserveBinding",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_OmittedDollarBinding",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_ContextIsNotMutated",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_CompareLooseEqual",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_VisibleWhenAndRepeatInNode",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_EmptyRepeatHandling",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_GridMultiColumnsLayout",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_StackOverlapLayout",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_StackRowLayout",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_NestedContainerYAccumulation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_TabsLayoutWithHeader",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_TabsUseConfiguredActiveTab",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_TabStateKeyIsStructural",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_InlineInterpolation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCalculateAdaptiveBlockHeightTypedSlices",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_StackOverlapAlignSelfAndJustifySelf",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_StyleUtilitiesKeepMetricsInSync",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLayoutIR_AccentUtilities",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolDefinitions",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPWebViewToolContracts",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPAcceptanceToolContract",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolDispatchCoverage",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolScopeContract",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPInitializeAndList",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPProtocolMethods",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPResources",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPRulesMirrorValidator",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPInitializeInstructions",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPCoverageResource",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPStructuredError",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPArgumentSchema",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPProtocolShape",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolCall_TemplateList",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolCall_TemplateGet",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPTemplateWriteScope",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolCall_PublishGate",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestMCPToolCall_PageValidateDirect",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestNormalizeMCPScopes",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCalculateMembershipGrant/level1剩余30天升级level2折算15天",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCalculateMembershipGrant/level2剩余90天升级level3折算60天",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCalculateMembershipGrant/同等级从原到期时间顺延",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCalculateMembershipGrant",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestArticleCanRead",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePaymentNotifyURL/https",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePaymentNotifyURL/http",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePaymentNotifyURL/query",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePaymentNotifyURL/fragment",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePaymentNotifyURL/empty",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePaymentNotifyURL",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestIsDuplicateKeyError",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProductSKUIndexIsPerApp",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/支付成功",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/重复成功回调",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/支付失败",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/用户取消",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/支付后退款",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/重复退款",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/未支付退款",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/已关闭再支付",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine/非法动作",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSandboxPaymentStateMachine",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPaymentPrivateKeyType/RSA",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPaymentPrivateKeyType/ECDSA",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestPaymentPrivateKeyType",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidHTTPSRoot",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolValidation_Valid",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolValidation_InvalidIDConflict",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolValidation_MissingActionParam",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolPatch",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolValidation_CopyTextVariants",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolValidation_RequestPayment",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestProtocolValidation_PlatformActionParams",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_NestedBlockContracts",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_AllStandardBlocksAndActions",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_StateActionsRequireTargets",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_WebViewRequiresRegistryKey",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSDUIBlockSerialization",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestEnvelopeStructure",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestRebuildEnvelopeLayoutIRUsesCurrentBlocks",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAdminSDUIManagement",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_ShareAndSubscribeActions",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_RequestDataSecurityURL",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidation_RequestAliasSecurityURL",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestGameRedeemTemplateBinding",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestStdioProtocolOutput",
+          "package": "hot_keyword/cmd/mcp-server",
+          "status": "pass"
+        },
+        {
+          "name": "TestStdioProtocolHelper",
+          "package": "hot_keyword/cmd/mcp-server",
+          "status": "pass"
+        },
+        {
+          "name": "TestShareCardExpiryAndUnpublishedFallback",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestDynamicDraftEnvelopeAssembly",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAdminUser_UsernameValidation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestScreenshotSignature_Security",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestValidatePageAgainstSchema_Deep",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestGlassBlurFalseRoundTrip",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestSaveDraft_CASConflict",
+          "package": "hot_keyword/services",
+          "status": "skip"
+        },
+        {
+          "name": "TestFilterBlocksByCapabilities",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestFilterBlocksByCapabilitiesInTabs",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestFilterBlocksByCapabilitiesForNativeActions",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestShareCardPngGeneration",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestRenderPageLayoutIRScreenshotMatchesIR",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestScreenshotSignatureWithOptions",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestAIBreakthroughTemplateIsComposable",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestTemplateRegistryList",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestApplyTemplateToPage",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestComponentLabTemplateCoverage",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestCustomTemplateCRUD",
+          "package": "hot_keyword/services",
+          "status": "skip"
+        },
+        {
+          "name": "TestValidateWebViewEntry",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestWebViewRegistryPureRules",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestWebViewRegistryDatabaseGuards",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestWebViewRegistryTenantIsolation",
+          "package": "hot_keyword/services",
+          "status": "skip"
+        },
+        {
+          "name": "TestWebViewTicketValidation",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestWebViewTicketConsume_EmptyToken",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestWebViewTicketURLScheme",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "独立数据库验收",
+      "command": "go test ./services -run ^TestLocalDatabaseAcceptance$ -count=1 -json",
+      "exitCode": 0,
+      "tests": [
+        {
+          "name": "TestLocalDatabaseAcceptance/模板持久化",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/草稿版本冲突",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/会话重放",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/WebView租户隔离",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/支付回调与退款权益/wx7a779add6a689881",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/支付回调与退款权益/wx8b8e899d4829481a",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/支付回调与退款权益",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/更新密钥保留首页",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/双租户MCP草稿发布闭环/wx7a779add6a689881",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/双租户MCP草稿发布闭环/wx8b8e899d4829481a",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/双租户MCP草稿发布闭环",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance/双租户栏目文章标识",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        },
+        {
+          "name": "TestLocalDatabaseAcceptance",
+          "package": "hot_keyword/services",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "Go构建",
+      "command": "go build ./...",
+      "exitCode": 0,
+      "tests": []
+    }
+  ]
+}

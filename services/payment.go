@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"hot_keyword/config"
 	"hot_keyword/db"
 	"hot_keyword/models"
@@ -80,44 +82,55 @@ func (s *PaymentService) CreateSandboxOrder(appID string, userID int64, openID, 
 	return order, nil
 }
 
-// ApplySandboxTransition 模拟支付成功、失败、取消和退款，并复用正式权益发放逻辑。
+// ApplySandboxTransition 本地回调与正式回调共用事务和权益逻辑。
 func (s *PaymentService) ApplySandboxTransition(appID string, userID int64, outTradeNo, transition string) (*models.PaymentOrder, error) {
 	if db.Mysql == nil || appID == "" || userID <= 0 || strings.TrimSpace(outTradeNo) == "" {
 		return nil, errors.New("支付沙箱参数不完整")
 	}
-	transition = strings.ToLower(strings.TrimSpace(transition))
 	var order models.PaymentOrder
 	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND out_trade_no = ? AND sandbox = ?", appID, userID, outTradeNo, true).First(&order).Error; err != nil {
 		return nil, errors.New("支付沙箱订单不存在")
 	}
-	nextStatus, idempotent, err := nextSandboxPaymentStatus(order.Status, transition)
-	if err != nil {
-		return nil, err
-	}
-	if idempotent {
-		return &order, nil
-	}
-	now := time.Now()
-	updates := map[string]interface{}{"updated_at": now, "status": nextStatus}
-	switch nextStatus {
-	case models.PaymentOrderPaid:
-		updates["transaction_id"] = "sandbox-tx-" + strings.ToLower(ut.RandomStr(10))
-		updates["paid_at"] = now
-	case models.PaymentOrderRefunded:
-		updates["refunded_at"] = now
-	}
-	if err := db.Mysql.Model(&order).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if err := db.Mysql.First(&order, order.ID).Error; err != nil {
-		return nil, err
-	}
-	if order.Status == models.PaymentOrderPaid {
-		if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
-			return nil, fmt.Errorf("发放支付权益失败: %w", err)
+	return commitPaymentTransition(&order, transition, "sandbox-tx-"+strings.ToLower(ut.RandomStr(10)), nil)
+}
+
+// commitPaymentTransition 原子提交订单与权益，行锁防止回调、查单、退款互相覆盖。
+func commitPaymentTransition(input *models.PaymentOrder, transition, transactionID string, paidAt *time.Time) (*models.PaymentOrder, error) {
+	var order models.PaymentOrder
+	err := db.Mysql.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND app_id = ? AND user_id = ?", input.ID, input.AppID, input.UserID).First(&order).Error; err != nil {
+			return err
 		}
-	}
-	return &order, nil
+		next, idempotent, err := nextSandboxPaymentStatus(order.Status, transition)
+		if err != nil {
+			return err
+		}
+		if !idempotent {
+			now := time.Now()
+			order.Status, order.UpdatedAt = next, now
+			if next == models.PaymentOrderPaid {
+				order.TransactionID = transactionID
+				order.PaidAt = paidAt
+				if paidAt == nil {
+					order.PaidAt = &now
+				}
+			}
+			if next == models.PaymentOrderRefunded {
+				order.RefundedAt = &now
+			}
+			if err := tx.Save(&order).Error; err != nil {
+				return err
+			}
+		}
+		if next == models.PaymentOrderPaid {
+			return applyOrderGrant(tx, &order, false)
+		}
+		if next == models.PaymentOrderRefunded {
+			return applyOrderGrant(tx, &order, true)
+		}
+		return nil
+	})
+	return &order, err
 }
 
 // nextSandboxPaymentStatus 校验支付沙箱状态迁移，并标记重复回调。
@@ -369,30 +382,19 @@ func (s *PaymentService) ApplyNotify(ctx context.Context, app *models.MiniApp, r
 	if transaction.TransactionId == nil || strings.TrimSpace(*transaction.TransactionId) == "" {
 		return errors.New("支付通知缺少微信交易单号")
 	}
-	if order.Status == models.PaymentOrderPaid {
-		// 订单可能在上一次通知中已落库，但权益发放失败；重复通知必须继续补发权益。
-		return NewMembershipService().ApplyPaidOrder(&order)
-	}
-	updates := map[string]interface{}{"status": models.PaymentOrderPaid, "updated_at": time.Now()}
-	if transaction.TransactionId != nil {
-		updates["transaction_id"] = *transaction.TransactionId
-	}
+	var paidAt *time.Time
 	if transaction.SuccessTime != nil {
-		if paidAt, parseErr := time.Parse(time.RFC3339, *transaction.SuccessTime); parseErr == nil {
-			updates["paid_at"] = paidAt
+		value, err := time.Parse(time.RFC3339, *transaction.SuccessTime)
+		if err != nil {
+			return errors.New("支付成功时间无效")
 		}
+		paidAt = &value
 	}
-	result := db.Mysql.Model(&models.PaymentOrder{}).Where("app_id = ? AND out_trade_no = ? AND status <> ?", app.AppID, *transaction.OutTradeNo, models.PaymentOrderPaid).Updates(updates)
-	if result.Error != nil {
-		return result.Error
+	if order.Sandbox {
+		return errors.New("正式支付通知不能修改沙箱订单")
 	}
-	if result.RowsAffected == 0 {
-		return errors.New("支付订单状态更新失败")
-	}
-	if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
-		return fmt.Errorf("更新会员权益失败: %w", err)
-	}
-	return nil
+	_, err = commitPaymentTransition(&order, "success", *transaction.TransactionId, paidAt)
+	return err
 }
 
 // GetOrderStatus 查询本地订单，并在未完成时向微信主动查单。
@@ -414,7 +416,7 @@ func (s *PaymentService) GetOrderStatus(ctx context.Context, appID string, userI
 		}
 		return &order, nil
 	}
-	if order.Status == models.PaymentOrderClosed || order.Status == models.PaymentOrderFailed {
+	if order.Status == models.PaymentOrderClosed || order.Status == models.PaymentOrderFailed || order.Status == models.PaymentOrderRefunded {
 		return &order, nil
 	}
 	if order.Sandbox {
@@ -437,35 +439,26 @@ func (s *PaymentService) GetOrderStatus(ctx context.Context, appID string, userI
 	if resp.Attach == nil || *resp.Attach != order.Attach || resp.Payer == nil || resp.Payer.Openid == nil || *resp.Payer.Openid != order.OpenID {
 		return &order, nil
 	}
-	updates := map[string]interface{}{"updated_at": time.Now()}
+	transition := ""
 	switch valueOrEmpty(resp.TradeState) {
 	case "SUCCESS":
-		updates["status"] = models.PaymentOrderPaid
-		if resp.TransactionId != nil {
-			updates["transaction_id"] = *resp.TransactionId
-		}
-		if resp.SuccessTime != nil {
-			if paidAt, parseErr := time.Parse(time.RFC3339, *resp.SuccessTime); parseErr == nil {
-				updates["paid_at"] = paidAt
-			}
-		}
+		transition = "success"
 	case "CLOSED":
-		updates["status"] = models.PaymentOrderClosed
+		transition = "cancel"
 	case "PAYERROR":
-		updates["status"] = models.PaymentOrderFailed
+		transition = "fail"
 	default:
 		return &order, nil
 	}
-	if err := db.Mysql.Model(&order).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	_ = db.Mysql.First(&order, order.ID).Error
-	if order.Status == models.PaymentOrderPaid {
-		if err := NewMembershipService().ApplyPaidOrder(&order); err != nil {
+	var paidAt *time.Time
+	if resp.SuccessTime != nil {
+		value, err := time.Parse(time.RFC3339, *resp.SuccessTime)
+		if err != nil {
 			return nil, err
 		}
+		paidAt = &value
 	}
-	return &order, nil
+	return commitPaymentTransition(&order, transition, valueOrEmpty(resp.TransactionId), paidAt)
 }
 
 func valueOrEmpty(v *string) string {

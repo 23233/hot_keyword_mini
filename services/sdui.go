@@ -653,12 +653,15 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 
 	// 存在则更新
 	updateMap := map[string]interface{}{
-		"app_name":         app.AppName,
-		"current_page":     app.CurrentPage,
-		"release_mode":     app.ReleaseMode,
-		"fallback_page_id": app.FallbackPageID,
-		"cos_cdn_url":      app.CosCdnUrl,
-		"updated_at":       time.Now(),
+		"app_name":    app.AppName,
+		"cos_cdn_url": app.CosCdnUrl,
+		"updated_at":  time.Now(),
+	}
+	// 主体配置表单未提交页面路由时，保留已有首页及回退策略。
+	for key, value := range map[string]string{"current_page": app.CurrentPage, "release_mode": app.ReleaseMode, "fallback_page_id": app.FallbackPageID} {
+		if value != "" {
+			updateMap[key] = value
+		}
 	}
 	if app.AppSecret != "" {
 		updateMap["app_secret"] = app.AppSecret
