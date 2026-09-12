@@ -679,8 +679,7 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 		updateMap["payment_private_key"] = app.PaymentPrivateKey
 	}
 	for key, value := range map[string]string{
-		"tencent_map_key": app.TencentMapKey, "customer_service_corp_id": app.CustomerServiceCorpID,
-		"customer_service_url": app.CustomerServiceURL, "subscribe_template_ids": app.SubscribeTemplateIDs, "ad_unit_ids": app.AdUnitIDs,
+		"tencent_map_key": app.TencentMapKey, "subscribe_template_ids": app.SubscribeTemplateIDs, "ad_unit_ids": app.AdUnitIDs,
 	} {
 		if strings.TrimSpace(value) != "" {
 			updateMap[key] = strings.TrimSpace(value)

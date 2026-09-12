@@ -39,10 +39,6 @@ type MiniApp struct {
 	PaymentPrivateKey string `gorm:"column:payment_private_key;type:text;comment:微信支付商户私钥" json:"-"`
 	// 腾讯地图 WebService Key。
 	TencentMapKey string `gorm:"column:tencent_map_key;size:128;comment:腾讯地图Key" json:"-"`
-	// 微信客服企业 ID。
-	CustomerServiceCorpID string `gorm:"column:customer_service_corp_id;size:128;comment:微信客服企业ID" json:"-"`
-	// 微信客服链接。
-	CustomerServiceURL string `gorm:"column:customer_service_url;size:512;comment:微信客服链接" json:"-"`
 	// 订阅消息模板 ID，多个值使用英文逗号分隔。
 	SubscribeTemplateIDs string `gorm:"column:subscribe_template_ids;type:text;comment:订阅消息模板ID" json:"-"`
 	// 微信流量主广告位 ID，多个值使用英文逗号分隔。

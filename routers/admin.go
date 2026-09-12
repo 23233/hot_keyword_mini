@@ -362,22 +362,20 @@ func RegisterAdminRoutes(party iris.Party) {
 	// 5. 多小程序管理: 新增或更新小程序配置
 	adminParty.Post("/apps", func(ctx iris.Context) {
 		var input struct {
-			AppID                 string `json:"app_id"`
-			AppSecret             string `json:"app_secret"`
-			AppName               string `json:"app_name"`
-			CurrentPage           string `json:"current_page"`
-			ReleaseMode           string `json:"release_mode"`
-			FallbackPageID        string `json:"fallback_page_id"`
-			CosCdnUrl             string `json:"cos_cdn_url"`
-			PaymentMchID          string `json:"payment_mch_id"`
-			PaymentMchSerialNo    string `json:"payment_mch_serial_no"`
-			PaymentAPIv3Key       string `json:"payment_api_v3_key"`
-			PaymentPrivateKey     string `json:"payment_private_key"`
-			TencentMapKey         string `json:"tencent_map_key"`
-			CustomerServiceCorpID string `json:"customer_service_corp_id"`
-			CustomerServiceURL    string `json:"customer_service_url"`
-			SubscribeTemplateIDs  string `json:"subscribe_template_ids"`
-			AdUnitIDs             string `json:"ad_unit_ids"`
+			AppID                string `json:"app_id"`
+			AppSecret            string `json:"app_secret"`
+			AppName              string `json:"app_name"`
+			CurrentPage          string `json:"current_page"`
+			ReleaseMode          string `json:"release_mode"`
+			FallbackPageID       string `json:"fallback_page_id"`
+			CosCdnUrl            string `json:"cos_cdn_url"`
+			PaymentMchID         string `json:"payment_mch_id"`
+			PaymentMchSerialNo   string `json:"payment_mch_serial_no"`
+			PaymentAPIv3Key      string `json:"payment_api_v3_key"`
+			PaymentPrivateKey    string `json:"payment_private_key"`
+			TencentMapKey        string `json:"tencent_map_key"`
+			SubscribeTemplateIDs string `json:"subscribe_template_ids"`
+			AdUnitIDs            string `json:"ad_unit_ids"`
 		}
 		if err := ctx.ReadJSON(&input); err != nil || input.AppID == "" {
 			ctx.StatusCode(iris.StatusBadRequest)
@@ -393,7 +391,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			}
 			input.CosCdnUrl = strings.TrimRight(strings.TrimSpace(input.CosCdnUrl), "/")
 		}
-		app := models.MiniApp{AppID: input.AppID, AppSecret: input.AppSecret, AppName: input.AppName, CurrentPage: input.CurrentPage, ReleaseMode: input.ReleaseMode, FallbackPageID: input.FallbackPageID, CosCdnUrl: input.CosCdnUrl, PaymentMchID: input.PaymentMchID, PaymentMchSerialNo: input.PaymentMchSerialNo, PaymentAPIv3Key: input.PaymentAPIv3Key, PaymentPrivateKey: input.PaymentPrivateKey, TencentMapKey: input.TencentMapKey, CustomerServiceCorpID: input.CustomerServiceCorpID, CustomerServiceURL: input.CustomerServiceURL, SubscribeTemplateIDs: input.SubscribeTemplateIDs, AdUnitIDs: input.AdUnitIDs}
+		app := models.MiniApp{AppID: input.AppID, AppSecret: input.AppSecret, AppName: input.AppName, CurrentPage: input.CurrentPage, ReleaseMode: input.ReleaseMode, FallbackPageID: input.FallbackPageID, CosCdnUrl: input.CosCdnUrl, PaymentMchID: input.PaymentMchID, PaymentMchSerialNo: input.PaymentMchSerialNo, PaymentAPIv3Key: input.PaymentAPIv3Key, PaymentPrivateKey: input.PaymentPrivateKey, TencentMapKey: input.TencentMapKey, SubscribeTemplateIDs: input.SubscribeTemplateIDs, AdUnitIDs: input.AdUnitIDs}
 		if err := sduiService.SaveApp(&app); err != nil {
 			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "保存小程序失败: " + err.Error()})

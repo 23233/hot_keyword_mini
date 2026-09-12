@@ -77,13 +77,6 @@ func CheckProductionReadiness(appID string, cfg *config.Config) (ProductionReadi
 	if capabilityEnabled(matrix, "location") {
 		require("tencent_map_key", app.TencentMapKey)
 	}
-	if capabilityEnabled(matrix, "wechat_customer_service") {
-		require("customer_service_corp_id", app.CustomerServiceCorpID)
-		require("customer_service_url", app.CustomerServiceURL)
-		if app.CustomerServiceURL != "" && !validHTTPSRoot(app.CustomerServiceURL) {
-			report.Invalid = append(report.Invalid, "customer_service_url")
-		}
-	}
 	if capabilityEnabled(matrix, "subscribe_message") {
 		require("subscribe_template_ids", app.SubscribeTemplateIDs)
 	}

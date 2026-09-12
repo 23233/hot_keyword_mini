@@ -235,7 +235,7 @@ MCP 的覆盖边界：它完整覆盖 SDUI 页面和资源的 AI 编排闭环，
 
 后台通过 `GET /api/v1/admin/production-readiness?app_id=...`，MCP 通过只读工具 `sdui.production.readiness` 检查每个租户的生产配置。报告只返回缺失或格式错误的字段名，不返回 AppSecret、支付私钥、API v3 Key、地图 Key 等原文。
 
-生产预检由管理员或 MCP 按需执行，不阻断服务启动，也不进入小程序用户端。已启用能力缺少微信密钥、支付材料、COS/CDN、腾讯地图、微信客服、订阅模板、广告位或 WebView 注册表时，报告会给出对应字段名。GitHub Actions 在构建和推送镜像前执行 Go 测试/构建、前端类型检查、SDUI 测试和微信小程序构建。
+生产预检由管理员或 MCP 按需执行，不阻断服务启动，也不进入小程序用户端。已启用能力缺少微信密钥、支付材料、COS/CDN、腾讯地图、订阅模板、广告位或 WebView 注册表时，报告会给出对应字段名。微信客服直接使用小程序原生客服组件，无需额外企业 ID 或客服 URL。GitHub Actions 在构建和推送镜像前执行 Go 测试/构建、前端类型检查、SDUI 测试和微信小程序构建。
 
 图片上传使用 `sdui.file.prepare_upload`：MCP 不接收二进制文件，只返回 10 分钟有效的预签名 PUT 地址、`uploadHeaders` 和最终 CDN 地址。AI 调用方必须按返回的 `uploadHeaders` 直接 PUT 图片到 `presignedUrl`，成功后使用 `finalCosFileUrl` 更新页面图片字段。对象统一使用 `miniapps/{app_id}/` 前缀，ACL 由 COS 控制台的 `miniapps/*` 规则管理。
 
