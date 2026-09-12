@@ -15,6 +15,7 @@ import (
 	"github.com/23233/ggg/logger"
 	"github.com/23233/ggg/ut"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SDUIService 服务端驱动动态组件引擎服务
@@ -750,7 +751,7 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 		var newRevision int
 		var existing models.DynamicPage
 
-		err := tx.Where("app_id = ? AND page_id = ?", page.AppID, page.PageID).First(&existing).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("app_id = ? AND page_id = ?", page.AppID, page.PageID).First(&existing).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				page.Revision = 1
@@ -793,8 +794,16 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 			if page.ExpiresAt != nil {
 				updateData["expires_at"] = page.ExpiresAt
 			}
-			if err := tx.Model(&existing).Updates(updateData).Error; err != nil {
-				return fmt.Errorf("更新页面协议失败: %w", err)
+			updateQuery := tx.Model(&existing)
+			if expectedRevision > 0 {
+				updateQuery = updateQuery.Where("id = ? AND revision = ?", existing.ID, expectedRevision)
+			}
+			result := updateQuery.Updates(updateData)
+			if result.Error != nil {
+				return fmt.Errorf("更新页面协议失败: %w", result.Error)
+			}
+			if expectedRevision > 0 && result.RowsAffected != 1 {
+				return errors.New("发布版本冲突：页面已被其他操作更新")
 			}
 			page.Revision = newRevision
 		}

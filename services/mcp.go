@@ -266,6 +266,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 					"app_id":    map[string]interface{}{"type": "string"},
 					"page_id":   map[string]interface{}{"type": "string"},
 					"device":    map[string]interface{}{"type": "string", "description": "设备预设，默认 iphone_12_13_pro"},
+					"host":      map[string]interface{}{"type": "string", "description": "服务 HTTPS 根地址，可选；为空时使用 PUBLIC_BASE_URL"},
 					"card_type": map[string]interface{}{"type": "string", "enum": []string{"app_message", "timeline"}, "description": "兼容旧客户端的分享图比例标识；截图结构仍以 device 为准"},
 					"theme":     map[string]interface{}{"type": "string", "enum": []string{"dark_glass", "light_clean", "cyber_neon"}},
 					"locale":    map[string]interface{}{"type": "string", "description": "语言标识，默认 zh-CN"},
@@ -1542,7 +1543,21 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		// 签发 2 小时有效期的安全访问签名凭证 (防草稿内容匿名遍历窃取)
 		expires := time.Now().Add(2 * time.Hour).Unix()
 		sign := GenerateScreenshotSignatureWithOptions(appID, pageID, imgHash, expires, deviceParams.Name, targetPage.Theme, stateFixture)
-		signedImageURL := fmt.Sprintf("/api/v1/sdui/screenshot?app_id=%s&page_id=%s&draft=true&device=%s&theme=%s&state=%s&hash=%s&expires=%d&sign=%s", appID, pageID, url.QueryEscape(deviceParams.Name), url.QueryEscape(targetPage.Theme), url.QueryEscape(stateFixture), imgHash, expires, sign)
+		host, _ := args["host"].(string)
+		if strings.TrimSpace(host) == "" && config.Cfg != nil {
+			host = config.Cfg.PublicBaseURL
+		}
+		host = strings.TrimRight(strings.TrimSpace(host), "/")
+		if host == "" {
+			return nil, errors.New("截图需要配置 PUBLIC_BASE_URL 或传入 HTTPS host")
+		}
+		if host != "" {
+			parsed, parseErr := url.Parse(host)
+			if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+				return nil, errors.New("host 必须是无查询参数的 HTTPS 根地址")
+			}
+		}
+		signedImageURL := fmt.Sprintf("%s/api/v1/sdui/screenshot?app_id=%s&page_id=%s&draft=true&device=%s&theme=%s&state=%s&hash=%s&expires=%d&sign=%s", host, appID, pageID, url.QueryEscape(deviceParams.Name), url.QueryEscape(targetPage.Theme), url.QueryEscape(stateFixture), imgHash, expires, sign)
 
 		// 提取积木组件层级树 structure_tree
 		var blocks []models.BlockItem
@@ -1592,6 +1607,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			"device":          deviceParams.Name,
 			"theme":           targetPage.Theme,
 			"locale":          locale,
+			"revision":        targetPage.Revision,
 			"render_engine":   "layout_ir_isomorphic_compositor_v2",
 			"visual_baseline": "apple_hig_dark_glass",
 			"layout_ir":       layoutIR,
@@ -1771,7 +1787,9 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if id, ok := args["id"].(string); ok && strings.TrimSpace(id) != "" {
 			payload["id"] = id
 		}
-		if endpoint != "game.redeem" && endpoint != "query.score" && endpoint != "ads.load" { return nil, errors.New("MCP 通用动作仅允许只读或游戏兑换端点；领域写操作必须经过对应工具和状态机") }
+		if endpoint != "game.redeem" && endpoint != "query.score" && endpoint != "ads.load" {
+			return nil, errors.New("MCP 通用动作仅允许只读或游戏兑换端点；领域写操作必须经过对应工具和状态机")
+		}
 		result, err := NewActionEndpointService().ExecuteActionEndpoint(appID, "mcp_sandbox", endpoint, payload, fmt.Sprint(args["idempotency_key"]))
 		if err != nil {
 			return nil, err

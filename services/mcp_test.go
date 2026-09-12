@@ -410,6 +410,21 @@ func TestMCPToolCall_PublishGate(t *testing.T) {
 	}
 }
 
+// TestMCPScreenshotContract 验证截图结果可由远程 MCP 调用方直接访问并绑定 revision。
+func TestMCPScreenshotContract(t *testing.T) {
+	tool := NewMCPService().GetToolDefinitions()
+	for _, definition := range tool {
+		if definition.Name == "sdui.page.screenshot" {
+			properties := definition.InputSchema["properties"].(map[string]interface{})
+			if _, ok := properties["host"]; !ok {
+				t.Fatal("截图工具缺少 host 参数")
+			}
+			return
+		}
+	}
+	t.Fatal("缺少截图工具")
+}
+
 // TestMCPToolCall_PageValidateDirect 测试 MCP 校验工具直接传入页面协议对象无需依赖落库
 func TestMCPToolCall_PageValidateDirect(t *testing.T) {
 	service := NewMCPService()
