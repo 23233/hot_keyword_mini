@@ -400,6 +400,22 @@ func RegisterAdminRoutes(party iris.Party) {
 		ctx.JSON(iris.Map{"code": 0, "msg": "小程序配置已保存"})
 	})
 
+	// 多小程序管理: 删除小程序 (受角色鉴权、显式确认与依赖数据守卫约束)
+	adminParty.Delete("/apps/{app_id:string}", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		appID := strings.TrimSpace(ctx.URLParam("app_id"))
+		if appID == "" || ctx.URLParam("confirmed") != "true" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "删除小程序必须提供 app_id 且显式确认 confirmed=true"})
+			return
+		}
+		if err := sduiService.DeleteApp(appID); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "小程序已删除"})
+	})
+
 	// 通用能力平台：读取指定 AppID 的公共能力注册与租户状态。
 	adminParty.Get("/capabilities", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))

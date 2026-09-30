@@ -698,6 +698,45 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 	return nil
 }
 
+// DeleteApp 删除小程序租户；存在页面、草稿、模板、用户、商品或会员等级数据时拒绝删除，防止产生孤儿数据。
+func (s *SDUIService) DeleteApp(appID string) error {
+	if strings.TrimSpace(appID) == "" {
+		return errors.New("小程序 AppID 不能为空")
+	}
+	var app models.MiniApp
+	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("小程序不存在")
+		}
+		return err
+	}
+	guards := []struct {
+		label string
+		model any
+	}{
+		{"动态页面", &models.DynamicPage{}},
+		{"页面草稿", &models.DynamicPageDraft{}},
+		{"页面模板", &models.DynamicPageTemplate{}},
+		{"用户", &models.User{}},
+		{"商品", &models.Product{}},
+		{"会员等级", &models.MembershipLevel{}},
+	}
+	for _, guard := range guards {
+		var count int64
+		if err := db.Mysql.Model(guard.model).Where("app_id = ?", appID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("该小程序仍有 %d 条%s数据，请先清理后再删除", count, guard.label)
+		}
+	}
+	if err := db.Mysql.Where("app_id = ?", appID).Delete(&models.MiniApp{}).Error; err != nil {
+		return err
+	}
+	sdk.InvalidateMiniSdk(appID)
+	return nil
+}
+
 // ListPages 获取指定小程序下的全部动态页面列表
 func (s *SDUIService) ListPages(appID string) ([]models.DynamicPage, error) {
 	if appID == "" {

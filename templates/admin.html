@@ -606,8 +606,7 @@
       <select id="appSelect" class="tenant-select" onchange="onAppChanged()">
         <option value="wx516563cfe994bbc6">猴王下山短剧 (wx516563cfe994bbc6)</option>
       </select>
-      <input id="appCdnUrl" class="form-input" style="width:220px; padding:7px 10px;" placeholder="图片 CDN 根地址" />
-      <button class="btn-ctrl" onclick="saveCurrentAppCdn()">保存 CDN</button>
+      <button class="btn-ctrl" onclick="openEditAppModal()">⚙️ 管理小程序</button>
       <button class="btn-add-app" onclick="openAddAppModal()">+ 新建小程序</button>
     </div>
 
@@ -617,6 +616,9 @@
         <span id="currentAdminName" style="color:#fff; font-weight:600;">未登录</span>
         <button onclick="adminLogout()" style="background:none; border:none; color:#ff453a; cursor:pointer; font-size:12px; margin-left:4px;">[退出]</button>
       </div>
+      <button class="btn-ctrl" onclick="validateCurrentPage()" style="padding:10px 18px; background:rgba(255,255,255,0.12); color:#fff; border-radius:999px; cursor:pointer;">
+        <span>🔍 强校验</span>
+      </button>
       <button class="btn-ctrl" onclick="saveDraftWork()" style="padding:10px 18px; background:rgba(255,255,255,0.12); color:#fff; border-radius:999px; cursor:pointer;">
         <span>💾 保存草稿</span>
       </button>
@@ -663,8 +665,7 @@
       <!-- 功能 Tab 切换 -->
       <div class="tab-bar">
         <button class="tab-btn active" id="tabSDUI" onclick="switchTab('sdui')">🧩 SDUI 动态积木编排 (核心)</button>
-        <button class="tab-btn" id="tabDrama" onclick="switchTab('drama')">🎬 短剧展示模式 (传统)</button>
-        <button class="tab-btn" id="tabVideo" onclick="switchTab('video')">📺 视频号核心参数</button>
+        <button class="tab-btn" id="tabCapability" onclick="switchTab('capability')">🧱 能力与资源配置</button>
         <button class="tab-btn" id="tabUsers" onclick="switchTab('users')">👥 管理员中心 (CRUD)</button>
         <button class="tab-btn" id="tabMCP" onclick="switchTab('mcp')">🤖 AI MCP 智能编排</button>
       </div>
@@ -738,6 +739,78 @@
           </div>
         </div>
 
+        <!-- 短剧传统模式与视频号参数 (随行业模板联动, 兼容旧版客户端) -->
+        <details style="margin-top:20px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden;">
+          <summary style="padding:14px 18px; cursor:pointer; font-size:13px; font-weight:700; color:#fff; user-select:none;">🎬 短剧传统模式与视频号参数 (兼容旧版客户端 · 展开编辑)</summary>
+          <div style="padding:0 18px 18px;">
+            <div style="font-size:12px; color:var(--text-sub); margin-bottom:12px;">此处参数会随「套用行业模板 - 短剧模板」自动写入，仅在需要微调传统渲染风格或视频号跳转入参时展开修改。</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">展示模式</label>
+                <select id="inpDisplayMode" class="form-select">
+                  <option value="immersive_video">沉浸影音模式 (immersive_video)</option>
+                  <option value="episode_grid">剧集矩阵模式 (episode_grid)</option>
+                  <option value="direct_portal">极速直达模式 (direct_portal)</option>
+                  <option value="gallery_matrix">短剧画廊模式 (gallery_matrix)</option>
+                  <option value="webview">Webview 网页直达模式</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">网页直达链接</label>
+                <input type="text" id="inpWebviewUrl" class="form-input" placeholder="https://example.com/play" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">顶部通告栏文字</label>
+                <input type="text" id="inpAnnouncement" class="form-input" value="🔥 全网热播短剧大结局已同步更新，高清免费看！" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">网盘承接名称</label>
+                <input type="text" id="inpPanName" class="form-input" value="夸克网盘极速看全集" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">网盘链接</label>
+                <input type="text" id="inpPanContent" class="form-input" value="https://pan.quark.cn/s/monkey_king_full_888" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">提取码</label>
+                <input type="text" id="inpPanCode" class="form-input" value="hwxs88" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">短剧名称</label>
+                <input type="text" id="inpDramaTitle" class="form-input" value="猴王下山" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">宣传副标题</label>
+                <input type="text" id="inpDramaSubtitle" class="form-input" value="战神归来 · 逆风翻盘全网引爆" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">视频号 ID (finder_user_name)</label>
+                <input type="text" id="inpFinderUserName" class="form-input" value="gh_drama_official" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">视频号动态 ID (channels_feed_id)</label>
+                <input type="text" id="inpChannelsFeedId" class="form-input" value="export/UzFfdHQ5M1F2cTVXWll4eW1GZz09" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">竖版封面海报</label>
+                <div style="display:flex; gap:8px;">
+                  <input type="text" id="inpCoverUrl" class="form-input" value="" readonly style="flex:1;" />
+                  <label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传到 COS
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadLegacyImage(this, 'inpCoverUrl', 'drama')" />
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">总集数与评分</label>
+                <div style="display:flex; gap:10px;">
+                  <input type="number" id="inpTotalEpisodes" class="form-input" style="flex:1;" value="80" />
+                  <input type="number" step="0.1" id="inpRating" class="form-input" style="flex:1;" value="9.8" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <!-- 微信分享配置与视觉卡片 -->
         <div style="margin-top:20px; padding:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -793,89 +866,145 @@
         </div>
       </div>
 
-      <!-- Tab 2: 短剧传统展示模式 -->
-      <div id="panelDrama" class="editor-card" style="display:none;">
+      <!-- Tab: 🧱 能力与资源配置 (能力矩阵 / WebView 注册表 / 商品 / 沙箱) -->
+      <div id="panelCapability" class="editor-card" style="display:none;">
         <div class="card-head">
-          <div class="title">短剧展示风格模式切换</div>
-          <div class="desc">兼容旧版客户端的 4 种专属渲染模板</div>
-        </div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">展示模式</label>
-            <select id="inpDisplayMode" class="form-select">
-              <option value="immersive_video">沉浸影音模式 (immersive_video)</option>
-              <option value="episode_grid">剧集矩阵模式 (episode_grid)</option>
-              <option value="direct_portal">极速直达模式 (direct_portal)</option>
-              <option value="gallery_matrix">短剧画廊模式 (gallery_matrix)</option>
-              <option value="webview">Webview 网页直达模式</option>
-            </select>
+          <div>
+            <div class="title">🧱 租户能力与资源配置</div>
+            <div class="desc">能力矩阵开关、WebView 白名单、商品金额与运营支付沙箱的统一管理入口</div>
           </div>
-          <div class="form-group">
-            <label class="form-label">网页直达链接</label>
-            <input type="text" id="inpWebviewUrl" class="form-input" placeholder="https://example.com/play" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">顶部通告栏文字</label>
-            <input type="text" id="inpAnnouncement" class="form-input" value="🔥 全网热播短剧大结局已同步更新，高清免费看！" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">网盘承接名称</label>
-            <input type="text" id="inpPanName" class="form-input" value="夸克网盘极速看全集" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">网盘链接</label>
-            <input type="text" id="inpPanContent" class="form-input" value="https://pan.quark.cn/s/monkey_king_full_888" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">提取码</label>
-            <input type="text" id="inpPanCode" class="form-input" value="hwxs88" />
+          <div>
+            <button class="btn-ctrl" onclick="loadCapabilityTab()">🔄 刷新全部</button>
           </div>
         </div>
-      </div>
 
-      <!-- Tab 3: 视频号与核心参数 -->
-      <div id="panelVideo" class="editor-card" style="display:none;">
-        <div class="card-head">
-          <div class="title">微信视频号与短剧参数</div>
-          <div class="desc">对齐微信官方原生组件与 openChannelsActivity 入参</div>
+        <!-- 能力矩阵 -->
+        <div style="margin-top:18px;">
+          <div style="font-size:14px; font-weight:700; margin-bottom:10px;">🛡️ 能力矩阵 (Capability Matrix)</div>
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:10px;">启用能力必须人工确认；变更会写入审计日志并对 MCP 暴露。</div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+              <thead>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.1); color:var(--text-sub);">
+                  <th style="padding:8px 10px;">能力键</th>
+                  <th style="padding:8px 10px;">实现状态</th>
+                  <th style="padding:8px 10px;">当前状态</th>
+                  <th style="padding:8px 10px;">审核状态</th>
+                  <th style="padding:8px 10px;">状态说明</th>
+                  <th style="padding:8px 10px; text-align:right;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="capabilityTableBody"></tbody>
+            </table>
+          </div>
         </div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">短剧名称</label>
-            <input type="text" id="inpDramaTitle" class="form-input" value="猴王下山" />
+
+        <!-- WebView 注册表 -->
+        <div style="margin-top:26px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="font-size:14px; font-weight:700;">🌐 WebView 注册表 (url_key 白名单)</div>
+            <button class="btn-ctrl" onclick="addWebViewRow()">+ 增加登记</button>
           </div>
-          <div class="form-group">
-            <label class="form-label">宣传副标题</label>
-            <input type="text" id="inpDramaSubtitle" class="form-input" value="战神归来 · 逆风翻盘全网引爆" />
+          <div style="font-size:12px; color:var(--text-sub); margin-bottom:10px;">open_webview 动作仅允许跳转此处登记的 HTTPS 地址；整表保存，删除行即解除授权。</div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+              <thead>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.1); color:var(--text-sub);">
+                  <th style="padding:8px 10px;">url_key</th>
+                  <th style="padding:8px 10px;">HTTPS 地址</th>
+                  <th style="padding:8px 10px;">用途</th>
+                  <th style="padding:8px 10px;">版本</th>
+                  <th style="padding:8px 10px;">启用</th>
+                  <th style="padding:8px 10px; text-align:right;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="webViewTableBody"></tbody>
+            </table>
           </div>
-          <div class="form-group">
-            <label class="form-label">视频号 ID (finder_user_name)</label>
-            <input type="text" id="inpFinderUserName" class="form-input" value="gh_drama_official" />
+          <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+            <button class="btn-save" onclick="saveWebViewRegistry()">保存 WebView 注册表</button>
           </div>
-          <div class="form-group">
-            <label class="form-label">视频号动态 ID (channels_feed_id)</label>
-            <input type="text" id="inpChannelsFeedId" class="form-input" value="export/UzFfdHQ5M1F2cTVXWll4eW1GZz09" />
+        </div>
+
+        <!-- 商品管理 -->
+        <div style="margin-top:26px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="font-size:14px; font-weight:700;">🛍️ 商品与金额 (客户端不得传金额)</div>
+            <button class="btn-ctrl" onclick="openProductModal()">+ 新增商品</button>
           </div>
-          <div class="form-group">
-            <label class="form-label">竖版封面海报</label>
-            <div style="display:flex; gap:8px;">
-              <input type="text" id="inpCoverUrl" class="form-input" value="" readonly style="flex:1;" />
-              <label class="btn-ctrl" style="display:flex; align-items:center; cursor:pointer; white-space:nowrap;">上传到 COS
-                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="uploadLegacyImage(this, 'inpCoverUrl', 'drama')" />
-              </label>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+              <thead>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.1); color:var(--text-sub);">
+                  <th style="padding:8px 10px;">SKU</th>
+                  <th style="padding:8px 10px;">名称</th>
+                  <th style="padding:8px 10px;">描述</th>
+                  <th style="padding:8px 10px;">价格</th>
+                  <th style="padding:8px 10px;">状态</th>
+                  <th style="padding:8px 10px; text-align:right;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="productTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 运营与支付沙箱 -->
+        <details style="margin-top:26px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden;">
+          <summary style="padding:14px 18px; cursor:pointer; font-size:13px; font-weight:700; color:#fff; user-select:none;">🧪 运营沙箱与支付状态机演练 (开发环境专用 · 展开)</summary>
+          <div style="padding:0 18px 18px;">
+            <div class="form-grid" style="margin-top:14px;">
+              <div class="form-group">
+                <label class="form-label">动作端点 (endpoint)</label>
+                <select id="sandboxEndpoint" class="form-select">
+                  <option value="game.redeem">game.redeem (游戏礼包兑换)</option>
+                  <option value="query.score">query.score (成绩查询)</option>
+                  <option value="order.create">order.create (创建订单)</option>
+                  <option value="membership.open">membership.open (开通会员)</option>
+                  <option value="chat.send">chat.send (发送消息)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">用户 OpenID (留空则使用 admin_sandbox)</label>
+                <input type="text" id="sandboxOpenId" class="form-input" placeholder="oXXXXXXXX" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">业务参数 JSON (payload)</label>
+                <input type="text" id="sandboxPayload" class="form-input" placeholder='{"sku":"vip_monthly"}' />
+              </div>
+              <div class="form-group">
+                <label class="form-label">幂等键 (留空自动生成)</label>
+                <input type="text" id="sandboxIdemKey" class="form-input" placeholder="sandbox-001" />
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+              <button class="btn-ctrl" onclick="refreshSandboxOps()">查看最近操作</button>
+              <button class="btn-save" onclick="executeSandboxOperation()">▶ 执行动作</button>
+            </div>
+            <div id="sandboxResultBox" style="margin-top:12px; font-size:12px; color:var(--text-sub); white-space:pre-wrap; word-break:break-all; max-height:220px; overflow:auto; background:rgba(0,0,0,0.35); border-radius:12px; padding:12px;">等待执行…</div>
+
+            <div style="font-size:14px; font-weight:700; margin:20px 0 10px;">💳 支付沙箱 (仅开发环境开放)</div>
+            <div class="form-grid">
+              <div class="form-group"><label class="form-label">用户 ID (user_id)</label><input type="number" id="paySandboxUserId" class="form-input" placeholder="1" /></div>
+              <div class="form-group"><label class="form-label">商品 SKU</label><input type="text" id="paySandboxSku" class="form-input" placeholder="vip_monthly" /></div>
+              <div class="form-group"><label class="form-label">订单号 (状态流转必填)</label><input type="text" id="paySandboxTradeNo" class="form-input" placeholder="out_trade_no" /></div>
+              <div class="form-group">
+                <label class="form-label">操作</label>
+                <select id="paySandboxOperation" class="form-select">
+                  <option value="create">create (创建沙箱订单)</option>
+                  <option value="pay_success">pay_success (支付成功)</option>
+                  <option value="refund">refund (退款)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end;">
+              <button class="btn-ctrl" onclick="runPaySandbox()">执行支付沙箱</button>
             </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">总集数与评分</label>
-            <div style="display:flex; gap:10px;">
-              <input type="number" id="inpTotalEpisodes" class="form-input" style="flex:1;" value="80" />
-              <input type="number" step="0.1" id="inpRating" class="form-input" style="flex:1;" value="9.8" />
-            </div>
-          </div>
-        </div>
+        </details>
       </div>
 
-      <!-- Tab 4: 👥 管理员中心 (Admin Users CRUD) -->
+      <!-- Tab: 👥 管理员中心 (Admin Users CRUD) -->
       <div id="panelUsers" class="editor-card" style="display:none;">
         <div class="card-head">
           <div>
@@ -912,10 +1041,31 @@
         <div class="card-head">
           <div>
             <div class="title">🤖 AI MCP 智能编排中心 (Model Context Protocol)</div>
-          <div class="desc">遵循标准 JSON-RPC 2.0 协议，提供全局 Token、协议资源和 18 个受控工具</div>
+          <div class="desc">遵循标准 JSON-RPC 2.0 协议，提供全局 Token、协议资源和 <span id="mcpToolCount">…</span> 个受控工具</div>
           </div>
           <div>
             <span style="font-size:12px; background:rgba(48,209,88,0.2); color:#30d158; border:1px solid rgba(48,209,88,0.3); padding:4px 10px; border-radius:999px; font-weight:700;">● MCP 服务正常运行中</span>
+          </div>
+        </div>
+
+        <!-- MCP 行为链路接入说明：端点、认证、客户端配置与 Stdio 双通道 -->
+        <div style="margin-top:16px; padding:16px; background:rgba(10,132,255,0.06); border:1px solid rgba(10,132,255,0.25); border-radius:14px;">
+          <div style="font-size:14px; font-weight:700;">🔌 MCP 接入地址与调用方式</div>
+          <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:12px; color:var(--text-sub); flex-shrink:0;">HTTP 端点 (POST)</span>
+              <input id="mcpEndpointUrl" class="form-input" readonly style="flex:1; min-width:220px; font-family:monospace; font-size:12px;" />
+              <button class="btn-ctrl" onclick="copyMcpEndpoint()">复制地址</button>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); line-height:1.7;">
+              认证方式：请求头携带 <code style="color:var(--accent);">X-MCP-Key: &lt;MCP 访问令牌&gt;</code>，或管理员 <code style="color:var(--accent);">Authorization: Bearer &lt;后台 Token&gt;</code>；仅支持 POST JSON-RPC 2.0。
+            </div>
+            <div style="display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:12px; color:var(--text-sub); flex-shrink:0; margin-top:6px;">客户端配置示例</span>
+              <textarea id="mcpClientConfig" class="form-input" readonly style="flex:1; min-width:260px; height:86px; font-family:monospace; font-size:11px;"></textarea>
+              <button class="btn-ctrl" style="margin-top:6px;" onclick="copyMcpClientConfig()">复制配置</button>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub);">Stdio 双通道：<code style="color:var(--accent);">go run ./cmd/mcp-server</code>（一行一个 JSON-RPC 消息，诊断信息输出到 stderr）</div>
           </div>
         </div>
 
@@ -938,15 +1088,15 @@
           <div id="mcpCreatedTokenBox" style="display:none; margin-top:12px;">
             <label class="form-label">新 Token（请立即复制保存）</label>
             <div style="display:flex; gap:8px;">
-              <input id="mcpCreatedToken" class="form-input" readonly />
+              <input id="mcpCreatedToken" class="form-input" readonly onclick="this.select()" style="font-family:monospace;" />
               <button class="btn-ctrl" onclick="copyMcpToken()">复制</button>
             </div>
           </div>
           <div id="mcpTokenList" style="display:flex; flex-direction:column; gap:8px; margin-top:14px;"></div>
         </div>
 
-        <!-- 15个受控工具卡片矩阵 -->
-        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; margin-top:16px;">
+        <!-- 受控工具卡片矩阵：进入面板时通过 tools/list 动态渲染，失败时保留内置常用工具兜底 -->
+        <div id="mcpToolGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:14px; margin-top:16px;">
           <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <span style="font-weight:700; color:var(--accent);">sdui.app.list</span>
@@ -1164,13 +1314,13 @@
   <!-- 新增或更新小程序模态框 -->
   <div class="modal-overlay" id="addAppModal">
     <div class="modal-dialog">
-      <div style="font-size:18px; font-weight:700;">新增或更新小程序主体</div>
+      <div style="font-size:18px; font-weight:700;" id="appModalTitle">新增或更新小程序主体</div>
       <div class="form-group">
         <label class="form-label">小程序 AppID (唯一标识)</label>
         <input type="text" id="newAppId" class="form-input" placeholder="如 wx1234567890abcdef" />
       </div>
       <div class="form-group">
-        <label class="form-label">小程序 Secret (换取 OpenID)</label>
+        <label class="form-label">小程序 Secret (编辑时留空则不修改)</label>
         <input type="text" id="newAppSecret" class="form-input" placeholder="微信公众平台生成的 32 位密钥" />
       </div>
       <div class="form-group">
@@ -1192,6 +1342,7 @@
       <div class="form-group"><label class="form-label">支付商户私钥 PEM</label><textarea id="newPaymentPrivateKey" class="form-input" rows="4"></textarea></div>
       <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
         <button class="btn-ctrl" onclick="checkProductionReadiness()">生产预检</button>
+        <button class="btn-ctrl" id="appModalDeleteBtn" style="color:#ff453a; display:none;" onclick="deleteCurrentApp()">🗑 删除小程序</button>
         <button class="btn-ctrl" onclick="closeAddAppModal()">取消</button>
         <button class="btn-save" onclick="submitAddApp()">保存配置</button>
       </div>
@@ -1434,22 +1585,25 @@
     // 切换功能 Tab
     function switchTab(tab) {
       document.getElementById('tabSDUI').className = `tab-btn ${tab === 'sdui' ? 'active' : ''}`;
-      document.getElementById('tabDrama').className = `tab-btn ${tab === 'drama' ? 'active' : ''}`;
-      document.getElementById('tabVideo').className = `tab-btn ${tab === 'video' ? 'active' : ''}`;
+      document.getElementById('tabCapability').className = `tab-btn ${tab === 'capability' ? 'active' : ''}`;
       document.getElementById('tabUsers').className = `tab-btn ${tab === 'users' ? 'active' : ''}`;
       document.getElementById('tabMCP').className = `tab-btn ${tab === 'mcp' ? 'active' : ''}`;
 
       document.getElementById('panelSDUI').style.display = tab === 'sdui' ? 'block' : 'none';
-      document.getElementById('panelDrama').style.display = tab === 'drama' ? 'block' : 'none';
-      document.getElementById('panelVideo').style.display = tab === 'video' ? 'block' : 'none';
+      document.getElementById('panelCapability').style.display = tab === 'capability' ? 'block' : 'none';
       document.getElementById('panelUsers').style.display = tab === 'users' ? 'block' : 'none';
       document.getElementById('panelMCP').style.display = tab === 'mcp' ? 'block' : 'none';
 
       if (tab === 'users') {
         loadAdminUsers();
       }
+      if (tab === 'capability') {
+        loadCapabilityTab();
+      }
       if (tab === 'mcp') {
-        loadMcpTokens();
+        loadMcpTokens()
+        loadMcpTools()
+        fillMcpEndpoint()
       }
     }
 
@@ -1470,9 +1624,6 @@
             </option>
           `).join('');
           select.value = currentAppId;
-          const currentApp = currentAppList.find(app => app.app_id === currentAppId);
-          const cdnInput = document.getElementById('appCdnUrl');
-          if (cdnInput) cdnInput.value = currentApp?.cos_cdn_url || '';
         }
       } catch (err) {
         console.error('加载小程序列表失败:', err);
@@ -1486,23 +1637,6 @@
       await loadPages();
       await loadPageDetail();
       showToast(`已切换至小程序: ${currentAppId}`);
-    }
-
-    // 保存当前小程序的图片 CDN 配置。
-    async function saveCurrentAppCdn() {
-      const cdnURL = document.getElementById('appCdnUrl').value.trim();
-      try {
-        const res = await adminFetch('/api/v1/admin/apps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ app_id: currentAppId, app_name: (currentAppList.find(app => app.app_id === currentAppId) || {}).app_name || currentAppId, cos_cdn_url: cdnURL })
-        });
-        const json = await res.json();
-        if (json.code === 0) showToast('图片 CDN 配置已保存');
-        else alert(json.msg || '保存 CDN 配置失败');
-      } catch (err) {
-        alert(err.message || '保存 CDN 配置失败');
-      }
     }
 
     // 2. 加载指定小程序的动态页面列表
@@ -2944,9 +3078,60 @@
       container.innerHTML = blocks.map(b => renderSimulatorNode(b, 0)).join('');
     }
 
+    // 对当前页面执行发布级强校验 (不落库，仅输出校验报告)。
+    async function validateCurrentPage() {
+      if (!currentDynamicPage || !currentPageId) {
+        showToast('请先选择页面');
+        return;
+      }
+      const payload = {
+        app_id: currentAppId,
+        page_id: currentPageId,
+        title: currentDynamicPage.title,
+        business_type: currentDynamicPage.business_type,
+        intent: currentDynamicPage.intent || 'watch',
+        theme: currentDynamicPage.theme,
+        accent_color: currentDynamicPage.accent_color || '#FF9F0A',
+        require_auth: !!currentDynamicPage.require_auth,
+        hidden: !!currentDynamicPage.hidden,
+        share_config: typeof currentDynamicPage.share_config === 'string' ? currentDynamicPage.share_config : JSON.stringify(currentDynamicPage.share_config || {}),
+        blocks: JSON.stringify(currentDynamicPage.blocks || []),
+        status: 'published'
+      };
+      try {
+        const res = await adminFetch('/api/v1/admin/page/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.code !== 0) {
+          showToast('❌ ' + (json.msg || '校验失败'));
+          return;
+        }
+        const report = json.data || {};
+        const errors = report.errors || [];
+        const warnings = report.warnings || [];
+        const suggestions = report.suggestions || [];
+        if (report.is_valid && errors.length === 0) {
+          showToast(`✅ 强校验通过 (${report.block_count || 0} 个积木${warnings.length ? `，${warnings.length} 条警告` : ''})`);
+          if (warnings.length > 0) {
+            alert('警告项 (' + warnings.length + '):\n' + warnings.map(w => `• ${w}`).join('\n'));
+          }
+          return;
+        }
+        const lines = [];
+        if (errors.length > 0) lines.push(`阻断项 (${errors.length}):\n` + errors.map(e => `• ${e}`).join('\n'));
+        if (warnings.length > 0) lines.push(`警告项 (${warnings.length}):\n` + warnings.map(w => `• ${w}`).join('\n'));
+        if (suggestions.length > 0) lines.push(`修复建议:\n` + suggestions.map(s => `• ${s}`).join('\n'));
+        alert(lines.join('\n\n'));
+      } catch (err) {
+        showToast('❌ ' + err.message);
+      }
+    }
+
     // 5. 保存草稿至草稿箱 (不影响当前线上运行版本)
-    async function saveDraftWork() {
-      if (!currentDynamicPage) {
+    async function saveDraftWork() {      if (!currentDynamicPage) {
         showToast('请先新建页面');
         return;
       }
@@ -3198,11 +3383,345 @@
     }
 
     // 弹窗控制：添加小程序
-    function openAddAppModal() {
-      document.getElementById('addAppModal').style.display = 'flex';
+    // ============ 能力与资源配置 Tab ============
+    const CAPABILITY_STATE_LABELS = { disabled: '已禁用', configured: '已配置未启用', enabled: '已启用', blocked: '已阻断', degraded: '降级运行' };
+
+    // 加载能力矩阵、WebView 注册表与商品列表。
+    async function loadCapabilityTab() {
+      await Promise.all([loadCapabilityMatrix(), loadWebViewRegistry(), loadProductList()]);
     }
+
+    let currentCapabilityRows = [];
+
+    // 加载租户能力矩阵并渲染可编辑表格。
+    async function loadCapabilityMatrix() {
+      const tbody = document.getElementById('capabilityTableBody');
+      try {
+        const res = await adminFetch(`/api/v1/admin/capabilities?app_id=${encodeURIComponent(currentAppId)}`);
+        const json = await res.json();
+        if (json.code !== 0 || !Array.isArray(json.data)) {
+          currentCapabilityRows = [];
+          tbody.innerHTML = `<tr><td colspan="6" style="padding:14px; color:#ff453a;">${escapeHtml(json.msg || '加载失败')}</td></tr>`;
+          return;
+        }
+        currentCapabilityRows = json.data;
+        tbody.innerHTML = json.data.map(item => {
+          const cfg = item.config || {};
+          const states = ['disabled', 'configured', 'enabled', 'blocked', 'degraded'].map(s =>
+            `<option value="${s}" ${(cfg.state || 'disabled') === s ? 'selected' : ''}>${CAPABILITY_STATE_LABELS[s] || s}</option>`).join('');
+          const reviews = ['not_submitted', 'in_review', 'approved', 'rejected'].map(s =>
+            `<option value="${s}" ${(cfg.review_status || 'not_submitted') === s ? 'selected' : ''}>${s}</option>`).join('');
+          return `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+            <td style="padding:8px 10px; font-weight:700; color:#fff;">${escapeHtml(item.key)}<div style="font-size:10px; color:var(--text-sub);">v${escapeHtml(item.version || '')}</div></td>
+            <td style="padding:8px 10px;">${escapeHtml(item.implementation_status || '')}</td>
+            <td style="padding:8px 10px;"><select data-cap-state="${escapeHtml(item.key)}" class="form-select" style="padding:4px 8px;">${states}</select></td>
+            <td style="padding:8px 10px;"><select data-cap-review="${escapeHtml(item.key)}" class="form-select" style="padding:4px 8px;">${reviews}</select></td>
+            <td style="padding:8px 10px;"><input data-cap-reason="${escapeHtml(item.key)}" class="form-input" style="padding:4px 8px; min-width:140px;" value="${escapeHtml(cfg.reason || '')}" /></td>
+            <td style="padding:8px 10px; text-align:right;"><button class="btn-ctrl" onclick="saveCapability('${escapeHtml(item.key)}')">保存</button></td>
+          </tr>`;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="padding:14px; color:#ff453a;">${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    // 保存单个能力的租户配置；启用必须携带人工确认，协议版本沿用服务端返回值。
+    async function saveCapability(key) {
+      const row = currentCapabilityRows.find(item => item.key === key);
+      if (!row) {
+        showToast('❌ 能力数据未加载，请先刷新');
+        return;
+      }
+      const state = document.querySelector(`[data-cap-state="${key}"]`).value;
+      const confirmed = state === 'enabled' ? confirm(`确认启用能力 ${key}？启用会立即对线上小程序生效。`) : false;
+      const config = { ...(row.config || {}) };
+      config.state = state;
+      config.review_status = document.querySelector(`[data-cap-review="${key}"]`).value;
+      config.reason = document.querySelector(`[data-cap-reason="${key}"]`).value.trim();
+      if (!config.protocol_version) config.protocol_version = row.version || '';
+      try {
+        const res = await adminFetch('/api/v1/admin/capability', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: currentAppId, capability: key, confirmed, config })
+        });
+        const json = await res.json();
+        showToast(json.code === 0 ? `✅ 能力 ${key} 已更新` : `❌ ${json.msg || '保存失败'}`);
+        if (json.code === 0) loadCapabilityMatrix();
+      } catch (err) {
+        showToast('❌ ' + err.message);
+      }
+    }
+
+    let currentWebViewRows = [];
+
+    // 加载 WebView 注册表。
+    async function loadWebViewRegistry() {
+      try {
+        const res = await adminFetch(`/api/v1/admin/webviews?app_id=${encodeURIComponent(currentAppId)}`);
+        const json = await res.json();
+        currentWebViewRows = json.code === 0 && Array.isArray(json.data) ? json.data : [];
+      } catch (err) {
+        currentWebViewRows = [];
+      }
+      renderWebViewRows();
+    }
+
+    // 渲染 WebView 登记行。
+    function renderWebViewRows() {
+      const tbody = document.getElementById('webViewTableBody');
+      if (currentWebViewRows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; color:var(--text-sub);">暂无登记，点击「增加登记」维护 open_webview 白名单</td></tr>';
+        return;
+      }
+      tbody.innerHTML = currentWebViewRows.map((entry, index) => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+          <td style="padding:8px 10px;"><input data-wv-key="${index}" class="form-input" style="padding:4px 8px; min-width:110px;" value="${escapeHtml(entry.url_key || '')}" /></td>
+          <td style="padding:8px 10px;"><input data-wv-url="${index}" class="form-input" style="padding:4px 8px; min-width:220px;" value="${escapeHtml(entry.url || '')}" placeholder="https://" /></td>
+          <td style="padding:8px 10px;"><input data-wv-purpose="${index}" class="form-input" style="padding:4px 8px; min-width:120px;" value="${escapeHtml(entry.purpose || '')}" /></td>
+          <td style="padding:8px 10px;"><input data-wv-version="${index}" class="form-input" style="padding:4px 8px; width:70px;" value="${escapeHtml(entry.version || '')}" /></td>
+          <td style="padding:8px 10px; text-align:center;"><input type="checkbox" data-wv-enabled="${index}" ${entry.enabled === false ? '' : 'checked'} /></td>
+          <td style="padding:8px 10px; text-align:right;"><button class="btn-ctrl" style="color:#ff453a;" onclick="removeWebViewRow(${index})">删除</button></td>
+        </tr>`).join('');
+    }
+
+    // 新增一行 WebView 登记。
+    function addWebViewRow() {
+      currentWebViewRows.push({ url_key: '', url: 'https://', purpose: '', version: 'v1', enabled: true });
+      renderWebViewRows();
+    }
+
+    // 删除一行 WebView 登记。
+    function removeWebViewRow(index) {
+      currentWebViewRows.splice(index, 1);
+      renderWebViewRows();
+    }
+
+    // 整表保存 WebView 注册表。
+    async function saveWebViewRegistry() {
+      const rows = currentWebViewRows.map((_, index) => ({
+        url_key: document.querySelector(`[data-wv-key="${index}"]`).value.trim(),
+        url: document.querySelector(`[data-wv-url="${index}"]`).value.trim(),
+        purpose: document.querySelector(`[data-wv-purpose="${index}"]`).value.trim(),
+        version: document.querySelector(`[data-wv-version="${index}"]`).value.trim(),
+        enabled: document.querySelector(`[data-wv-enabled="${index}"]`).checked
+      }));
+      try {
+        const res = await adminFetch('/api/v1/admin/webviews', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: currentAppId, entries: rows })
+        });
+        const json = await res.json();
+        showToast(json.code === 0 ? '✅ WebView 注册表已保存' : `❌ ${json.msg || '保存失败'}`);
+      } catch (err) {
+        showToast('❌ ' + err.message);
+      }
+    }
+
+    let currentProductRows = [];
+
+    // 加载商品列表。
+    async function loadProductList() {
+      const tbody = document.getElementById('productTableBody');
+      try {
+        const res = await adminFetch(`/api/v1/admin/products?app_id=${encodeURIComponent(currentAppId)}`);
+        const json = await res.json();
+        currentProductRows = json.code === 0 && Array.isArray(json.data) ? json.data : [];
+        if (json.code !== 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="padding:12px; color:#ff453a;">${escapeHtml(json.msg || '加载失败')}</td></tr>`;
+          return;
+        }
+        if (currentProductRows.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; color:var(--text-sub);">暂无商品，点击「新增商品」配置支付金额</td></tr>';
+          return;
+        }
+        tbody.innerHTML = currentProductRows.map(p => `
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+            <td style="padding:8px 10px; font-weight:700; color:#fff;">${escapeHtml(p.sku)}</td>
+            <td style="padding:8px 10px;">${escapeHtml(p.name)}</td>
+            <td style="padding:8px 10px; color:var(--text-sub);">${escapeHtml(p.description || '')}</td>
+            <td style="padding:8px 10px;">¥${((p.price_fen || 0) / 100).toFixed(2)}</td>
+            <td style="padding:8px 10px;">${escapeHtml(p.status || '')}</td>
+            <td style="padding:8px 10px; text-align:right;"><button class="btn-ctrl" onclick="openProductModal('${escapeHtml(p.sku)}')">编辑</button></td>
+          </tr>`).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="padding:12px; color:#ff453a;">${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    // 打开商品编辑流程；传 sku 为编辑回填，否则为新增 (同 SKU 保存即覆盖更新)。
+    function openProductModal(editSku) {
+      const sku = prompt('商品 SKU (英文/数字标识):', editSku || '');
+      if (sku === null) return;
+      const existing = currentProductRows.find(p => p.sku === sku.trim());
+      const name = prompt('商品名称:', existing ? existing.name : '');
+      if (name === null) return;
+      const description = prompt('商品描述 (可留空):', existing ? (existing.description || '') : '');
+      if (description === null) return;
+      const priceYuan = prompt('价格 (元):', existing ? ((existing.price_fen || 0) / 100).toFixed(2) : '6.00');
+      if (priceYuan === null) return;
+      const priceFen = Math.round(parseFloat(priceYuan) * 100);
+      const status = existing ? (existing.status || 'active') : 'active';
+      if (!sku.trim() || !name.trim() || !(priceFen > 0)) {
+        showToast('❌ SKU、名称与有效价格必填');
+        return;
+      }
+      saveProduct({ sku: sku.trim(), name: name.trim(), description: description.trim(), price_fen: priceFen, status });
+    }
+
+    // 保存商品 (同 SKU 直接覆盖更新)。
+    async function saveProduct(product) {
+      try {
+        const res = await adminFetch('/api/v1/admin/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...product, app_id: currentAppId })
+        });
+        const json = await res.json();
+        showToast(json.code === 0 ? '✅ 商品已保存' : `❌ ${json.msg || '保存失败'}`);
+        if (json.code === 0) loadProductList();
+      } catch (err) {
+        showToast('❌ ' + err.message);
+      }
+    }
+
+    // 执行运营沙箱动作。
+    async function executeSandboxOperation() {
+      const box = document.getElementById('sandboxResultBox');
+      let payload = {};
+      const payloadRaw = document.getElementById('sandboxPayload').value.trim();
+      if (payloadRaw) {
+        try {
+          payload = JSON.parse(payloadRaw);
+        } catch (err) {
+          box.textContent = '❌ 业务参数不是合法 JSON: ' + err.message;
+          return;
+        }
+      }
+      try {
+        const res = await adminFetch('/api/v1/admin/operations/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app_id: currentAppId,
+            endpoint: document.getElementById('sandboxEndpoint').value,
+            open_id: document.getElementById('sandboxOpenId').value.trim(),
+            payload,
+            idempotency_key: document.getElementById('sandboxIdemKey').value.trim() || `sandbox-${Date.now()}`
+          })
+        });
+        const json = await res.json();
+        box.textContent = json.code === 0 ? JSON.stringify(json.data, null, 2) : `❌ ${json.msg || '执行失败'}`;
+      } catch (err) {
+        box.textContent = '❌ ' + err.message;
+      }
+    }
+
+    // 查看最近的运营沙箱操作记录。
+    async function refreshSandboxOps() {
+      const box = document.getElementById('sandboxResultBox');
+      try {
+        const res = await adminFetch(`/api/v1/admin/operations?app_id=${encodeURIComponent(currentAppId)}`);
+        const json = await res.json();
+        box.textContent = json.code === 0 ? JSON.stringify(json.data, null, 2) : `❌ ${json.msg || '读取失败'}`;
+      } catch (err) {
+        box.textContent = '❌ ' + err.message;
+      }
+    }
+
+    // 执行支付沙箱状态机。
+    async function runPaySandbox() {
+      const userId = parseInt(document.getElementById('paySandboxUserId').value, 10) || 0;
+      if (userId <= 0) {
+        showToast('❌ 请填写有效的 user_id');
+        return;
+      }
+      try {
+        const res = await adminFetch('/api/v1/admin/payment/sandbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app_id: currentAppId,
+            user_id: userId,
+            sku: document.getElementById('paySandboxSku').value.trim(),
+            out_trade_no: document.getElementById('paySandboxTradeNo').value.trim(),
+            operation: document.getElementById('paySandboxOperation').value,
+            idempotency_key: `pay-sandbox-${Date.now()}`
+          })
+        });
+        const json = await res.json();
+        document.getElementById('sandboxResultBox').textContent = json.code === 0 ? JSON.stringify(json.data, null, 2) : `❌ ${json.msg || '执行失败'}`;
+      } catch (err) {
+        showToast('❌ ' + err.message);
+      }
+    }
+
+    // 打开新增小程序弹窗。
+    function openAddAppModal() {
+      const modal = document.getElementById('addAppModal');
+      document.getElementById('appModalTitle').textContent = '新增小程序主体';
+      ['newAppId', 'newAppSecret', 'newAppName', 'newAppCosCdnUrl', 'newPaymentMchId', 'newPaymentSerial', 'newPaymentV3Key', 'newPaymentPrivateKey', 'newTencentMapKey', 'newSubscribeTemplateIds', 'newAdUnitIds'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('newAppId').readOnly = false;
+      document.getElementById('newAppId').style.opacity = '1';
+      document.getElementById('appModalDeleteBtn').style.display = 'none';
+      modal.style.display = 'flex';
+    }
+
+    // 打开编辑小程序弹窗并回填当前租户配置。
+    function openEditAppModal() {
+      const app = currentAppList.find(item => item.app_id === currentAppId);
+      if (!app) {
+        showToast('请先选择小程序');
+        return;
+      }
+      const modal = document.getElementById('addAppModal');
+      document.getElementById('appModalTitle').textContent = `编辑小程序 · ${app.app_name || app.app_id}`;
+      document.getElementById('newAppId').value = app.app_id;
+      document.getElementById('newAppId').readOnly = true;
+      document.getElementById('newAppId').style.opacity = '0.6';
+      document.getElementById('newAppSecret').value = app.app_secret || '';
+      document.getElementById('newAppSecret').placeholder = '留空则不修改';
+      document.getElementById('newAppName').value = app.app_name || '';
+      document.getElementById('newAppCosCdnUrl').value = app.cos_cdn_url || '';
+      document.getElementById('newPaymentMchId').value = app.payment_mch_id || '';
+      document.getElementById('newPaymentSerial').value = app.payment_mch_serial_no || '';
+      document.getElementById('newPaymentV3Key').value = app.payment_api_v3_key || '';
+      document.getElementById('newPaymentPrivateKey').value = app.payment_private_key || '';
+      document.getElementById('newTencentMapKey').value = app.tencent_map_key || '';
+      document.getElementById('newSubscribeTemplateIds').value = app.subscribe_template_ids || '';
+      document.getElementById('newAdUnitIds').value = app.ad_unit_ids || '';
+      document.getElementById('appModalDeleteBtn').style.display = 'inline-block';
+      modal.style.display = 'flex';
+    }
+
     function closeAddAppModal() {
       document.getElementById('addAppModal').style.display = 'none';
+    }
+
+    // 删除当前小程序 (双确认 + 后端依赖守卫)。
+    async function deleteCurrentApp() {
+      const appId = document.getElementById('newAppId').value.trim();
+      if (!confirm(`确认删除小程序 ${appId}？\n若其下仍有页面、用户、商品等数据将被后端拒绝。`)) return;
+      if (!confirm('再次确认：该操作不可恢复，确定删除？')) return;
+      try {
+        const res = await adminFetch(`/api/v1/admin/apps/${encodeURIComponent(appId)}?confirmed=true`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.code === 0) {
+          closeAddAppModal();
+          currentAppId = '';
+          await loadApps();
+          await onAppChanged();
+          showToast('🗑 小程序已删除');
+        } else {
+          alert(json.msg || '删除失败');
+        }
+      } catch (err) {
+        alert('删除异常: ' + err.message);
+      }
     }
     async function submitAddApp() {
       const appId = document.getElementById('newAppId').value.trim();
@@ -3235,9 +3754,9 @@
           currentAppId = appId;
           await loadApps();
           await onAppChanged();
-          showToast('✅ 小程序添加成功！');
+          showToast('✅ 小程序配置已保存！');
         } else {
-          alert('添加失败: ' + json.msg);
+          alert('保存失败: ' + json.msg);
         }
       } catch (e) {
         alert('提交异常: ' + e.message);
@@ -3605,6 +4124,107 @@
     }
 
     // ==================== AI MCP 在线测试 Playground ====================
+    // 通用剪贴板复制：优先 Clipboard API；非安全上下文 (HTTP) 或被拒绝时降级 execCommand；
+    // 仍失败则全选输入框内容，提示手动 Ctrl+C，杜绝"点复制无任何反应"。
+    async function copyTextToClipboard(text, successMsg) {
+      let copied = false
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text)
+          copied = true
+        } catch (e) { copied = false }
+      }
+      if (!copied) {
+        const textarea = document.createElement('textarea')
+        textarea.value = text
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+        try { copied = document.execCommand('copy') } catch (e) { copied = false }
+        document.body.removeChild(textarea)
+      }
+      const tokenInput = document.getElementById('mcpCreatedToken')
+      if (tokenInput && tokenInput.value === text) {
+        tokenInput.focus()
+        tokenInput.select()
+      }
+      showToast(copied ? successMsg : '自动复制失败，已全选内容，请按 Ctrl+C 手动复制')
+      return copied
+    }
+
+    // 填充 MCP 接入地址与客户端配置示例 (随当前访问域名自动生成)
+    function fillMcpEndpoint() {
+      const endpoint = `${window.location.origin}/api/v1/mcp`
+      const urlInput = document.getElementById('mcpEndpointUrl')
+      if (urlInput) urlInput.value = endpoint
+      const configInput = document.getElementById('mcpClientConfig')
+      if (configInput) {
+        configInput.value = JSON.stringify({
+          mcpServers: {
+            sdui: { url: endpoint, headers: { 'X-MCP-Key': '你的MCP访问令牌' } }
+          }
+        }, null, 2)
+      }
+    }
+
+    async function copyMcpEndpoint() {
+      await copyTextToClipboard(document.getElementById('mcpEndpointUrl').value, 'MCP 端点地址已复制')
+    }
+
+    async function copyMcpClientConfig() {
+      await copyTextToClipboard(document.getElementById('mcpClientConfig').value, '客户端配置已复制')
+    }
+
+    // MCP 权限范围显示名映射
+    function mcpScopeLabel(scope) {
+      return ({ 'read': '只读', 'write:draft': '读写草稿', 'release': '发布权限' })[scope] || scope
+    }
+
+    // 通过 tools/list 动态拉取全部受控工具，渲染工具矩阵并同步 Playground 下拉列表
+    async function loadMcpTools() {
+      const grid = document.getElementById('mcpToolGrid')
+      try {
+        const res = await adminFetch('/api/v1/mcp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: 'tools/list', params: {} })
+        })
+        const json = await res.json()
+        const tools = (json && json.result && Array.isArray(json.result.tools)) ? json.result.tools : []
+        if (!tools.length) throw new Error(json?.error?.message || '工具清单为空')
+
+        document.getElementById('mcpToolCount').innerText = tools.length
+        grid.innerHTML = tools.map(tool => {
+          const scope = tool.requiredScope || (tool.annotations && tool.annotations.requiredScope) || 'read'
+          const scopeColor = scope === 'release' ? 'rgba(255,69,58,0.2); color:#ff453a' : (scope === 'write:draft' ? 'rgba(10,132,255,0.2); color:#0a84ff' : 'rgba(255,255,255,0.1); color:var(--text-sub)')
+          const props = (tool.inputSchema && tool.inputSchema.properties) ? Object.keys(tool.inputSchema.properties) : []
+          return `
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <span style="font-weight:700; color:var(--accent); font-size:13px;">${escapeHtml(tool.name)}</span>
+              <span style="font-size:10px; background:${scopeColor}; padding:2px 6px; border-radius:4px; flex-shrink:0;">${escapeHtml(mcpScopeLabel(scope))}</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-sub); margin-top:6px; line-height:1.6;">${escapeHtml(tool.description || '')}</div>
+            ${props.length ? `<div style="font-size:11px; color:var(--text-sub); margin-top:8px; opacity:0.8;">参数: ${props.map(p => escapeHtml(p)).join('、')}</div>` : ''}
+          </div>`
+        }).join('')
+
+        // 同步 Playground 工具下拉为全量工具清单
+        const select = document.getElementById('mcpToolSelect')
+        const previous = select.value
+        select.innerHTML = tools.map(tool => `<option value="${escapeHtml(tool.name)}">${escapeHtml(tool.name)} (${escapeHtml(mcpScopeLabel(tool.requiredScope || 'read'))})</option>`).join('')
+        if (tools.some(tool => tool.name === previous)) select.value = previous
+        onMcpToolSelectChanged()
+      } catch (err) {
+        const hint = document.createElement('div')
+        hint.style.cssText = 'grid-column:span 2; color:#ff453a; font-size:12px;'
+        hint.textContent = `工具清单加载失败 (${err.message})，以下为内置常用工具：`
+        grid.prepend(hint)
+      }
+    }
+
     function onMcpToolSelectChanged() {
       const tool = document.getElementById('mcpToolSelect').value;
       const inp = document.getElementById('mcpArgsInput');
@@ -3719,9 +4339,9 @@
     }
 
     async function copyMcpToken() {
-      const token = document.getElementById('mcpCreatedToken').value;
-      if (token) await navigator.clipboard.writeText(token);
-      showToast('MCP Token 已复制');
+      const token = document.getElementById('mcpCreatedToken').value
+      if (!token) return
+      await copyTextToClipboard(token, 'MCP Token 已复制')
     }
 
     async function deleteMcpToken(id) {
