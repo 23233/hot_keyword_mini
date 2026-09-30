@@ -283,6 +283,7 @@
     /* 右侧控制面板与 Tabs */
     .editor-container {
       flex: 1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 20px;
@@ -366,12 +367,16 @@
     }
 
     .form-label {
+      display: block;
       font-size: 13px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.85);
     }
 
     .form-input, .form-select, .form-textarea {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
       background: rgba(0, 0, 0, 0.4);
       border: 1px solid var(--card-border);
       border-radius: 12px;
@@ -533,15 +538,17 @@
       background: rgba(0, 0, 0, 0.7);
       backdrop-filter: blur(12px);
       display: none;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
+      overflow-y: auto;
       z-index: 1000;
     }
 
     .modal-dialog {
       width: 520px;
       max-width: 90vw;
-      max-height: calc(100vh - 40px);
+      max-height: none;
+      margin: auto;
       overflow-y: auto;
       background: #1c1c1e;
       border-radius: 24px;
@@ -566,6 +573,21 @@
 
       .modal-actions {
         flex-wrap: wrap;
+      }
+    }
+
+    /* 窄屏时模拟器与编辑面板改为纵向堆叠，避免横向溢出 */
+    @media (max-width: 1280px) {
+      .admin-layout {
+        flex-direction: column;
+        gap: 24px;
+        padding: 20px;
+      }
+
+      .simulator-container {
+        position: static;
+        flex: none;
+        align-self: center;
       }
     }
 
@@ -1316,7 +1338,7 @@
     <div class="modal-dialog">
       <div style="font-size:18px; font-weight:700;" id="appModalTitle">新增或更新小程序主体</div>
       <div class="form-group">
-        <label class="form-label">小程序 AppID (唯一标识)</label>
+        <label class="form-label">小程序 AppID (修改后全部租户数据自动迁移)</label>
         <input type="text" id="newAppId" class="form-input" placeholder="如 wx1234567890abcdef" />
       </div>
       <div class="form-group">
@@ -3681,8 +3703,8 @@
       const modal = document.getElementById('addAppModal');
       document.getElementById('appModalTitle').textContent = `编辑小程序 · ${app.app_name || app.app_id}`;
       document.getElementById('newAppId').value = app.app_id;
-      document.getElementById('newAppId').readOnly = true;
-      document.getElementById('newAppId').style.opacity = '0.6';
+      document.getElementById('newAppId').readOnly = false;
+      document.getElementById('newAppId').style.opacity = '1';
       document.getElementById('newAppSecret').value = app.app_secret || '';
       document.getElementById('newAppSecret').placeholder = '留空则不修改';
       document.getElementById('newAppName').value = app.app_name || '';
@@ -3731,6 +3753,29 @@
       if (!appId || !appName) {
         alert('请完整填写 AppID 与小程序名称');
         return;
+      }
+
+      // 编辑态修改 AppID 时先执行改名迁移，再保存其余配置。
+      const originalApp = currentAppList.find(item => item.app_id === currentAppId);
+      if (originalApp && appId !== originalApp.app_id) {
+        if (!confirm(`确认将 AppID 从 ${originalApp.app_id} 修改为 ${appId}？\n该小程序下的页面、用户、商品等全部数据将同步迁移到新 AppID。`)) {
+          return;
+        }
+        try {
+          const renameRes = await adminFetch('/api/v1/admin/apps/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ old_app_id: originalApp.app_id, new_app_id: appId })
+          });
+          const renameJson = await renameRes.json();
+          if (renameJson.code !== 0) {
+            alert('AppID 修改失败: ' + renameJson.msg);
+            return;
+          }
+        } catch (e) {
+          alert('AppID 修改异常: ' + e.message);
+          return;
+        }
       }
 
       try {
@@ -4294,21 +4339,29 @@
       }
     }
 
+    let lastCreatedMcpToken = '';
+    let lastCreatedMcpTokenId = 0;
+
     async function loadMcpTokens() {
       const container = document.getElementById('mcpTokenList');
       try {
         const res = await adminFetch('/api/v1/admin/mcp-tokens');
         const json = await res.json();
         const list = Array.isArray(json.data) ? json.data : [];
-        container.innerHTML = list.length ? list.map(item => `
+        container.innerHTML = list.length ? list.map(item => {
+          const canCopy = Number(item.id) === lastCreatedMcpTokenId && lastCreatedMcpToken;
+          return `
           <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; background:rgba(0,0,0,0.25); border-radius:10px;">
-            <div>
+            <div style="min-width:0;">
               <div style="font-size:13px; color:#fff; font-weight:600;">${escapeHtml(item.name)}</div>
               <div style="font-size:11px; color:var(--text-sub); margin-top:3px;">${escapeHtml(item.token_prefix)}... · ${escapeHtml(item.scopes)}${item.last_used_at ? ' · 最近使用 ' + escapeHtml(new Date(item.last_used_at).toLocaleString()) : ''}</div>
             </div>
-            <button class="btn-ctrl danger" onclick="deleteMcpToken(${Number(item.id)})">删除</button>
-          </div>
-        `).join('') : '<div style="color:var(--text-sub); font-size:12px;">当前暂无全局 MCP Token</div>';
+            <div style="display:flex; gap:8px; flex-shrink:0;">
+              ${canCopy ? `<button class="btn-ctrl" onclick="copyCreatedMcpToken()" style="background:rgba(48,209,88,0.2); color:#30d158;">复制令牌</button>` : ''}
+              <button class="btn-ctrl danger" onclick="deleteMcpToken(${Number(item.id)})">删除</button>
+            </div>
+          </div>`;
+        }).join('') : '<div style="color:var(--text-sub); font-size:12px;">当前暂无全局 MCP Token</div>';
       } catch (err) {
         container.innerHTML = `<div style="color:#ff453a; font-size:12px;">加载失败: ${escapeHtml(err.message)}</div>`;
       }
@@ -4332,10 +4385,22 @@
         alert(json.msg || '创建 MCP Token 失败');
         return;
       }
+      lastCreatedMcpToken = json.data.token;
+      lastCreatedMcpTokenId = Number(json.data.record?.id || 0);
       document.getElementById('mcpCreatedToken').value = json.data.token;
       document.getElementById('mcpCreatedTokenBox').style.display = 'block';
+      document.getElementById('mcpCreatedTokenBox').scrollIntoView({ behavior: 'smooth', block: 'center' });
       document.getElementById('mcpTokenName').value = '';
       await loadMcpTokens();
+    }
+
+    // 复制本次会话创建的 MCP Token 明文 (服务端仅存哈希，历史令牌无法再次获取)。
+    async function copyCreatedMcpToken() {
+      if (!lastCreatedMcpToken) {
+        showToast('该令牌明文已不可获取，请重新创建');
+        return;
+      }
+      await copyTextToClipboard(lastCreatedMcpToken, 'MCP Token 已复制');
     }
 
     async function copyMcpToken() {

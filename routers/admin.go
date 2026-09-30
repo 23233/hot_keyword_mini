@@ -400,6 +400,25 @@ func RegisterAdminRoutes(party iris.Party) {
 		ctx.JSON(iris.Map{"code": 0, "msg": "小程序配置已保存"})
 	})
 
+	// 多小程序管理: 修改小程序 AppID (事务迁移全部租户数据，受角色鉴权约束)
+	adminParty.Post("/apps/rename", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
+		var req struct {
+			OldAppID string `json:"old_app_id"`
+			NewAppID string `json:"new_app_id"`
+		}
+		if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.OldAppID) == "" || strings.TrimSpace(req.NewAppID) == "" {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": "新旧 AppID 均不能为空"})
+			return
+		}
+		if err := sduiService.RenameApp(req.OldAppID, req.NewAppID); err != nil {
+			ctx.StatusCode(iris.StatusBadRequest)
+			ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
+			return
+		}
+		ctx.JSON(iris.Map{"code": 0, "msg": "AppID 已修改，全部租户数据已同步迁移"})
+	})
+
 	// 多小程序管理: 删除小程序 (受角色鉴权、显式确认与依赖数据守卫约束)
 	adminParty.Delete("/apps/{app_id:string}", middleware.RequireAdminRole("super_admin", "admin"), func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
