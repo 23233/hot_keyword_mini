@@ -737,59 +737,6 @@ func (s *SDUIService) DeleteApp(appID string) error {
 	return nil
 }
 
-// RenameApp 重命名小程序 AppID；在单事务中同步迁移全部租户数据表，防止产生孤儿数据。
-func (s *SDUIService) RenameApp(oldAppID, newAppID string) error {
-	oldAppID = strings.TrimSpace(oldAppID)
-	newAppID = strings.TrimSpace(newAppID)
-	if oldAppID == "" || newAppID == "" {
-		return errors.New("新旧 AppID 均不能为空")
-	}
-	if oldAppID == newAppID {
-		return errors.New("新 AppID 与原 AppID 相同")
-	}
-	if len(newAppID) > 64 || strings.ContainsAny(newAppID, " \t\r\n") {
-		return errors.New("新 AppID 不合法：长度不超过 64 且不能包含空白字符")
-	}
-	var occupied models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", newAppID).First(&occupied).Error; err == nil {
-		return fmt.Errorf("AppID %q 已被其他小程序占用", newAppID)
-	}
-	tenantTables := []any{
-		&models.DynamicPage{}, &models.DynamicPageDraft{}, &models.DynamicPageRevision{}, &models.DynamicPageTemplate{},
-		&models.CapabilityChangeLog{}, &models.UserSession{}, &models.User{},
-		&models.GameRedeemPackage{}, &models.GameRedeemRecord{},
-		&models.MCPAccessToken{}, &models.WebViewTicket{},
-		&models.Product{}, &models.PaymentOrder{},
-		&models.PlatformOperation{}, &models.WalletAccount{},
-		&models.ArticleCategory{}, &models.Article{}, &models.ArticlePurchase{},
-		&models.MembershipLevel{}, &models.UserMembership{}, &models.ArticleComment{}, &models.ContentAuditRecord{},
-	}
-	err := db.Mysql.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&models.MiniApp{}).Where("app_id = ?", oldAppID).Update("app_id", newAppID)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return errors.New("原小程序不存在")
-		}
-		// 依次迁移全部租户关联表，保证引用完整性。
-		for _, model := range tenantTables {
-			if err := tx.Model(model).Where("app_id = ?", oldAppID).Update("app_id", newAppID).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	sdk.InvalidateMiniSdk(oldAppID)
-	sdk.InvalidateMiniSdk(newAppID)
-	InvalidatePaymentClient(oldAppID)
-	InvalidatePaymentClient(newAppID)
-	return nil
-}
-
 // ListPages 获取指定小程序下的全部动态页面列表
 func (s *SDUIService) ListPages(appID string) ([]models.DynamicPage, error) {
 	if appID == "" {
