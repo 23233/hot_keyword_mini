@@ -37,6 +37,41 @@ export interface ActionContext {
 const isHTTPSURL = (value: unknown): boolean => /^https:\/\/[^/\s?#]+(?:[/?#]\S*)?$/i.test(String(value || ''))
 const isEndpointName = (value: unknown): boolean => /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/.test(String(value || ''))
 
+// request 动作无 endpoint 时允许命中的同源业务路由前缀白名单
+const ALLOWED_RELATIVE_API_PREFIXES = [
+  '/api/v1/page/',
+  '/api/v1/action/execute',
+  '/api/v1/drama/',
+  '/api/v1/share/card',
+  '/api/v1/articles',
+  '/api/v1/article-categories',
+  '/api/v1/comments',
+  '/api/v1/membership/plans',
+  '/api/v1/membership/orders'
+]
+
+// 无论白名单如何演化都禁止命中的敏感内部路由前缀
+const DENIED_RELATIVE_API_PREFIXES = [
+  '/api/v1/admin',
+  '/api/v1/mcp',
+  '/api/v1/payment/notify',
+  '/api/v1/payment/sandbox',
+  '/api/v1/webview/ticket',
+  '/api/v1/content-audit',
+  '/api/v1/code'
+]
+
+// 原型污染危险键：协议数据中禁止作为对象键写入或读取
+const UNSAFE_PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/** 判断相对请求地址是否落在受控业务路由白名单内 */
+function isAllowedRelativeAPI(targetUrl: string): boolean {
+  if (DENIED_RELATIVE_API_PREFIXES.some((prefix) => targetUrl === prefix || targetUrl.startsWith(`${prefix}/`) || targetUrl.startsWith(`${prefix}?`))) {
+    return false
+  }
+  return ALLOWED_RELATIVE_API_PREFIXES.some((prefix) => targetUrl === prefix || targetUrl.startsWith(prefix))
+}
+
 function externalUploadHeaders(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const blocked = new Set(['authorization', 'cookie', 'x-wx-appid', 'x-app-id'])
@@ -56,6 +91,8 @@ function getByPath(obj: any, path: string): any {
   const parts = path.split('.')
   let curr = obj
   for (const p of parts) {
+    // 阻断原型链危险键读取，避免绑定表达式越界访问内部原型
+    if (UNSAFE_PROTO_KEYS.has(p)) return undefined
     if (curr == null) return undefined
     curr = curr[p]
   }
@@ -134,6 +171,8 @@ export function resolveObjectBindings(target: any, context?: ActionContext): any
   if (typeof target === 'object') {
     const result: Record<string, any> = {}
     for (const k of Object.keys(target)) {
+      // 阻断原型污染：危险键直接丢弃，不做普通赋值
+      if (UNSAFE_PROTO_KEYS.has(k)) continue
       result[k] = resolveObjectBindings(target[k], context)
     }
     return result
@@ -146,6 +185,8 @@ export function resolveObjectBindings(target: any, context?: ActionContext): any
 function resolveActionPayload(payload: Record<string, any>, context?: ActionContext): Record<string, any> {
   const resolved: Record<string, any> = {}
   Object.keys(payload || {}).forEach((key) => {
+    // 阻断原型污染：危险键直接丢弃
+    if (UNSAFE_PROTO_KEYS.has(key)) return
     resolved[key] = key === 'on_success' || key === 'on_error' || key === 'endpoint'
       ? payload[key]
       : resolveObjectBindings(payload[key], context)
@@ -168,6 +209,8 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context: A
       }
       const result: Record<string, any> = {}
       Object.keys(value).forEach((key) => {
+        // 阻断原型污染：危险键直接丢弃
+        if (UNSAFE_PROTO_KEYS.has(key)) return
         // 只有 tabs 块直接选项列表的 key/id 属于结构字段。
         result[key] = preserveIdentity && (key === 'key' || key === 'id')
           ? value[key]
@@ -180,6 +223,9 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context: A
   return resolve(props) || {}
 }
 
+// 动作级联链最大执行深度熔断阈值，防止协议配置出环或超深导致死循环
+const MAX_ACTION_CHAIN_DEPTH = 32
+
 /**
  * 批量分发积木事件动作列表 (支持 events.tap 动作序列按序执行、前置失败安全阻断与上下文流转管道)
  */
@@ -188,7 +234,14 @@ export async function dispatchEvents(events?: Record<string, BlockAction[] | Blo
   const target = events[eventName]
   if (!target) return undefined
 
-  let currentContext: ActionContext = { ...context }
+  // 深度熔断：级联链超过上限时安全阻断后续执行，避免死循环或未捕获异常
+  const chainDepth = Number((context as any)?.__chain_depth) || 0
+  if (chainDepth >= MAX_ACTION_CHAIN_DEPTH) {
+    console.error('[SDUI 动作熔断] 级联链嵌套超过上限，已停止执行后续动作')
+    return false
+  }
+
+  let currentContext: ActionContext = { ...context, __chain_depth: chainDepth + 1 } as ActionContext
   let lastResult: any = currentContext.result
 
   if (Array.isArray(target)) {
@@ -521,12 +574,14 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         break
       }
 
-      let targetUrl = String(payload.url || payload.web_url || '')
+      let targetUrl = String(payload.url || '')
       if (!targetUrl || !isHTTPSURL(targetUrl)) {
         Taro.showToast({ title: 'WebView 入口不可用', icon: 'none' })
         actionSuccess = false
         break
       }
+      // 说明：payload.url 只能来自服务端信封装配时按 url_key 注入的登记地址
+      // (ResolveWebViewPayload)；协议自带的 web_url 旁路已移除，与服务端发布门禁保持一致。
 
       // 需要登录的 WebView 不直接暴露用户标识，先换取一次性短期票据地址。
       if (action.require_auth) {
@@ -574,13 +629,13 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       const stateTarget = typeof payload.target === 'string' ? payload.target : ''
       if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'loading')
 
-      // 1. 严格端点安全白名单门禁: endpoint 优先；若为自定义 url 必须为同源相对路径
+      // 1. 严格端点安全白名单门禁: endpoint 优先；若为自定义 url 必须为同源且命中受控业务路由白名单
       if (endpoint) {
         targetUrl = '/api/v1/action/execute'
       } else {
         const isRelative = targetUrl.startsWith('/') && !targetUrl.startsWith('//')
-        if (!isRelative) {
-          console.error(`[安全拦截] request_data 拒绝外部非同源地址: ${targetUrl}`)
+        if (!isRelative || !isAllowedRelativeAPI(targetUrl)) {
+          console.error(`[安全拦截] request_data 拒绝未授权的请求地址: ${targetUrl}`)
           Taro.showToast({ title: '非法请求端点被拦截', icon: 'none' })
           if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'error')
           actionSuccess = false
@@ -630,10 +685,11 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         }
       }
 
-      // 3. 处理 URL 路径参数替换 (如 /api/v1/actions/game/{game_id}/redeem)
+      // 3. 处理 URL 路径参数替换 (如 /api/v1/actions/game/{game_id}/redeem)；使用字符串替换避免键名注入正则元字符
       if (resolvedPathParams && typeof resolvedPathParams === 'object') {
         for (const [k, v] of Object.entries(resolvedPathParams)) {
-          targetUrl = targetUrl.replace(new RegExp(`\\{${k}\\}`, 'g'), encodeURIComponent(String(v)))
+          if (!k || UNSAFE_PROTO_KEYS.has(k)) continue
+          targetUrl = targetUrl.split(`{${k}}`).join(encodeURIComponent(String(v)))
         }
       }
 
@@ -708,25 +764,11 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
           successChainHandled = true
           if ((await dispatchEvents({ tap: successActions }, 'tap', nextContext)) === false) actionSuccess = false
         } else {
-          // 默认成功反馈
-          if (extractedData && extractedData.code) {
-            Taro.setClipboardData({
-              data: String(extractedData.code),
-              success: () => {
-                Taro.vibrateShort({ type: 'medium' })
-                Taro.showToast({
-                  title: `✅ 兑换码 ${extractedData.code} 已复制！`,
-                  icon: 'none',
-                  duration: 3000
-                })
-              }
-            })
-          } else {
-            Taro.showToast({
-              title: extractedData?.msg || '操作成功',
-              icon: 'success'
-            })
-          }
+          // 默认成功反馈；兑换码等敏感内容必须由协议显式配置 copy_text 动作链，通用层不代劳
+          Taro.showToast({
+            title: extractedData?.msg || '操作成功',
+            icon: 'success'
+          })
         }
       } catch (err: any) {
         actionSuccess = false

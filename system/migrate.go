@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hot_keyword/db"
 	"hot_keyword/models"
 	"hot_keyword/services"
@@ -18,8 +19,74 @@ import (
 	"gorm.io/gorm"
 )
 
+// compositeUniquePreflight 组合唯一索引迁移预检项
+type compositeUniquePreflight struct {
+	// 参与组合唯一约束的列 (顺序与模型 uniqueIndex 标签一致)
+	columns []string
+	// 数据库物理表名
+	table string
+	// 业务含义说明，用于输出可读的错误信息
+	label string
+}
+
+// preflightCompositeUniqueConflicts 在 AutoMigrate 之前预检组合唯一索引迁移的脏数据。
+// 返回聚合后的明确错误 (指出具体表、列和行数)，避免启动时只暴露晦涩的 MySQL 建索引错误。
+// 空库 (表尚不存在) 直接跳过，不影响全新环境首次启动。
+func preflightCompositeUniqueConflicts() error {
+	if db.Mysql == nil {
+		return nil
+	}
+	checks := []compositeUniquePreflight{
+		{columns: []string{"app_id", "slug"}, table: "articles", label: "文章 slug"},
+		{columns: []string{"app_id", "slug"}, table: "article_categories", label: "栏目 slug"},
+		{columns: []string{"app_id", "level"}, table: "membership_levels", label: "会员等级"},
+		{columns: []string{"app_id", "sku"}, table: "membership_levels", label: "会员 SKU"},
+	}
+
+	var problems []string
+	for _, check := range checks {
+		// 全新环境表尚不存在，无需预检
+		if !db.Mysql.Migrator().HasTable(check.table) {
+			continue
+		}
+
+		// 1. app_id 为空的遗留行：组合唯一索引 (app_id, ...) 建立时必然冲突
+		var emptyCount int64
+		if err := db.Mysql.Raw(
+			"SELECT COUNT(*) FROM `" + check.table + "` WHERE app_id = '' OR app_id IS NULL",
+		).Scan(&emptyCount).Error; err != nil {
+			return fmt.Errorf("组合唯一索引预检失败: 表 %s 查询 app_id 空值异常: %w", check.table, err)
+		}
+		if emptyCount > 0 {
+			problems = append(problems, fmt.Sprintf("表 %s 有 %d 行 app_id 为空的数据 (%s)，请先回填真实租户 AppID 或归档删除", check.table, emptyCount, check.label))
+		}
+
+		// 2. 同一租户内组合列重复的行
+		var dupCount int64
+		if err := db.Mysql.Raw(
+			"SELECT COUNT(*) FROM (SELECT " + strings.Join(check.columns, ", ") +
+				" FROM `" + check.table + "` GROUP BY " + strings.Join(check.columns, ", ") +
+				" HAVING COUNT(*) > 1) AS dup_probe",
+		).Scan(&dupCount).Error; err != nil {
+			return fmt.Errorf("组合唯一索引预检失败: 表 %s 查询重复数据异常: %w", check.table, err)
+		}
+		if dupCount > 0 {
+			problems = append(problems, fmt.Sprintf("表 %s 存在 %d 组同租户重复的 %s 数据，请先去重后再执行迁移", check.table, dupCount, check.label))
+		}
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("组合唯一索引预检发现冲突数据，已阻止迁移以保护存量库: %s", strings.Join(problems, "；"))
+	}
+	return nil
+}
+
 // Migrate 数据库迁移
 func Migrate() error {
+	// 迁移前置预检：带冲突数据建组合唯一索引必然失败，提前给出可操作的修复指引
+	if err := preflightCompositeUniqueConflicts(); err != nil {
+		return err
+	}
 
 	migrateList := []any{
 		&models.User{},

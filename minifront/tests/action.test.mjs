@@ -176,3 +176,85 @@ test('预签名上传只透传非敏感请求头', async () => {
   assert.equal(result.url, 'https://cdn.example.com/a.png')
   assert.deepEqual({ ...uploaded.header }, { 'Content-Type': 'image/png' })
 })
+
+test('级联链超过深度上限时熔断终止，不死循环不崩溃', async () => {
+  const { dispatchAction, calls } = loadActions()
+  // 构造 60 层 on_success 嵌套链，运行时熔断阈值 32 层
+  let chain = { type: 'toast', payload: { text: '层0' } }
+  for (let i = 1; i <= 60; i++) {
+    chain = { type: 'toast', payload: { text: `层${i}` }, on_success: [chain] }
+  }
+  const result = await dispatchAction(chain)
+  assert.equal(result, false)
+  const toastCount = calls.filter(call => call.method === 'showToast').length
+  assert.ok(toastCount > 0 && toastCount <= 40, `熔断前执行的层数应有限，实际 ${toastCount}`)
+})
+
+test('request_data 相对路径必须命中业务路由白名单', async () => {
+  const { dispatchAction, calls } = loadActions()
+  // 敏感内部路由必须拒绝
+  for (const url of ['/api/v1/admin/apps', '/api/v1/mcp', '/api/v1/payment/notify/wx1', '/api/v1/webview/ticket']) {
+    await dispatchAction({ type: 'request_data', payload: { url, method: 'GET' } }, {})
+  }
+  assert.equal(calls.filter(call => call.method === 'request').length, 0, '敏感路由不得发出请求')
+  // 白名单业务路由允许通过
+  await dispatchAction({ type: 'request_data', payload: { url: '/api/v1/articles?page=1', method: 'GET' } }, {})
+  const request = calls.find(call => call.method === 'request')
+  assert.ok(request, '白名单业务路由应放行')
+  assert.equal(request.options.url, '/api/v1/articles?page=1')
+  // 未登记的任意相对路径拒绝
+  calls.length = 0
+  await dispatchAction({ type: 'request_data', payload: { url: '/api/v1/unknown/path', method: 'GET' } }, {})
+  assert.equal(calls.filter(call => call.method === 'request').length, 0, '未登记路由应拒绝')
+})
+
+test('路径参数键含正则元字符时按字面量替换且不崩溃', async () => {
+  const { dispatchAction, calls } = loadActions()
+  await dispatchAction({
+    type: 'request_data',
+    payload: {
+      url: '/api/v1/articles/{a.b(c)}/comments',
+      method: 'GET',
+      path_params: { 'a.b(c)': '42' }
+    }
+  }, {})
+  const request = calls.find(call => call.method === 'request')
+  assert.equal(request.options.url, '/api/v1/articles/42/comments')
+})
+
+test('协议数据中的原型危险键被丢弃，不污染对象', async () => {
+  const { resolveObjectBindings, dispatchAction } = loadActions()
+  const parsed = JSON.parse('{"ok":1,"__proto__":{"polluted":true},"nested":{"constructor":1}}')
+  const resolved = resolveObjectBindings(parsed, {})
+  assert.equal(resolved.ok, 1)
+  assert.equal(Object.prototype.polluted, undefined, '不得污染 Object.prototype')
+  assert.equal(Object.getOwnPropertyNames(resolved.nested).includes('constructor'), false, '危险键不得成为自有属性')
+  assert.equal(Object.getOwnPropertyNames(resolved).includes('__proto__'), false, '__proto__ 不得成为自有属性')
+  // 绑定路径读取也阻断危险键
+  await dispatchAction({ type: 'set_state', payload: { key: 'probe', value: { path: '$entity.__proto__.polluted' } } }, { entity: parsed, state: {}, updateState: () => {} })
+})
+
+test('请求成功默认不再自动复制 result.code', async () => {
+  const { dispatchAction, calls } = loadActions({ request: async () => ({ code: 'VIP-TEST-CODE', msg: '领取成功' }) })
+  const result = await dispatchAction({ type: 'request_data', payload: { endpoint: 'game.redeem' } }, {})
+  assert.equal(result.code, 'VIP-TEST-CODE')
+  assert.equal(calls.filter(call => call.method === 'setClipboardData').length, 0, '通用层不得代劳复制')
+})
+
+test('open_webview 不得使用 web_url 旁路注入地址', async () => {
+  const { dispatchAction, calls } = loadActions()
+  const result = await dispatchAction({ type: 'open_webview', payload: { url_key: 'help_center', web_url: 'https://evil.example.com' } }, {})
+  assert.equal(result, false)
+  assert.equal(calls.filter(call => call.method === 'navigateTo').length, 0)
+})
+
+test('嵌套事件序列按序执行并向下传递最新结果', async () => {
+  const { dispatchAction, calls } = loadActions()
+  const state = {}
+  await dispatchAction({
+    type: 'toast', payload: { text: '入口' },
+    on_success: [{ type: 'set_state', payload: { key: 'step', value: 1 } }]
+  }, { state, updateState: (key, value) => { state[key] = value } })
+  // 入口动作成功后，子链 set_state 应已写入共享状态
+  assert.equal(state.step, 1)
+})

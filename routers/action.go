@@ -2,6 +2,8 @@
 package routers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"hot_keyword/jwtToken"
 	"hot_keyword/routers/middleware"
 	"hot_keyword/services"
@@ -9,6 +11,12 @@ import (
 
 	"github.com/kataras/iris/v12"
 )
+
+// stableGuestKey 基于租户与客户端来源地址派生稳定的匿名访客标识 (前缀 guest_ 表示未登录身份)
+func stableGuestKey(ctx iris.Context, appID string) string {
+	sum := sha256.Sum256([]byte(appID + "|" + ctx.RemoteAddr()))
+	return "guest_" + hex.EncodeToString(sum[:])[:24]
+}
 
 // ExecuteActionReq 受控业务动作执行请求
 type ExecuteActionReq struct {
@@ -51,6 +59,12 @@ func ExecuteActionHandler(ctx iris.Context) {
 				}
 			}
 		}
+	}
+
+	// 匿名请求派生稳定访客指纹：同一来源地址在限领/频控判定中保持一致身份，
+	// 防止每次请求随机 guest_ 标识绕过"同一访客限领一次"与频控校验。
+	if openID == "" {
+		openID = stableGuestKey(ctx, appID)
 	}
 
 	actionService := services.NewActionEndpointService()

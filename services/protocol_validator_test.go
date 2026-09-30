@@ -4,6 +4,7 @@ package services
 import (
 	"encoding/json"
 	"hot_keyword/models"
+	"strconv"
 	"testing"
 )
 
@@ -306,5 +307,39 @@ func TestProtocolValidation_PlatformActionParams(t *testing.T) {
 		if report := ValidateDynamicPage(buildPage(action)); report.IsValid {
 			t.Errorf("非法 %s 动作未被拦截", action.Type)
 		}
+	}
+}
+
+// TestProtocolValidation_NestedDepthLimit 测试超深嵌套积木树被校验器熔断拒绝
+func TestProtocolValidation_NestedDepthLimit(t *testing.T) {
+	// 构造一个超过 maxNestedBlockDepth 的深层 container 嵌套树
+	deep := `{"id":"leaf","type":"text","props":{"text":"底"}}`
+	for i := 0; i < maxNestedBlockDepth+5; i++ {
+		deep = `{"id":"nest_` + strconv.Itoa(i) + `","type":"container","props":{"children":[` + deep + `]}}`
+	}
+	page := &models.DynamicPage{
+		AppID: "wx516563cfe994bbc6", PageID: "home", Title: "超深嵌套测试", BusinessType: "custom",
+		Blocks: "[" + deep + "]",
+	}
+	report := ValidateDynamicPage(page)
+	if report.IsValid {
+		t.Fatalf("超过嵌套深度上限的积木树应当被拒绝发布")
+	}
+}
+
+// TestProtocolValidation_ActionChainDepthLimit 测试超深 on_success 级联链被校验器熔断拒绝
+func TestProtocolValidation_ActionChainDepthLimit(t *testing.T) {
+	// 构造超过 maxActionChainDepth 的 on_success 链
+	deep := `{"type":"toast","payload":{"text":"链尾"}}`
+	for i := 0; i < maxActionChainDepth+5; i++ {
+		deep = `{"type":"toast","payload":{"text":"层` + strconv.Itoa(i) + `"},"on_success":[` + deep + `]}`
+	}
+	page := &models.DynamicPage{
+		AppID: "wx516563cfe994bbc6", PageID: "home", Title: "超深级联测试", BusinessType: "custom",
+		Blocks: `[{"id":"btn_1","type":"action_button","props":{"text":"触发"},"action":` + deep + `}]`,
+	}
+	report := ValidateDynamicPage(page)
+	if report.IsValid {
+		t.Fatalf("超过级联链深度上限的页面应当被拒绝发布")
 	}
 }

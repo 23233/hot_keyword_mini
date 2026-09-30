@@ -15,6 +15,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// anonymousRedeemHourlyLimit 匿名访客单小时跨礼包累计领取上限 (防刷库存兜底频控)
+const anonymousRedeemHourlyLimit = 5
+
 // ActionEndpointHandler 受控端点处理函数原型
 type ActionEndpointHandler func(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error)
 
@@ -179,7 +182,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 		}, nil
 	}
 
-	// 2. 防重检查: 同一访客标识对同一礼包限领一次；匿名访客由上层生成短期标识。
+	// 2. 防重检查: 同一访客标识对同一礼包限领一次；匿名访客由上层生成稳定指纹标识。
 	var userRecord models.GameRedeemRecord
 	if err := db.Mysql.Where("app_id = ? AND package_id = ? AND open_id = ?", appID, packageID, openID).First(&userRecord).Error; err == nil {
 		// 已领过，返回之前领取的兑换码，不额外扣减库存
@@ -189,6 +192,16 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 			"already":    true,
 			"msg":        "您已领取过该礼包",
 		}, nil
+	}
+
+	// 2.1 匿名频控: 匿名访客 1 小时内跨礼包累计领取上限，防止轮换礼包或伪造身份刷库存
+	if strings.HasPrefix(openID, "guest_") {
+		var guestCount int64
+		if err := db.Mysql.Model(&models.GameRedeemRecord{}).
+			Where("app_id = ? AND open_id = ? AND claimed_at > ?", appID, openID, time.Now().Add(-time.Hour)).
+			Count(&guestCount).Error; err == nil && guestCount >= anonymousRedeemHourlyLimit {
+			return nil, errors.New("领取过于频繁，请稍后再试")
+		}
 	}
 
 	// 3. 开启数据库事务，并采用行级排他锁 (SELECT ... FOR UPDATE) 防超发

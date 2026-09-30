@@ -67,6 +67,9 @@ interface BlockRendererProps {
   context?: Record<string, any>
 }
 
+// 渲染递归深度熔断阈值，防止超深嵌套协议拖垮前端渲染
+const MAX_RENDER_DEPTH = 24
+
 /**
  * 动态原子积木调度渲染器 (BlockRenderer)
  * 具备受控条件求值、repeat 列表循环展开、props 数据绑定求值、events 序列调度与未知组件自动优雅降级保护
@@ -74,11 +77,23 @@ interface BlockRendererProps {
 export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, context }) => {
   if (!block || !block.type) return null
 
+  // 渲染深度熔断：超过上限直接渲染占位提示，杜绝渲染栈溢出导致整页崩溃
+  const renderDepth = Number(context?.__render_depth) || 0
+  if (renderDepth > MAX_RENDER_DEPTH) {
+    return (
+      <View className="sdui-fallback-block">
+        <Text className="fallback-hint">组件嵌套层级过深，已停止渲染</Text>
+      </View>
+    )
+  }
+
   // 当前积木独立作用域，供 visible_when、动作参数和子积木绑定使用 (优先接管 _repeat_item 循环展开项)
   const injectedItem = (block.props as any)?._repeat_item
   const injectedIndex = (block.props as any)?._repeat_index
   const rawBlockContext: Record<string, any> = {
     ...context,
+    // 子积木渲染深度 +1，随 context 自动向所有递归分支 (状态/repeat/嵌套/fallback) 传播
+    __render_depth: renderDepth + 1,
     ...(injectedItem !== undefined ? { item: injectedItem, $item: injectedItem, index: injectedIndex } : {}),
     props: block.props || {}
   }

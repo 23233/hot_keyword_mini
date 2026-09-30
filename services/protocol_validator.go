@@ -313,6 +313,15 @@ var allowedActionTypes = map[string]bool{
 var actionEndpointPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 var dynamicPageIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
+// 嵌套 Block 最大递归深度，防止超深结构拖垮后端校验与前端渲染
+const maxNestedBlockDepth = 24
+
+// 动作级联链 (on_success/on_error/events) 最大递归深度，防止无界递归
+const maxActionChainDepth = 16
+
+// 原始 JSON 与嵌入属性递归遍历最大深度
+const maxRawJSONDepth = 64
+
 // ValidateDynamicPage 对传入的动态页面协议执行严格结构化校验与安全审计
 func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 	report := ValidationReport{
@@ -465,7 +474,7 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 	}
 	// 4. 递归审计所有嵌套 block、状态分支、fallback 与事件链，避免子树绕过发布校验。
 	for idx := range blocks {
-		validateNestedBlockContracts(&blocks[idx], fmt.Sprintf("blocks[%d]", idx), idMap, &report)
+		validateNestedBlockContracts(&blocks[idx], fmt.Sprintf("blocks[%d]", idx), idMap, &report, 0)
 	}
 
 	// 5. 执行机器可读 JSON Schema 基础契约核验
@@ -481,18 +490,24 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 	return report
 }
 
-// validateRawNestedBlocks 校验原始嵌套节点，避免非法子节点在模型反序列化时被静默跳过。
+// validateRawNestedBlocks 校验原始嵌套节点，避免非法子节点在模型反序列化时被静默跳过；带递归深度熔断。
 func validateRawNestedBlocks(raw, path string, report *ValidationReport) {
 	var value interface{}
 	if err := json.Unmarshal([]byte(raw), &value); err != nil {
 		return
 	}
-	var walk func(interface{}, string)
-	walk = func(current interface{}, currentPath string) {
+	var walk func(interface{}, string, int)
+	walk = func(current interface{}, currentPath string, depth int) {
+		// 深度熔断：超深 JSON 结构直接判非法，避免递归栈溢出
+		if depth > maxRawJSONDepth {
+			report.IsValid = false
+			report.Errors = append(report.Errors, fmt.Sprintf("%s 嵌套深度超过上限 %d，已停止递归校验", currentPath, maxRawJSONDepth))
+			return
+		}
 		switch node := current.(type) {
 		case []interface{}:
 			for index, item := range node {
-				walk(item, fmt.Sprintf("%s[%d]", currentPath, index))
+				walk(item, fmt.Sprintf("%s[%d]", currentPath, index), depth+1)
 			}
 		case map[string]interface{}:
 			if _, hasType := node["type"]; hasType {
@@ -504,32 +519,38 @@ func validateRawNestedBlocks(raw, path string, report *ValidationReport) {
 				}
 			}
 			for key, item := range node {
-				walk(item, currentPath+"."+key)
+				walk(item, currentPath+"."+key, depth+1)
 			}
 		}
 	}
-	walk(value, path)
+	walk(value, path, 0)
 }
 
-// validateNestedBlockContracts 递归检查嵌套 block 的 ID、类型、动作和状态分支。
-func validateNestedBlockContracts(block *models.BlockItem, path string, idMap map[string]int, report *ValidationReport) {
+// validateNestedBlockContracts 递归检查嵌套 block 的 ID、类型、动作和状态分支；带递归深度熔断。
+func validateNestedBlockContracts(block *models.BlockItem, path string, idMap map[string]int, report *ValidationReport, depth int) {
 	if block == nil {
+		return
+	}
+	// 深度熔断：超深嵌套积木树直接判非法，阻断校验与渲染层的无界递归
+	if depth > maxNestedBlockDepth {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("%s 嵌套层级超过上限 %d", path, maxNestedBlockDepth))
 		return
 	}
 	validateStyleUtilities(block.Style, path+".style", report)
 	validateVisibleWhen(block.VisibleWhen, path, report)
 	// 校验当前 block 自身绑定的单一动作
-	validateNestedActionContracts(block.Action, path+".action", report)
+	validateNestedActionContracts(block.Action, path+".action", report, 0, map[*models.BlockAction]bool{})
 	// 校验当前 block 绑定的多事件流动作列表
 	if block.Events != nil {
 		for eventName, actions := range block.Events {
 			for idx := range actions {
-				validateNestedActionContracts(&actions[idx], fmt.Sprintf("%s.events.%s[%d]", path, eventName, idx), report)
+				validateNestedActionContracts(&actions[idx], fmt.Sprintf("%s.events.%s[%d]", path, eventName, idx), report, 0, map[*models.BlockAction]bool{})
 			}
 		}
 	}
 	// 校验 props 中嵌入的节点动作 (如 timeline 节点 action、item_grid 单元格 action)
-	validateEmbeddedActions(block.Props, path+".props", report)
+	validateEmbeddedActions(block.Props, path+".props", report, 0)
 	for _, state := range []*models.BlockItem{block.Loading, block.Empty, block.Error, block.Fallback} {
 		if state == nil {
 			continue
@@ -544,7 +565,7 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 		} else {
 			idMap[state.ID] = len(idMap)
 		}
-		validateNestedBlockContracts(state, statePath, idMap, report)
+		validateNestedBlockContracts(state, statePath, idMap, report, depth+1)
 	}
 	for _, child := range collectNestedBlocks(block.Props) {
 		childPath := fmt.Sprintf("%s.props.child(id:%s)", path, child.ID)
@@ -564,7 +585,7 @@ func validateNestedBlockContracts(block *models.BlockItem, path string, idMap ma
 			report.Warnings = append(report.Warnings, fmt.Sprintf("%s 使用未知积木类型 '%s'，客户端将执行优雅降级", childPath, child.Type))
 		}
 		childCopy := child
-		validateNestedBlockContracts(&childCopy, childPath, idMap, report)
+		validateNestedBlockContracts(&childCopy, childPath, idMap, report, depth+1)
 	}
 }
 
@@ -611,11 +632,24 @@ func validateStyleUtilities(style *models.BlockStyle, path string, report *Valid
 	}
 }
 
-// validateNestedActionContracts 校验嵌套动作及其成功/失败链的动作类型和关键参数。
-func validateNestedActionContracts(action *models.BlockAction, path string, report *ValidationReport) {
+// validateNestedActionContracts 校验嵌套动作及其成功/失败链的动作类型和关键参数；带深度熔断与循环引用检测。
+func validateNestedActionContracts(action *models.BlockAction, path string, report *ValidationReport, depth int, visited map[*models.BlockAction]bool) {
 	if action == nil {
 		return
 	}
+	// 深度熔断：级联链超深直接判非法，杜绝客户端无界递归执行
+	if depth > maxActionChainDepth {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("%s 动作级联链嵌套超过上限 %d", path, maxActionChainDepth))
+		return
+	}
+	// 循环引用检测：同一动作对象重复出现说明链路成环，必须拒绝发布
+	if visited[action] {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("%s 动作级联链存在循环引用", path))
+		return
+	}
+	visited[action] = true
 	if strings.TrimSpace(action.Type) == "" {
 		report.IsValid = false
 		report.Errors = append(report.Errors, fmt.Sprintf("%s.type 必填且不能为空", path))
@@ -753,10 +787,10 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 		}
 	}
 	for idx := range action.OnSuccess {
-		validateNestedActionContracts(&action.OnSuccess[idx], fmt.Sprintf("%s.on_success[%d]", path, idx), report)
+		validateNestedActionContracts(&action.OnSuccess[idx], fmt.Sprintf("%s.on_success[%d]", path, idx), report, depth+1, visited)
 	}
 	for idx := range action.OnError {
-		validateNestedActionContracts(&action.OnError[idx], fmt.Sprintf("%s.on_error[%d]", path, idx), report)
+		validateNestedActionContracts(&action.OnError[idx], fmt.Sprintf("%s.on_error[%d]", path, idx), report, depth+1, visited)
 	}
 	// 兼容校验 payload 中的级联成功/失败动作链 (支持 []interface{} 与 []map[string]interface{} 双向兼容)
 	if action.Payload != nil {
@@ -773,7 +807,7 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 				if subActBytes, err := json.Marshal(succItem); err == nil {
 					var subAct models.BlockAction
 					if json.Unmarshal(subActBytes, &subAct) == nil {
-						validateNestedActionContracts(&subAct, fmt.Sprintf("%s.payload.on_success[%d]", path, idx), report)
+						validateNestedActionContracts(&subAct, fmt.Sprintf("%s.payload.on_success[%d]", path, idx), report, depth+1, visited)
 					}
 				}
 			}
@@ -791,7 +825,7 @@ func validateNestedActionContracts(action *models.BlockAction, path string, repo
 				if subActBytes, err := json.Marshal(errItem); err == nil {
 					var subAct models.BlockAction
 					if json.Unmarshal(subActBytes, &subAct) == nil {
-						validateNestedActionContracts(&subAct, fmt.Sprintf("%s.payload.on_error[%d]", path, idx), report)
+						validateNestedActionContracts(&subAct, fmt.Sprintf("%s.payload.on_error[%d]", path, idx), report, depth+1, visited)
 					}
 				}
 			}
@@ -1176,9 +1210,15 @@ func isCoordinateActionValue(value interface{}, min, max float64) bool {
 	return ok && !math.IsNaN(number) && !math.IsInf(number, 0) && number >= min && number <= max
 }
 
-// validateEmbeddedActions 递归审计非 BlockItem 属性结构中嵌入的动作对象 (如 timeline 节点、item_grid 单元格)
-func validateEmbeddedActions(value interface{}, path string, report *ValidationReport) {
+// validateEmbeddedActions 递归审计非 BlockItem 属性结构中嵌入的动作对象 (如 timeline 节点、item_grid 单元格)；带递归深度熔断。
+func validateEmbeddedActions(value interface{}, path string, report *ValidationReport, depth int) {
 	if value == nil {
+		return
+	}
+	// 深度熔断：超深嵌入属性结构停止递归
+	if depth > maxRawJSONDepth {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("%s 嵌入属性嵌套深度超过上限 %d", path, maxRawJSONDepth))
 		return
 	}
 	switch v := value.(type) {
@@ -1194,7 +1234,7 @@ func validateEmbeddedActions(value interface{}, path string, report *ValidationR
 			if raw, err := json.Marshal(actMap); err == nil {
 				var act models.BlockAction
 				if json.Unmarshal(raw, &act) == nil && act.Type != "" {
-					validateNestedActionContracts(&act, path+".action", report)
+					validateNestedActionContracts(&act, path+".action", report, 0, map[*models.BlockAction]bool{})
 				}
 			}
 		}
@@ -1202,11 +1242,11 @@ func validateEmbeddedActions(value interface{}, path string, report *ValidationR
 			if k == "children" || k == "blocks" {
 				continue
 			}
-			validateEmbeddedActions(sub, fmt.Sprintf("%s.%s", path, k), report)
+			validateEmbeddedActions(sub, fmt.Sprintf("%s.%s", path, k), report, depth+1)
 		}
 	case []interface{}:
 		for idx, sub := range v {
-			validateEmbeddedActions(sub, fmt.Sprintf("%s[%d]", path, idx), report)
+			validateEmbeddedActions(sub, fmt.Sprintf("%s[%d]", path, idx), report, depth+1)
 		}
 	}
 }
