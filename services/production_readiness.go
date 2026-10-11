@@ -25,11 +25,11 @@ type ProductionReadinessReport struct {
 // CheckProductionReadiness 检查指定租户上线前必须配置的生产参数。
 func CheckProductionReadiness(appID string, cfg *config.Config) (ProductionReadinessReport, error) {
 	report := ProductionReadinessReport{AppID: strings.TrimSpace(appID), Ready: true, Missing: []string{}, Invalid: []string{}}
-	if report.AppID == "" || db.Mysql == nil {
+	if report.AppID == "" || db.DB == nil {
 		return report, fmt.Errorf("AppID 不能为空且数据库必须已初始化")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", report.AppID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", report.AppID).First(&app).Error; err != nil {
 		return report, fmt.Errorf("读取小程序失败: %w", err)
 	}
 	matrix, err := CapabilityMatrixForApp(&app)

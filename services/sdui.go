@@ -36,7 +36,7 @@ func (s *SDUIService) GetRawPage(appID, pageID string) (*models.DynamicPage, err
 	}
 
 	var page models.DynamicPage
-	err := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).First(&page).Error
+	err := db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).First(&page).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("页面不存在: app_id=%s, page_id=%s: %w", appID, pageID, err)
@@ -69,12 +69,12 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(a
 
 	// 1. 若客户端请求主页 home，优先检查该租户 mini_apps 的 current_page 设置
 	actualPageID := pageID
-	if pageID == "home" && db.Mysql != nil {
+	if pageID == "home" && db.DB != nil {
 		var app models.MiniApp
-		if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err == nil && app.CurrentPage != "" && app.CurrentPage != "home" {
+		if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err == nil && app.CurrentPage != "" && app.CurrentPage != "home" {
 			// 若当前激活的主页存在且为已发布状态，优先使用
 			var activePage models.DynamicPage
-			if err := db.Mysql.Where("app_id = ? AND page_id = ? AND status = 'published' AND hidden = ?", appID, app.CurrentPage, false).First(&activePage).Error; err == nil {
+			if err := db.DB.Where("app_id = ? AND page_id = ? AND status = 'published' AND hidden = ?", appID, app.CurrentPage, false).First(&activePage).Error; err == nil {
 				actualPageID = app.CurrentPage
 			}
 		}
@@ -143,7 +143,7 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(a
 
 // attachAIBreakthroughData 将资讯导航、会员方案和访问者权益摘要附加到统一信封。
 func (s *SDUIService) attachAIBreakthroughData(envelope *models.PageResponseEnvelope, appID string, authenticated bool, userID int64) {
-	if envelope == nil || db.Mysql == nil || (envelope.Page.BusinessType != "ai_breakthrough" && envelope.Page.BusinessType != "ai_article") {
+	if envelope == nil || db.DB == nil || (envelope.Page.BusinessType != "ai_breakthrough" && envelope.Page.BusinessType != "ai_article") {
 		return
 	}
 	level := 0
@@ -159,7 +159,7 @@ func (s *SDUIService) attachAIBreakthroughData(envelope *models.PageResponseEnve
 		viewer["membership_expires_at"] = membership.ExpiresAt
 	}
 	var categories []models.ArticleCategory
-	_ = db.Mysql.Where("app_id = ? AND status = ?", appID, "active").Order("sort asc, id asc").Find(&categories).Error
+	_ = db.DB.Where("app_id = ? AND status = ?", appID, "active").Order("sort asc, id asc").Find(&categories).Error
 	categorySlugs := make(map[int64]string, len(categories))
 	categoryNames := make(map[int64]string, len(categories))
 	for _, category := range categories {
@@ -167,7 +167,7 @@ func (s *SDUIService) attachAIBreakthroughData(envelope *models.PageResponseEnve
 		categoryNames[category.ID] = category.Name
 	}
 	var articles []models.Article
-	_ = db.Mysql.Where("app_id = ? AND status = ?", appID, "published").Order("published_at desc, id desc").Limit(12).Find(&articles).Error
+	_ = db.DB.Where("app_id = ? AND status = ?", appID, "published").Order("published_at desc, id desc").Limit(12).Find(&articles).Error
 	items := make([]map[string]interface{}, 0, len(articles))
 	articleService := NewArticleService()
 	for _, article := range articles {
@@ -179,7 +179,7 @@ func (s *SDUIService) attachAIBreakthroughData(envelope *models.PageResponseEnve
 		items = append(items, item)
 	}
 	var plans []models.MembershipLevel
-	_ = db.Mysql.Where("app_id = ? AND status = ?", appID, "active").Order("level asc").Find(&plans).Error
+	_ = db.DB.Where("app_id = ? AND status = ?", appID, "active").Order("level asc").Find(&plans).Error
 	offers := make([]map[string]interface{}, 0, len(plans))
 	for _, plan := range plans {
 		offers = append(offers, map[string]interface{}{
@@ -615,13 +615,13 @@ func (s *SDUIService) seedDefaultPage(appID string) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	return db.Mysql.Create(&page).Error
+	return db.DB.Create(&page).Error
 }
 
 // ListApps 获取所有已注册的小程序应用列表
 func (s *SDUIService) ListApps() ([]models.MiniApp, error) {
 	var apps []models.MiniApp
-	err := db.Mysql.Order("created_at asc").Find(&apps).Error
+	err := db.DB.Order("created_at asc").Find(&apps).Error
 	if err != nil {
 		return nil, err
 	}
@@ -635,7 +635,7 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 	}
 
 	var existing models.MiniApp
-	err := db.Mysql.Where("app_id = ?", app.AppID).First(&existing).Error
+	err := db.DB.Where("app_id = ?", app.AppID).First(&existing).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			app.CreatedAt = time.Now()
@@ -643,7 +643,7 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 			if app.CurrentPage == "" {
 				app.CurrentPage = "home"
 			}
-			if err := db.Mysql.Create(app).Error; err != nil {
+			if err := db.DB.Create(app).Error; err != nil {
 				return err
 			}
 			sdk.InvalidateMiniSdk(app.AppID)
@@ -686,7 +686,7 @@ func (s *SDUIService) SaveApp(app *models.MiniApp) error {
 			updateMap[key] = strings.TrimSpace(value)
 		}
 	}
-	if err := db.Mysql.Model(&existing).Updates(updateMap).Error; err != nil {
+	if err := db.DB.Model(&existing).Updates(updateMap).Error; err != nil {
 		return err
 	}
 	if app.AppSecret != "" {
@@ -704,7 +704,7 @@ func (s *SDUIService) DeleteApp(appID string) error {
 		return errors.New("小程序 AppID 不能为空")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("小程序不存在")
 		}
@@ -723,14 +723,14 @@ func (s *SDUIService) DeleteApp(appID string) error {
 	}
 	for _, guard := range guards {
 		var count int64
-		if err := db.Mysql.Model(guard.model).Where("app_id = ?", appID).Count(&count).Error; err != nil {
+		if err := db.DB.Model(guard.model).Where("app_id = ?", appID).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
 			return fmt.Errorf("该小程序仍有 %d 条%s数据，请先清理后再删除", count, guard.label)
 		}
 	}
-	if err := db.Mysql.Where("app_id = ?", appID).Delete(&models.MiniApp{}).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).Delete(&models.MiniApp{}).Error; err != nil {
 		return err
 	}
 	sdk.InvalidateMiniSdk(appID)
@@ -744,7 +744,7 @@ func (s *SDUIService) ListPages(appID string) ([]models.DynamicPage, error) {
 	}
 
 	var pages []models.DynamicPage
-	err := db.Mysql.Where("app_id = ?", appID).Order("updated_at desc").Find(&pages).Error
+	err := db.DB.Where("app_id = ?", appID).Order("updated_at desc").Find(&pages).Error
 	if err != nil {
 		return nil, err
 	}
@@ -781,12 +781,12 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 		return fmt.Errorf("动态页面协议强校验未通过，阻断持久化: %s", strings.Join(report.Errors, "; "))
 	}
 
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 
 	// 2. 在单个原子事务中执行页面记录更新与版本历史快照沉淀
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
+	return db.DB.Transaction(func(tx *gorm.DB) error {
 		var newRevision int
 		var existing models.DynamicPage
 
@@ -886,7 +886,7 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 		pageID = "home"
 	}
 
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return &models.DynamicPageDraft{
 			AppID:        appID,
 			PageID:       pageID,
@@ -898,7 +898,7 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 	}
 
 	var draft models.DynamicPageDraft
-	err := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).First(&draft).Error
+	err := db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).First(&draft).Error
 	if err == nil {
 		return &draft, nil
 	}
@@ -906,7 +906,7 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 草稿不存在，从已发布页面派生一份初始草稿
 		var published models.DynamicPage
-		if pErr := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).First(&published).Error; pErr == nil {
+		if pErr := db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).First(&published).Error; pErr == nil {
 			draft = models.DynamicPageDraft{
 				AppID:        published.AppID,
 				PageID:       published.PageID,
@@ -929,7 +929,7 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 				CreatedAt:    time.Now(),
 				UpdatedAt:    time.Now(),
 			}
-			_ = db.Mysql.Create(&draft).Error
+			_ = db.DB.Create(&draft).Error
 			return &draft, nil
 		}
 
@@ -948,7 +948,7 @@ func (s *SDUIService) GetRawDraft(appID, pageID string) (*models.DynamicPageDraf
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		_ = db.Mysql.Create(&draft).Error
+		_ = db.DB.Create(&draft).Error
 		return &draft, nil
 	}
 
@@ -963,11 +963,11 @@ func (s *SDUIService) FindRawDraft(appID, pageID string) (*models.DynamicPageDra
 	if pageID == "" {
 		pageID = "home"
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化")
 	}
 	var draft models.DynamicPageDraft
-	if err := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).First(&draft).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).First(&draft).Error; err != nil {
 		return nil, err
 	}
 	return &draft, nil
@@ -1022,12 +1022,12 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 		return fmt.Errorf("草稿协议强校验未通过: %s", strings.Join(report.Errors, "; "))
 	}
 
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 
 	var existing models.DynamicPageDraft
-	err := db.Mysql.Where("app_id = ? AND page_id = ?", draft.AppID, draft.PageID).First(&existing).Error
+	err := db.DB.Where("app_id = ? AND page_id = ?", draft.AppID, draft.PageID).First(&existing).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if expectedRevision > 0 {
@@ -1037,7 +1037,7 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 			draft.Status = "draft"
 			draft.CreatedAt = time.Now()
 			draft.UpdatedAt = time.Now()
-			return db.Mysql.Create(draft).Error
+			return db.DB.Create(draft).Error
 		}
 		return err
 	}
@@ -1052,7 +1052,7 @@ func (s *SDUIService) SaveDraftWithAudit(draft *models.DynamicPageDraft, operato
 	draft.Status = "draft"
 	draft.UpdatedAt = time.Now()
 
-	updateQuery := db.Mysql.Model(&existing)
+	updateQuery := db.DB.Model(&existing)
 	if expectedRevision > 0 {
 		updateQuery = updateQuery.Where("id = ? AND revision = ?", existing.ID, expectedRevision)
 	}
@@ -1135,8 +1135,8 @@ func (s *SDUIService) PublishDraftWithRevision(appID, pageID, operator, remark s
 	}
 
 	// 同步更新草稿状态为 published
-	if db.Mysql != nil {
-		_ = db.Mysql.Model(&models.DynamicPageDraft{}).
+	if db.DB != nil {
+		_ = db.DB.Model(&models.DynamicPageDraft{}).
 			Where("app_id = ? AND page_id = ?", appID, pageID).
 			Updates(map[string]interface{}{
 				"status":     "published",
@@ -1155,7 +1155,7 @@ func (s *SDUIService) ListPageRevisions(appID, pageID string) ([]models.DynamicP
 	}
 
 	var revs []models.DynamicPageRevision
-	err := db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).
+	err := db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).
 		Order("revision desc").
 		Find(&revs).Error
 	return revs, err
@@ -1167,13 +1167,13 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 		return nil, errors.New("参数不完整")
 	}
 
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("无数据库环境，无法执行回滚")
 	}
 
 	var current models.DynamicPage
 
-	err := db.Mysql.Transaction(func(tx *gorm.DB) error {
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		var targetRev models.DynamicPageRevision
 		if err := tx.Where("app_id = ? AND page_id = ? AND revision = ?", appID, pageID, targetRevision).First(&targetRev).Error; err != nil {
 			return fmt.Errorf("未找到版本 revision %d 的快照: %w", targetRevision, err)
@@ -1280,14 +1280,14 @@ func (s *SDUIService) SetCurrentPage(appID, pageID string) error {
 		return errors.New("AppID 与 PageID 不能为空")
 	}
 
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return errors.New("数据库未初始化")
 	}
 	var page models.DynamicPage
-	if err := db.Mysql.Where("app_id = ? AND page_id = ? AND status = ? AND hidden = ?", appID, pageID, "published", false).First(&page).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND page_id = ? AND status = ? AND hidden = ?", appID, pageID, "published", false).First(&page).Error; err != nil {
 		return errors.New("只有已发布且未隐藏的页面才能设为当前主页")
 	}
-	return db.Mysql.Model(&models.MiniApp{}).
+	return db.DB.Model(&models.MiniApp{}).
 		Where("app_id = ?", appID).
 		Updates(map[string]interface{}{
 			"current_page": pageID,
@@ -1302,7 +1302,7 @@ func (s *SDUIService) assembleDomainEntity(appID, businessType, keyword string, 
 		entity["title"] = keyword
 	}
 
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return entity
 	}
 
@@ -1317,14 +1317,14 @@ func (s *SDUIService) assembleDomainEntity(appID, businessType, keyword string, 
 
 		var err error
 		if queryID != "" {
-			err = db.Mysql.Where("id = ?", queryID).First(&drama).Error
+			err = db.DB.Where("id = ?", queryID).First(&drama).Error
 		} else if keyword != "" {
-			err = db.Mysql.Where("title = ?", keyword).First(&drama).Error
+			err = db.DB.Where("title = ?", keyword).First(&drama).Error
 		}
 		if err != nil || drama.ID == 0 {
 			// 兜底查询爆款短剧：优先按热度降序取当前最热门短剧，无则回退查询种子短剧《猴王下山》
-			if errFallback := db.Mysql.Order("hot_score desc, id asc").First(&drama).Error; errFallback != nil {
-				_ = db.Mysql.Where("title = ?", "猴王下山").First(&drama).Error
+			if errFallback := db.DB.Order("hot_score desc, id asc").First(&drama).Error; errFallback != nil {
+				_ = db.DB.Where("title = ?", "猴王下山").First(&drama).Error
 			}
 		}
 
@@ -1356,10 +1356,10 @@ func (s *SDUIService) assembleDomainEntity(appID, businessType, keyword string, 
 
 		var err error
 		if queryPkgID != "" {
-			err = db.Mysql.Where("app_id = ? AND (package_id = ? OR game_id = ?)", appID, queryPkgID, queryPkgID).First(&pkg).Error
+			err = db.DB.Where("app_id = ? AND (package_id = ? OR game_id = ?)", appID, queryPkgID, queryPkgID).First(&pkg).Error
 		}
 		if err != nil || pkg.ID == 0 {
-			_ = db.Mysql.Where("app_id = ?", appID).First(&pkg).Error
+			_ = db.DB.Where("app_id = ?", appID).First(&pkg).Error
 		}
 
 		if pkg.ID != 0 {

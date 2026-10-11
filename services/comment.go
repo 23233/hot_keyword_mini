@@ -53,7 +53,7 @@ func isTrustedCOSURL(base, imageURL string) bool {
 
 func commentDTO(comment models.ArticleComment) CommentDTO {
 	var user models.User
-	_ = db.Mysql.Select("id", "nickname").First(&user, comment.UserID).Error
+	_ = db.DB.Select("id", "nickname").First(&user, comment.UserID).Error
 	return CommentDTO{ID: comment.ID, ArticleID: comment.ArticleID, ParentID: comment.ParentID, RootID: comment.RootID, Level: comment.Level, ContentType: comment.ContentType, Content: comment.Content, ImageURL: comment.ImageURL, UserID: comment.UserID, Nickname: user.NickName, ReplyToNickname: comment.ReplyToNickname, ReplyCount: comment.ReplyCount, CreatedAt: comment.CreatedAt}
 }
 
@@ -63,7 +63,7 @@ func (s *CommentService) ListRoots(appID string, articleID int64, limit, offset 
 		limit = 20
 	}
 	var comments []models.ArticleComment
-	if err := db.Mysql.Where("app_id = ? AND article_id = ? AND level = 1 AND audit_status = ?", appID, articleID, "approved").Order("id desc").Limit(limit).Offset(offset).Find(&comments).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND article_id = ? AND level = 1 AND audit_status = ?", appID, articleID, "approved").Order("id desc").Limit(limit).Offset(offset).Find(&comments).Error; err != nil {
 		return nil, err
 	}
 	result := make([]CommentDTO, 0, len(comments))
@@ -79,7 +79,7 @@ func (s *CommentService) ListReplies(appID string, rootID int64, limit, offset i
 		limit = 20
 	}
 	var comments []models.ArticleComment
-	if err := db.Mysql.Where("app_id = ? AND root_id = ? AND level = 2 AND audit_status = ?", appID, rootID, "approved").Order("id asc").Limit(limit).Offset(offset).Find(&comments).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND root_id = ? AND level = 2 AND audit_status = ?", appID, rootID, "approved").Order("id asc").Limit(limit).Offset(offset).Find(&comments).Error; err != nil {
 		return nil, err
 	}
 	result := make([]CommentDTO, 0, len(comments))
@@ -95,7 +95,7 @@ func (s *CommentService) Create(ctx context.Context, appID string, user *models.
 		return nil, errors.New("请先完成微信登录")
 	}
 	var article models.Article
-	if err := db.Mysql.Where("app_id = ? AND id = ? AND status = ?", appID, input.ArticleID, "published").First(&article).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND id = ? AND status = ?", appID, input.ArticleID, "published").First(&article).Error; err != nil {
 		return nil, errors.New("文章不存在")
 	}
 	if !article.AllowComments {
@@ -111,7 +111,7 @@ func (s *CommentService) Create(ctx context.Context, appID string, user *models.
 	}
 	if imageURL != "" {
 		var app models.MiniApp
-		if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 			return nil, errors.New("小程序配置不存在")
 		}
 		if !isTrustedCOSURL(app.CosCdnUrl, imageURL) {
@@ -125,7 +125,7 @@ func (s *CommentService) Create(ctx context.Context, appID string, user *models.
 	}
 	if input.ParentID > 0 {
 		var parent models.ArticleComment
-		if err := db.Mysql.Where("app_id = ? AND article_id = ? AND id = ? AND audit_status = ?", appID, input.ArticleID, input.ParentID, "approved").First(&parent).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND article_id = ? AND id = ? AND audit_status = ?", appID, input.ArticleID, input.ParentID, "approved").First(&parent).Error; err != nil {
 			return nil, errors.New("回复目标不存在")
 		}
 		comment.Level = 2
@@ -136,10 +136,10 @@ func (s *CommentService) Create(ctx context.Context, appID string, user *models.
 		}
 		comment.ReplyToUserID = parent.UserID
 		var target models.User
-		_ = db.Mysql.Select("nickname").First(&target, parent.UserID).Error
+		_ = db.DB.Select("nickname").First(&target, parent.UserID).Error
 		comment.ReplyToNickname = target.NickName
 	}
-	if err := db.Mysql.Create(comment).Error; err != nil {
+	if err := db.DB.Create(comment).Error; err != nil {
 		return nil, err
 	}
 
@@ -151,12 +151,12 @@ func (s *CommentService) Create(ctx context.Context, appID string, user *models.
 		audit, err = s.audit.CheckText(ctx, appID, user.WechatOpenID, content)
 	}
 	if err != nil {
-		_ = db.Mysql.Model(comment).Updates(map[string]interface{}{"audit_status": "failed", "audit_reason": err.Error(), "updated_at": time.Now()}).Error
+		_ = db.DB.Model(comment).Updates(map[string]interface{}{"audit_status": "failed", "audit_reason": err.Error(), "updated_at": time.Now()}).Error
 		return nil, err
 	}
 	comment.AuditStatus = audit.Status
 	comment.AuditReason = audit.Reason
-	if err := db.Mysql.Transaction(func(tx *gorm.DB) error {
+	if err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(comment).Error; err != nil {
 			return err
 		}
@@ -186,7 +186,7 @@ func (s *CommentService) CompleteImageAudit(appID, traceID, suggest string, labe
 		return errors.New("审核回调结果无效")
 	}
 	var record models.ContentAuditRecord
-	if err := db.Mysql.Where("app_id = ? AND trace_id = ? AND media_type = ?", appID, traceID, "image").First(&record).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND trace_id = ? AND media_type = ?", appID, traceID, "image").First(&record).Error; err != nil {
 		return err
 	}
 	status := "rejected"
@@ -195,7 +195,7 @@ func (s *CommentService) CompleteImageAudit(appID, traceID, suggest string, labe
 	} else if suggest == "review" {
 		status = "pending"
 	}
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
+	return db.DB.Transaction(func(tx *gorm.DB) error {
 		// 微信可能重复投递回调，已结束的审核记录保持终态，避免旧结果覆盖新结果。
 		if record.Status == "approved" || record.Status == "rejected" {
 			return nil
@@ -227,7 +227,7 @@ func (s *CommentService) Moderate(appID string, commentID int64, status, reason 
 	if status != "approved" && status != "rejected" && status != "pending" && status != "deleted" {
 		return errors.New("评论状态无效")
 	}
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
+	return db.DB.Transaction(func(tx *gorm.DB) error {
 		var comment models.ArticleComment
 		if err := tx.Where("app_id = ? AND id = ?", appID, commentID).First(&comment).Error; err != nil {
 			return err

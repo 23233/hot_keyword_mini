@@ -42,7 +42,7 @@ func NewShareCardService() *ShareCardService {
 // cardType: "app_message" (5:4 比例, 1000x800) 或 "timeline" (1:1 比例, 800x800)
 func (s *ShareCardService) RenderShareCard(appID, pageID, cardType string) ([]byte, error) {
 	var page *models.DynamicPage
-	if db.Mysql != nil {
+	if db.DB != nil {
 		p, err := s.sduiService.GetRawPage(appID, pageID)
 		if err == nil {
 			page = p
@@ -215,7 +215,7 @@ func (s *ShareCardService) AutoUpdatePageShareConfig(appID, pageID, host string)
 	// COS 已配置时，分享图片也必须落到 COS，微信端只使用当前小程序 CDN 地址。
 	if sdk.CosService != nil && sdk.CosService.IsConfigured() {
 		var app models.MiniApp
-		if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 			return err
 		}
 		for _, item := range []struct {
@@ -276,7 +276,7 @@ func (s *ShareCardService) AutoUpdatePageShareConfig(appID, pageID, host string)
 	page.ShareConfig = string(shareJSON)
 	page.UpdatedAt = time.Now()
 
-	return db.Mysql.Model(&models.DynamicPage{}).
+	return db.DB.Model(&models.DynamicPage{}).
 		Where("app_id = ? AND page_id = ?", appID, pageID).
 		Updates(map[string]interface{}{
 			"share_config": page.ShareConfig,

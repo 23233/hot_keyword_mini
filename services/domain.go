@@ -86,7 +86,7 @@ func publicDomain(r *models.DomainRecord) map[string]interface{} {
 
 // ExecuteDomainOperation 统一的后台、MCP 和用户业务入口。admin 仅由认证后的服务端入口设置。
 func ExecuteDomainOperation(app string, user int64, actor, endpoint string, p map[string]interface{}, idem string, admin bool) (interface{}, error) {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, domainError("UNAVAILABLE", "数据库未初始化")
 	}
 	if app == "" || actor == "" || (!admin && user <= 0) {
@@ -103,7 +103,7 @@ func ExecuteDomainOperation(app string, user int64, actor, endpoint string, p ma
 		return nil, domainError("INVALID_ARGUMENT", "幂等键过长")
 	}
 	var result interface{}
-	err := db.Mysql.Transaction(func(tx *gorm.DB) error {
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		var appRow models.MiniApp
 		if err := tx.Where("app_id = ?", app).First(&appRow).Error; err != nil {
 			return domainError("NOT_FOUND", "租户不存在")

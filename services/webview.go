@@ -47,10 +47,10 @@ func (s *WebViewTicketService) CreateTicket(appID string, userID int64, targetUR
 		ExpiresAt: time.Now().Add(webViewTicketTTL),
 		CreatedAt: time.Now(),
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return "", errors.New("数据库未连接，无法创建 WebView 票据")
 	}
-	if err := db.Mysql.Create(ticket).Error; err != nil {
+	if err := db.DB.Create(ticket).Error; err != nil {
 		return "", fmt.Errorf("保存 WebView 票据失败: %w", err)
 	}
 	q := parsed.Query()
@@ -61,14 +61,14 @@ func (s *WebViewTicketService) CreateTicket(appID string, userID int64, targetUR
 
 // ConsumeTicket 原子消费票据并返回关联用户和目标地址。
 func (s *WebViewTicketService) ConsumeTicket(token string) (*models.WebViewTicket, error) {
-	if strings.TrimSpace(token) == "" || db.Mysql == nil {
+	if strings.TrimSpace(token) == "" || db.DB == nil {
 		return nil, errors.New("WebView 票据无效")
 	}
 	hash := sha256.Sum256([]byte(token))
 	hashText := hex.EncodeToString(hash[:])
 	now := time.Now()
 	var ticket models.WebViewTicket
-	tx := db.Mysql.Begin()
+	tx := db.DB.Begin()
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token_hash = ? AND used_at IS NULL AND expires_at > ?", hashText, now).First(&ticket).Error; err != nil {
 		tx.Rollback()
 		return nil, errors.New("WebView 票据不存在、已使用或已过期")

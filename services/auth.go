@@ -75,7 +75,7 @@ func (s *AuthService) GenerateRandomToken(bytesLen int) (string, error) {
 // GetMiniAppSecret 根据 AppID 动态获取小程序的 Secret 配置 (实现多租户解耦)
 func (s *AuthService) GetMiniAppSecret(appID string) (string, error) {
 	var app models.MiniApp
-	err := db.Mysql.Where("app_id = ?", appID).First(&app).Error
+	err := db.DB.Where("app_id = ?", appID).First(&app).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", fmt.Errorf("未注册的小程序 AppID: %s", appID)
@@ -118,7 +118,7 @@ func (s *AuthService) WechatLogin(ctx context.Context, appID, code string) (*Wec
 
 	// 3. 多租户物理隔离查询或创建用户实体
 	var user models.User
-	err = db.Mysql.Where("app_id = ? AND wechat_openid = ?", appID, openID).First(&user).Error
+	err = db.DB.Where("app_id = ? AND wechat_openid = ?", appID, openID).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			user = models.User{
@@ -129,7 +129,7 @@ func (s *AuthService) WechatLogin(ctx context.Context, appID, code string) (*Wec
 				CreatedAt:    time.Now(),
 				UpdatedAt:    time.Now(),
 			}
-			if err := db.Mysql.Create(&user).Error; err != nil {
+			if err := db.DB.Create(&user).Error; err != nil {
 				return nil, fmt.Errorf("创建新用户失败: %w", err)
 			}
 		} else {
@@ -160,7 +160,7 @@ func (s *AuthService) WechatLogin(ctx context.Context, appID, code string) (*Wec
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
-	if err := db.Mysql.Create(&session).Error; err != nil {
+	if err := db.DB.Create(&session).Error; err != nil {
 		return nil, fmt.Errorf("创建用户会话失败: %w", err)
 	}
 
@@ -186,7 +186,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 	hash := s.HashToken(refreshTokenPlain)
 
 	var session models.UserSession
-	err := db.Mysql.Where("refresh_token_hash = ?", hash).First(&session).Error
+	err := db.DB.Where("refresh_token_hash = ?", hash).First(&session).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("无效的刷新凭证")
@@ -198,7 +198,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 	if session.Revoked {
 		logger.JM.Warnf("【安全警报】检测到 Refresh Token 重放攻击！SessionID: %s, UserID: %d, 原失效原因: %s", session.SessionID, session.UserID, session.RevokedReason)
 		// 吊销该用户在该小程序租户下的所有会话凭证，彻底阻断攻击者
-		db.Mysql.Model(&models.UserSession{}).
+		db.DB.Model(&models.UserSession{}).
 			Where("session_id = ? OR (user_id = ? AND app_id = ?)", session.SessionID, session.UserID, session.AppID).
 			Updates(map[string]interface{}{
 				"revoked":        true,
@@ -210,7 +210,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 
 	// 2. 检查是否过期
 	if time.Now().After(session.ExpiresAt) {
-		db.Mysql.Model(&session).Updates(map[string]interface{}{
+		db.DB.Model(&session).Updates(map[string]interface{}{
 			"revoked":        true,
 			"revoked_reason": "expired",
 			"updated_at":     time.Now(),
@@ -225,7 +225,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 
 	// 4. 查询关联用户
 	var user models.User
-	if err := db.Mysql.Where("id = ?", session.UserID).First(&user).Error; err != nil {
+	if err := db.DB.Where("id = ?", session.UserID).First(&user).Error; err != nil {
 		return nil, errors.New("关联用户不存在")
 	}
 
@@ -252,7 +252,7 @@ func (s *AuthService) RefreshSession(appID, refreshTokenPlain string) (*WechatLo
 		UpdatedAt:        time.Now(),
 	}
 
-	err = db.Mysql.Transaction(func(tx *gorm.DB) error {
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		// CAS 原子抢占：仅当原 session 仍未被 revoked 时更新成功
 		res := tx.Model(&models.UserSession{}).
 			Where("id = ? AND revoked = false", session.ID).
@@ -300,7 +300,7 @@ func (s *AuthService) GetSessionInfo(sessionID, appID string) (*SessionInfoRespo
 	}
 
 	var session models.UserSession
-	query := db.Mysql.Where("session_id = ?", sessionID)
+	query := db.DB.Where("session_id = ?", sessionID)
 	if appID != "" {
 		query = query.Where("app_id = ?", appID)
 	}
@@ -311,7 +311,7 @@ func (s *AuthService) GetSessionInfo(sessionID, appID string) (*SessionInfoRespo
 	isValid := !session.Revoked && time.Now().Before(session.ExpiresAt)
 
 	var user models.User
-	_ = db.Mysql.Where("id = ?", session.UserID).First(&user).Error
+	_ = db.DB.Where("id = ?", session.UserID).First(&user).Error
 
 	return &SessionInfoResponse{
 		IsValid:   isValid,
@@ -331,7 +331,7 @@ func (s *AuthService) RevokeSession(sessionID, reason string) error {
 		reason = "user_logout"
 	}
 
-	return db.Mysql.Model(&models.UserSession{}).
+	return db.DB.Model(&models.UserSession{}).
 		Where("session_id = ?", sessionID).
 		Updates(map[string]interface{}{
 			"revoked":        true,

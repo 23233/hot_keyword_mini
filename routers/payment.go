@@ -107,13 +107,13 @@ func PaymentNotifyHandler(ctx iris.Context) {
 		_ = ctx.JSON(iris.Map{"code": "FAIL", "message": "支付通知地址缺少 app_id"})
 		return
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		_ = ctx.JSON(iris.Map{"code": "FAIL", "message": "数据库服务未就绪"})
 		return
 	}
 	var app models.MiniApp
-	if db.Mysql.Where("app_id = ?", appID).First(&app).Error != nil {
+	if db.DB.Where("app_id = ?", appID).First(&app).Error != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": "FAIL", "message": "商户配置不存在"})
 		return

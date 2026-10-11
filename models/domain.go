@@ -17,8 +17,8 @@ type DomainRecord struct {
 	PeerID int64 `gorm:"index" json:"peer_id"`
 	// 服务端状态。
 	Status string `gorm:"size:32;not null" json:"status"`
-	// 数据快照，不直接暴露敏感材料。
-	Data string `gorm:"type:longtext" json:"-"`
+	// 数据快照，不直接暴露敏感材料；不写 type 标签，由驱动生成长文本类型 (MySQL=longtext / PG=text)
+	Data string `json:"-"`
 	// 乐观锁版本。
 	Revision int64 `gorm:"not null" json:"revision"`
 	// 创建时间。

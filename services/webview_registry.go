@@ -129,11 +129,11 @@ func ListWebViews(appID string) ([]WebViewEntry, error) {
 	if strings.TrimSpace(appID) == "" {
 		return nil, errors.New("AppID 不能为空")
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return nil, fmt.Errorf("读取小程序失败: %w", err)
 	}
 	return parseWebViewRegistry(app.WebViewRegistry)
@@ -159,16 +159,16 @@ func SaveWebViews(appID string, entries []WebViewEntry) error {
 	if err := validateWebViewEntries(entries); err != nil {
 		return err
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return errors.New("数据库未初始化")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return fmt.Errorf("读取小程序失败: %w", err)
 	}
 	encoded, err := json.Marshal(entries)
 	if err != nil {
 		return err
 	}
-	return db.Mysql.Model(&models.MiniApp{}).Where("app_id = ?", appID).Updates(map[string]interface{}{"webview_registry": string(encoded)}).Error
+	return db.DB.Model(&models.MiniApp{}).Where("app_id = ?", appID).Updates(map[string]interface{}{"webview_registry": string(encoded)}).Error
 }

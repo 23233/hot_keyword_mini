@@ -12,6 +12,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+// 数据库驱动类型取值
+const (
+	// DBDriverMySQL MySQL 数据库驱动
+	DBDriverMySQL = "mysql"
+	// DBDriverPostgres PostgreSQL 数据库驱动
+	DBDriverPostgres = "pg"
+)
+
 // Config 定义了应用的配置结构体
 type Config struct {
 	// 数据库主机地址
@@ -24,6 +32,8 @@ type Config struct {
 	DBPassword string `yaml:"db_password" mapstructure:"db_password"`
 	// 数据库名称
 	DBName string `yaml:"db_name" mapstructure:"db_name"`
+	// 数据库驱动类型 (mysql / pg，默认 mysql，支持 DB_DRIVER 环境变量覆盖)
+	DBDriver string `yaml:"db_driver" mapstructure:"db_driver"`
 
 	// Redis 主机地址
 	RedisHost string `yaml:"redis_host" mapstructure:"redis_host"`
@@ -200,6 +210,17 @@ func LoadConfig() error {
 	}
 	if envDBName := os.Getenv("DB_NAME"); envDBName != "" {
 		Cfg.DBName = envDBName
+	}
+	if envDBDriver := os.Getenv("DB_DRIVER"); envDBDriver != "" {
+		Cfg.DBDriver = envDBDriver
+	}
+	// 数据库驱动归一化：默认 mysql，仅允许 mysql / pg 两种取值
+	Cfg.DBDriver = strings.ToLower(strings.TrimSpace(Cfg.DBDriver))
+	if Cfg.DBDriver == "" {
+		Cfg.DBDriver = DBDriverMySQL
+	}
+	if Cfg.DBDriver != DBDriverMySQL && Cfg.DBDriver != DBDriverPostgres {
+		return fmt.Errorf("数据库驱动 db_driver 仅支持 %s 或 %s，当前值: %s", DBDriverMySQL, DBDriverPostgres, Cfg.DBDriver)
 	}
 	if envPublicBaseURL := os.Getenv("PUBLIC_BASE_URL"); envPublicBaseURL != "" {
 		Cfg.PublicBaseURL = envPublicBaseURL

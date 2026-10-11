@@ -21,7 +21,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 	adminParty.Get("/article-categories", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		var rows []models.ArticleCategory
-		if err := db.Mysql.Where("app_id = ?", appID).Order("sort asc, id asc").Find(&rows).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).Order("sort asc, id asc").Find(&rows).Error; err != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
 			return
@@ -60,7 +60,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 			_ = ctx.JSON(iris.Map{"code": 400, "msg": "栏目状态必须为 active 或 inactive"})
 			return
 		}
-		result := db.Mysql.Model(&models.ArticleCategory{}).Where("app_id = ? AND id = ?", appID, id).Updates(map[string]interface{}{"slug": strings.TrimSpace(input.Slug), "name": strings.TrimSpace(input.Name), "summary": input.Summary, "sort": input.Sort, "status": status, "updated_at": time.Now()})
+		result := db.DB.Model(&models.ArticleCategory{}).Where("app_id = ? AND id = ?", appID, id).Updates(map[string]interface{}{"slug": strings.TrimSpace(input.Slug), "name": strings.TrimSpace(input.Name), "summary": input.Summary, "sort": input.Sort, "status": status, "updated_at": time.Now()})
 		if result.Error != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": result.Error.Error()})
@@ -76,7 +76,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 	adminParty.Delete("/article-categories/{id:int64}", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		id, _ := strconv.ParseInt(ctx.Params().Get("id"), 10, 64)
-		result := db.Mysql.Model(&models.ArticleCategory{}).Where("app_id = ? AND id = ?", appID, id).Update("status", "inactive")
+		result := db.DB.Model(&models.ArticleCategory{}).Where("app_id = ? AND id = ?", appID, id).Update("status", "inactive")
 		if result.Error != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": result.Error.Error()})
@@ -93,7 +93,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 	adminParty.Get("/membership/levels", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		var rows []models.MembershipLevel
-		if err := db.Mysql.Where("app_id = ?", appID).Order("level asc").Find(&rows).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).Order("level asc").Find(&rows).Error; err != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
 			return
@@ -118,7 +118,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		id, _ := strconv.ParseInt(ctx.Params().Get("id"), 10, 64)
 		var row models.MembershipLevel
-		if appID == "" || id <= 0 || db.Mysql.Where("app_id = ? AND id = ?", appID, id).First(&row).Error != nil || ctx.ReadJSON(&row) != nil {
+		if appID == "" || id <= 0 || db.DB.Where("app_id = ? AND id = ?", appID, id).First(&row).Error != nil || ctx.ReadJSON(&row) != nil {
 			ctx.StatusCode(400)
 			_ = ctx.JSON(iris.Map{"code": 400, "msg": "会员等级不存在或参数无效"})
 			return
@@ -135,12 +135,12 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		id, _ := strconv.ParseInt(ctx.Params().Get("id"), 10, 64)
 		var plan models.MembershipLevel
-		if appID == "" || id <= 0 || db.Mysql.Where("app_id = ? AND id = ?", appID, id).First(&plan).Error != nil {
+		if appID == "" || id <= 0 || db.DB.Where("app_id = ? AND id = ?", appID, id).First(&plan).Error != nil {
 			ctx.StatusCode(404)
 			_ = ctx.JSON(iris.Map{"code": 404, "msg": "会员等级不存在"})
 			return
 		}
-		result := db.Mysql.Model(&plan).Updates(map[string]interface{}{"status": "inactive", "updated_at": time.Now()})
+		result := db.DB.Model(&plan).Updates(map[string]interface{}{"status": "inactive", "updated_at": time.Now()})
 		if result.Error != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": result.Error.Error()})
@@ -151,14 +151,14 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 			_ = ctx.JSON(iris.Map{"code": 404, "msg": "会员等级不存在"})
 			return
 		}
-		db.Mysql.Model(&models.Product{}).Where("app_id = ? AND sku = ?", appID, plan.SKU).Update("status", models.ProductStatusInactive)
+		db.DB.Model(&models.Product{}).Where("app_id = ? AND sku = ?", appID, plan.SKU).Update("status", models.ProductStatusInactive)
 		_ = ctx.JSON(iris.Map{"code": 0, "msg": "会员等级已停用"})
 	})
 
 	adminParty.Get("/articles", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		var rows []models.Article
-		if err := db.Mysql.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error; err != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
 			return
@@ -183,7 +183,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		id, _ := strconv.ParseInt(ctx.Params().Get("id"), 10, 64)
 		var row models.Article
-		if id <= 0 || appID == "" || db.Mysql.Where("app_id = ? AND id = ?", appID, id).First(&row).Error != nil || ctx.ReadJSON(&row) != nil {
+		if id <= 0 || appID == "" || db.DB.Where("app_id = ? AND id = ?", appID, id).First(&row).Error != nil || ctx.ReadJSON(&row) != nil {
 			ctx.StatusCode(400)
 			_ = ctx.JSON(iris.Map{"code": 400, "msg": "文章不存在或参数无效"})
 			return
@@ -199,7 +199,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 	adminParty.Delete("/articles/{id:int64}", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		id, _ := strconv.ParseInt(ctx.Params().Get("id"), 10, 64)
-		result := db.Mysql.Model(&models.Article{}).Where("app_id = ? AND id = ?", appID, id).Updates(map[string]interface{}{"status": "archived", "updated_at": time.Now()})
+		result := db.DB.Model(&models.Article{}).Where("app_id = ? AND id = ?", appID, id).Updates(map[string]interface{}{"status": "archived", "updated_at": time.Now()})
 		if result.Error != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": result.Error.Error()})
@@ -237,7 +237,7 @@ func RegisterAIBreakthroughAdminRoutes(adminParty iris.Party) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		articleID, _ := strconv.ParseInt(ctx.URLParam("article_id"), 10, 64)
 		var rows []models.ArticleComment
-		query := db.Mysql.Where("app_id = ?", appID)
+		query := db.DB.Where("app_id = ?", appID)
 		if articleID > 0 {
 			query = query.Where("article_id = ?", articleID)
 		}

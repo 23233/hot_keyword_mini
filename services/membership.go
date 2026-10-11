@@ -23,14 +23,14 @@ func NewMembershipService() *MembershipService { return &MembershipService{} }
 // ListPlans 返回当前小程序启用的会员等级。
 func (s *MembershipService) ListPlans(appID string) ([]models.MembershipLevel, error) {
 	var plans []models.MembershipLevel
-	err := db.Mysql.Where("app_id = ? AND status = ?", appID, "active").Order("level asc").Find(&plans).Error
+	err := db.DB.Where("app_id = ? AND status = ?", appID, "active").Order("level asc").Find(&plans).Error
 	return plans, err
 }
 
 // GetMembership 返回用户当前会员权益；没有权益时返回 nil、nil。
 func (s *MembershipService) GetMembership(appID string, userID int64) (*models.UserMembership, error) {
 	var membership models.UserMembership
-	err := db.Mysql.Where("app_id = ? AND user_id = ?", appID, userID).First(&membership).Error
+	err := db.DB.Where("app_id = ? AND user_id = ?", appID, userID).First(&membership).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -54,7 +54,7 @@ func (s *MembershipService) SavePlan(plan *models.MembershipLevel) error {
 		return errors.New("会员等级状态必须为 active 或 inactive")
 	}
 	var article models.Article
-	if err := db.Mysql.Where("app_id = ? AND is_paid = ? AND pay_sku = ?", plan.AppID, true, plan.SKU).First(&article).Error; err == nil {
+	if err := db.DB.Where("app_id = ? AND is_paid = ? AND pay_sku = ?", plan.AppID, true, plan.SKU).First(&article).Error; err == nil {
 		return errors.New("会员套餐 SKU 不能与单篇文章重复")
 	}
 	now := time.Now()
@@ -62,7 +62,7 @@ func (s *MembershipService) SavePlan(plan *models.MembershipLevel) error {
 	if plan.CreatedAt.IsZero() {
 		plan.CreatedAt = now
 	}
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
+	return db.DB.Transaction(func(tx *gorm.DB) error {
 		var existing models.MembershipLevel
 		oldSKU := ""
 		query := tx.Where("app_id = ?", plan.AppID)
@@ -108,12 +108,12 @@ func (s *MembershipService) SavePlan(plan *models.MembershipLevel) error {
 
 // ApplyPaidOrder 在事务中按订单发放权益，订单重放不重复续期。
 func (s *MembershipService) ApplyPaidOrder(order *models.PaymentOrder) error {
-	return db.Mysql.Transaction(func(tx *gorm.DB) error { return applyOrderGrant(tx, order, false) })
+	return db.DB.Transaction(func(tx *gorm.DB) error { return applyOrderGrant(tx, order, false) })
 }
 
 // ReversePaidOrder 在事务中撤销指定订单并重算剩余权益。
 func (s *MembershipService) ReversePaidOrder(order *models.PaymentOrder) error {
-	return db.Mysql.Transaction(func(tx *gorm.DB) error { return applyOrderGrant(tx, order, true) })
+	return db.DB.Transaction(func(tx *gorm.DB) error { return applyOrderGrant(tx, order, true) })
 }
 
 // applyOrderGrant 与支付状态共用事务；用户权益行锁串行化同一用户的并发支付。
@@ -252,13 +252,13 @@ func (s *MembershipService) SeedDefaultPlans(appID string) error {
 	}
 	for _, plan := range plans {
 		plan.AppID = appID
-		if err := db.Mysql.Where("app_id = ? AND level = ?", appID, plan.Level).Assign(map[string]interface{}{
+		if err := db.DB.Where("app_id = ? AND level = ?", appID, plan.Level).Assign(map[string]interface{}{
 			"name": plan.Name, "sku": plan.SKU, "price_fen": plan.PriceFen, "duration_days": plan.DurationDays, "description": plan.Description, "status": plan.Status, "updated_at": time.Now(),
 		}).FirstOrCreate(&plan).Error; err != nil {
 			return err
 		}
 		product := models.Product{AppID: appID, SKU: plan.SKU, Name: plan.Name, Description: plan.Description, PriceFen: plan.PriceFen, Status: models.ProductStatusActive, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-		if err := db.Mysql.Where("app_id = ? AND sku = ?", appID, plan.SKU).Assign(map[string]interface{}{
+		if err := db.DB.Where("app_id = ? AND sku = ?", appID, plan.SKU).Assign(map[string]interface{}{
 			"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": product.UpdatedAt,
 		}).FirstOrCreate(&product).Error; err != nil {
 			return err

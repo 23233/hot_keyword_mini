@@ -28,7 +28,8 @@ type Article struct {
 	Title      string `gorm:"column:title;size:255;not null" json:"title"`
 	Summary    string `gorm:"column:summary;size:500" json:"summary"`
 	CoverURL   string `gorm:"column:cover_url;size:512" json:"cover_url"`
-	Markdown   string `gorm:"column:markdown;type:longtext;not null" json:"markdown"`
+	// 文章 Markdown 正文；不写 type 标签，由驱动生成长文本类型 (MySQL=longtext / PG=text)
+	Markdown string `gorm:"column:markdown;not null" json:"markdown"`
 	// 是否启用单篇付费；启用后需购买该文章商品才能阅读全文。
 	IsPaid bool `gorm:"column:is_paid;default:false;index" json:"is_paid"`
 	// 单篇文章商品 SKU，金额由后台商品配置读取。

@@ -29,7 +29,7 @@ func RegisterAIBreakthroughRoutes(api iris.Party) {
 			return
 		}
 		var categories []models.ArticleCategory
-		if err := db.Mysql.Where("app_id = ? AND status = ?", appID, "active").Order("sort asc, id asc").Find(&categories).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND status = ?", appID, "active").Order("sort asc, id asc").Find(&categories).Error; err != nil {
 			ctx.StatusCode(500)
 			_ = ctx.JSON(iris.Map{"code": 500, "msg": err.Error()})
 			return
@@ -120,7 +120,7 @@ func RegisterAIBreakthroughRoutes(api iris.Party) {
 		}
 		if req.SKU == "" && req.Level > 0 {
 			var plan models.MembershipLevel
-			if err := db.Mysql.Where("app_id = ? AND level = ? AND status = ?", appID, req.Level, "active").First(&plan).Error; err != nil {
+			if err := db.DB.Where("app_id = ? AND level = ? AND status = ?", appID, req.Level, "active").First(&plan).Error; err != nil {
 				ctx.StatusCode(404)
 				_ = ctx.JSON(iris.Map{"code": 404, "msg": "会员等级不存在"})
 				return
@@ -250,7 +250,7 @@ func currentUser(ctx iris.Context, appID string) (*models.User, error) {
 		return nil, errors.New("请先完成微信登录")
 	}
 	var user models.User
-	if err := db.Mysql.Where("id = ? AND app_id = ?", userID, appID).First(&user).Error; err != nil {
+	if err := db.DB.Where("id = ? AND app_id = ?", userID, appID).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil

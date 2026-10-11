@@ -36,7 +36,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 	if operation == "admin.create" || operation == "admin.update" || operation == "admin.delete" || strings.HasPrefix(operation, "mcp_token.") {
 		return nil, errors.New("MCP 禁止管理员账号和 MCP Token 管理操作")
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化")
 	}
 	if !containsString(AdminMCPOperations, operation) {
@@ -49,7 +49,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return nil, errors.New("管理写操作必须传入 confirmed=true 二次确认")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	} else if errors.Is(err, gorm.ErrRecordNotFound) && operation != "app.save" {
 		return nil, errors.New("小程序不存在")
@@ -67,7 +67,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 			return nil, err
 		}
 		var saved models.MiniApp
-		if err := db.Mysql.Where("app_id = ?", appID).First(&saved).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).First(&saved).Error; err != nil {
 			return nil, err
 		}
 		return safeMiniApp(&saved), nil
@@ -96,7 +96,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return entries, nil
 	case "product.list":
 		var rows []models.Product
-		err := db.Mysql.Where("app_id = ?", appID).Order("id asc").Find(&rows).Error
+		err := db.DB.Where("app_id = ?", appID).Order("id asc").Find(&rows).Error
 		return rows, err
 	case "product.save":
 		var row models.Product
@@ -108,13 +108,13 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 			return nil, errors.New("商品 SKU、名称和金额必须有效")
 		}
 		row.Status = normalizeStatus(row.Status)
-		if err := db.Mysql.Where("app_id = ? AND sku = ?", appID, row.SKU).Assign(map[string]interface{}{"name": row.Name, "description": row.Description, "price_fen": row.PriceFen, "status": row.Status, "updated_at": time.Now()}).FirstOrCreate(&row).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND sku = ?", appID, row.SKU).Assign(map[string]interface{}{"name": row.Name, "description": row.Description, "price_fen": row.PriceFen, "status": row.Status, "updated_at": time.Now()}).FirstOrCreate(&row).Error; err != nil {
 			return nil, err
 		}
 		return row, nil
 	case "category.list":
 		var rows []models.ArticleCategory
-		err := db.Mysql.Where("app_id = ?", appID).Order("sort asc,id asc").Find(&rows).Error
+		err := db.DB.Where("app_id = ?", appID).Order("sort asc,id asc").Find(&rows).Error
 		return rows, err
 	case "category.save":
 		var row models.ArticleCategory
@@ -125,7 +125,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		if row.Slug == "" || row.Name == "" {
 			return nil, errors.New("栏目标识和名称必须有效")
 		}
-		if err := db.Mysql.Where("app_id = ? AND slug = ?", appID, row.Slug).Assign(map[string]interface{}{"name": row.Name, "summary": row.Summary, "sort": row.Sort, "status": normalizeStatus(row.Status), "updated_at": time.Now()}).FirstOrCreate(&row).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND slug = ?", appID, row.Slug).Assign(map[string]interface{}{"name": row.Name, "summary": row.Summary, "sort": row.Sort, "status": normalizeStatus(row.Status), "updated_at": time.Now()}).FirstOrCreate(&row).Error; err != nil {
 			return nil, err
 		}
 		return row, nil
@@ -133,7 +133,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return archiveRow(appID, payload, &models.ArticleCategory{}, "栏目")
 	case "membership.list":
 		var rows []models.MembershipLevel
-		err := db.Mysql.Where("app_id = ?", appID).Order("level asc").Find(&rows).Error
+		err := db.DB.Where("app_id = ?", appID).Order("level asc").Find(&rows).Error
 		return rows, err
 	case "membership.save":
 		var row models.MembershipLevel
@@ -149,7 +149,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return archiveRow(appID, payload, &models.MembershipLevel{}, "会员等级")
 	case "article.list":
 		var rows []models.Article
-		err := db.Mysql.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error
+		err := db.DB.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error
 		return rows, err
 	case "article.save":
 		var row models.Article
@@ -165,7 +165,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return archiveRow(appID, payload, &models.Article{}, "文章")
 	case "comment.list":
 		var rows []models.ArticleComment
-		err := db.Mysql.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error
+		err := db.DB.Where("app_id = ?", appID).Order("id desc").Find(&rows).Error
 		return rows, err
 	case "comment.moderate":
 		id, ok := numericID(payload["id"])
@@ -178,7 +178,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return map[string]interface{}{"status": "updated", "id": id}, nil
 	case "operation.list":
 		var rows []models.PlatformOperation
-		err := db.Mysql.Where("app_id = ?", appID).Order("updated_at desc").Limit(100).Find(&rows).Error
+		err := db.DB.Where("app_id = ?", appID).Order("updated_at desc").Limit(100).Find(&rows).Error
 		return rows, err
 	case "config.get":
 		return getAdminConfig()
@@ -194,7 +194,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 		return map[string]interface{}{"status": "seeded", "app_id": appID}, nil
 	case "drama.list":
 		var rows []models.Drama
-		err := db.Mysql.Order("id desc").Find(&rows).Error
+		err := db.DB.Order("id desc").Find(&rows).Error
 		return rows, err
 	case "drama.save":
 		var row models.Drama
@@ -205,7 +205,7 @@ func ExecuteAdminMCPOperation(actor, appID, operation string, payload map[string
 			return nil, errors.New("短剧 id 无效")
 		}
 		updates := map[string]interface{}{"title": row.Title, "subtitle": row.Subtitle, "cover_url": row.CoverUrl, "banner_url": row.BannerUrl, "total_episodes": row.TotalEpisodes, "rating": row.Rating, "hot_score": row.HotScore, "tags": row.Tags, "description": row.Description, "highlights": row.Highlights, "play_mode": row.PlayMode, "finder_user_name": row.FinderUserName, "channels_feed_id": row.ChannelsFeedID, "web_url": row.WebUrl, "updated_at": time.Now()}
-		if err := db.Mysql.Model(&models.Drama{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+		if err := db.DB.Model(&models.Drama{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
 			return nil, err
 		}
 		return row, nil
@@ -250,7 +250,7 @@ func archiveRow(app string, payload map[string]interface{}, model interface{}, l
 	if label == "文章" {
 		status = "archived"
 	}
-	result := db.Mysql.Model(model).Where("app_id = ? AND id = ?", app, id).Update("status", status)
+	result := db.DB.Model(model).Where("app_id = ? AND id = ?", app, id).Update("status", status)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -295,7 +295,7 @@ func getAdminConfig() (interface{}, error) {
 		return nil, err
 	}
 	var cfg models.PageConfig
-	if err := db.Mysql.Where("drama_id = ?", drama.ID).First(&cfg).Error; err != nil {
+	if err := db.DB.Where("drama_id = ?", drama.ID).First(&cfg).Error; err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{"drama": drama, "config": cfg}, nil
@@ -316,7 +316,7 @@ func saveAdminConfig(payload map[string]interface{}) (interface{}, error) {
 		raw, _ := json.Marshal(input.FloatingButton)
 		updates["floating_button"] = string(raw)
 	}
-	if result := db.Mysql.Model(&models.PageConfig{}).Where("drama_id = ?", drama.ID).Updates(updates); result.Error != nil {
+	if result := db.DB.Model(&models.PageConfig{}).Where("drama_id = ?", drama.ID).Updates(updates); result.Error != nil {
 		return nil, result.Error
 	}
 	return getAdminConfig()

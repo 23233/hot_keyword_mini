@@ -144,8 +144,8 @@ type DynamicPage struct {
 	RequireAuth bool `gorm:"column:require_auth;default:false;comment:是否需要强制登录" json:"require_auth"`
 	// 分享协议 (JSON序列化存储)
 	ShareConfig string `gorm:"column:share_config;type:text;comment:页面分享配置JSON" json:"share_config"`
-	// 原子积木组件树列表 (JSON序列化存储)
-	Blocks string `gorm:"column:blocks;type:longtext;comment:积木树JSON" json:"blocks"`
+	// 原子积木组件树列表 (JSON序列化存储)；不写 type 标签，由驱动生成长文本类型 (MySQL=longtext / PG=text)
+	Blocks string `gorm:"column:blocks;comment:积木树JSON" json:"blocks"`
 	// 当前蹭的上升指数词
 	Keyword string `gorm:"column:keyword;size:128;comment:蹭的热门关键词" json:"keyword"`
 	// 流量来源渠道标识
@@ -193,8 +193,8 @@ type DynamicPageDraft struct {
 	RequireAuth bool `gorm:"column:require_auth;default:false;comment:是否需要强制登录" json:"require_auth"`
 	// 分享协议 (JSON序列化存储)
 	ShareConfig string `gorm:"column:share_config;type:text;comment:页面分享配置JSON" json:"share_config"`
-	// 原子积木组件树列表 (JSON序列化存储)
-	Blocks string `gorm:"column:blocks;type:longtext;comment:积木树JSON" json:"blocks"`
+	// 原子积木组件树列表 (JSON序列化存储)；不写 type 标签，由驱动生成长文本类型 (MySQL=longtext / PG=text)
+	Blocks string `gorm:"column:blocks;comment:积木树JSON" json:"blocks"`
 	// 当前蹭的上升指数词
 	Keyword string `gorm:"column:keyword;size:128;comment:蹭的热门关键词" json:"keyword"`
 	// 流量来源渠道标识
@@ -240,8 +240,8 @@ type DynamicPageRevision struct {
 	AccentColor string `gorm:"column:accent_color;size:32;comment:强调色" json:"accent_color"`
 	// 是否需要强制微信登录拦截
 	RequireAuth bool `gorm:"column:require_auth;default:false;comment:是否需要强制登录" json:"require_auth"`
-	// 原子积木组件树列表快照 (JSON)
-	Blocks string `gorm:"column:blocks;type:longtext;comment:积木树快照JSON" json:"blocks"`
+	// 原子积木组件树列表快照 (JSON)；不写 type 标签，由驱动生成长文本类型 (MySQL=longtext / PG=text)
+	Blocks string `gorm:"column:blocks;comment:积木树快照JSON" json:"blocks"`
 	// 分享协议快照 (JSON)
 	ShareConfig string `gorm:"column:share_config;type:text;comment:分享协议快照JSON" json:"share_config"`
 	// 热搜关键词快照
@@ -288,8 +288,8 @@ type DynamicPageTemplate struct {
 	Theme string `gorm:"column:theme;size:64;not null;default:'dark_glass';comment:主题风格" json:"theme"`
 	// 默认高光色
 	AccentColor string `gorm:"column:accent_color;size:32;not null;default:'#FF9F0A';comment:强调色" json:"accent_color"`
-	// 原子积木组件树 JSON
-	Blocks string `gorm:"column:blocks;type:longtext;not null;comment:积木树JSON" json:"blocks"`
+	// 原子积木组件树 JSON；不写 type 标签，由驱动生成长文本类型 (MySQL=longtext / PG=text)
+	Blocks string `gorm:"column:blocks;not null;comment:积木树JSON" json:"blocks"`
 	// 页面分享配置 JSON
 	ShareConfig string `gorm:"column:share_config;type:text;comment:分享配置JSON" json:"share_config"`
 	// 最后编辑操作人

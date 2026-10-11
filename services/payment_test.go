@@ -3,12 +3,13 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"hot_keyword/config"
 	"hot_keyword/models"
 	"sync"
 	"testing"
 
-	mysqlDriver "github.com/go-sql-driver/mysql"
+	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
 
@@ -36,8 +37,13 @@ func TestValidatePaymentNotifyURL(t *testing.T) {
 }
 
 func TestIsDuplicateKeyError(t *testing.T) {
-	if !isDuplicateKeyError(&mysqlDriver.MySQLError{Number: 1062}) {
-		t.Fatal("1062 应识别为重复键错误")
+	// TranslateError 已把各驱动的唯一键冲突 (MySQL 1062 / PG 23505) 翻译为 gorm.ErrDuplicatedKey
+	if !isDuplicateKeyError(gorm.ErrDuplicatedKey) {
+		t.Fatal("gorm.ErrDuplicatedKey 应识别为重复键错误")
+	}
+	wrapped := fmt.Errorf("创建会员套餐失败: %w", gorm.ErrDuplicatedKey)
+	if !isDuplicateKeyError(wrapped) {
+		t.Fatal("包装后的重复键错误应被识别")
 	}
 	if isDuplicateKeyError(errors.New("duplicate")) {
 		t.Fatal("普通错误不应识别为重复键错误")

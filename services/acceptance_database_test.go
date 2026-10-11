@@ -2,65 +2,37 @@
 package services
 
 import (
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"hot_keyword/config"
 	"hot_keyword/db"
 	"hot_keyword/models"
-	"os"
 	"testing"
-	"time"
-
-	mysqlDriver "github.com/go-sql-driver/mysql"
-	"github.com/spf13/viper"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // TestLocalDatabaseAcceptance 使用独立临时数据库执行被普通单元测试跳过的持久化验收。
+// 通过 ACCEPTANCE_DB=mysql|pg 选择目标数据库，连接参数读取 ../config.yaml 并支持标准 DB_* 环境变量覆盖。
 func TestLocalDatabaseAcceptance(t *testing.T) {
-	if os.Getenv("ACCEPTANCE_MYSQL") != "1" {
-		t.Skip("设置 ACCEPTANCE_MYSQL=1 执行独立数据库验收")
-	}
-	v := viper.New()
-	v.SetConfigFile("../config.yaml")
-	if err := v.ReadInConfig(); err != nil {
+	dialect, err := db.AcceptanceDialect()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if v.GetString("app_env") != "development" {
-		t.Fatal("仅允许开发配置执行验收")
+	if dialect == "" {
+		t.Skip("设置 ACCEPTANCE_DB=mysql 或 ACCEPTANCE_DB=pg 执行独立数据库验收")
 	}
-	c := mysqlDriver.NewConfig()
-	c.User, c.Passwd = v.GetString("db_user"), v.GetString("db_password")
-	c.Net, c.Addr = "tcp", v.GetString("db_host")+":"+v.GetString("db_port")
-	c.ParseTime = true
-	c.Timeout = 10 * time.Second
-	conn, err := sql.Open("mysql", c.FormatDSN())
+	cfg, err := db.AcceptanceTestConfig("../config.yaml")
 	if err != nil {
-		t.Fatal("创建数据库连接失败")
+		t.Fatal(err)
 	}
-	defer conn.Close()
-	name := fmt.Sprintf("hk_acceptance_%d", time.Now().UnixNano())
-	if _, err := conn.Exec("CREATE DATABASE `" + name + "` CHARACTER SET utf8mb4"); err != nil {
-		t.Fatal("创建独立验收数据库失败")
-	}
-	defer func() {
-		if _, err := conn.Exec("DROP DATABASE `" + name + "`"); err != nil {
-			t.Error("清理独立验收数据库失败")
-		}
-	}()
-	c.DBName = name
-	testDB, err := gorm.Open(mysql.Open(c.FormatDSN()), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	testDB, cleanup, err := db.OpenAcceptanceTestDB(cfg, dialect)
 	if err != nil {
-		t.Fatal("连接独立验收数据库失败")
+		t.Fatal(err)
 	}
+	defer cleanup()
 	sqlDB, _ := testDB.DB()
 	defer sqlDB.Close()
-	previous := db.Mysql
-	db.Mysql = testDB
-	defer func() { db.Mysql = previous }()
+	previous := db.DB
+	db.DB = testDB
+	defer func() { db.DB = previous }()
 	if err := testDB.AutoMigrate(&models.MiniApp{}, &models.DynamicPage{}, &models.DynamicPageDraft{}, &models.DynamicPageRevision{}, &models.DynamicPageTemplate{}, &models.UserSession{}, &models.CapabilityChangeLog{}); err != nil {
 		t.Fatal(err)
 	}

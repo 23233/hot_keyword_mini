@@ -62,7 +62,7 @@ func TestWebViewRegistryDatabaseGuards(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "重复") {
 		t.Fatalf("重复 url_key 应在数据库访问前被拒绝: %v", err)
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		if err := SaveWebViews("wx-test", nil); err == nil || !strings.Contains(err.Error(), "数据库未初始化") {
 			t.Fatalf("数据库未初始化应返回明确错误: %v", err)
 		}
@@ -71,19 +71,19 @@ func TestWebViewRegistryDatabaseGuards(t *testing.T) {
 
 // TestWebViewRegistryTenantIsolation 在本地存在数据库时验证两个 AppID 的登记表互不读取。
 func TestWebViewRegistryTenantIsolation(t *testing.T) {
-	if db.Mysql == nil || !db.Mysql.Migrator().HasTable(&models.MiniApp{}) {
+	if db.DB == nil || !db.DB.Migrator().HasTable(&models.MiniApp{}) {
 		t.Skip("未配置可用数据库，跳过 WebView 多租户集成测试")
 	}
 	suffix := time.Now().UnixNano()
 	appA := fmt.Sprintf("wx-webview-a-%d", suffix)
 	appB := fmt.Sprintf("wx-webview-b-%d", suffix)
 	for _, appID := range []string{appA, appB} {
-		if err := db.Mysql.Create(&models.MiniApp{AppID: appID, AppName: appID, CreatedAt: time.Now(), UpdatedAt: time.Now()}).Error; err != nil {
+		if err := db.DB.Create(&models.MiniApp{AppID: appID, AppName: appID, CreatedAt: time.Now(), UpdatedAt: time.Now()}).Error; err != nil {
 			t.Fatalf("创建测试租户失败: %v", err)
 		}
 	}
 	t.Cleanup(func() {
-		db.Mysql.Where("app_id IN ?", []string{appA, appB}).Delete(&models.MiniApp{})
+		db.DB.Where("app_id IN ?", []string{appA, appB}).Delete(&models.MiniApp{})
 	})
 	if err := SaveWebViews(appA, []WebViewEntry{{URLKey: "home", URL: "https://a.example.com", Purpose: "A", Version: "1", Enabled: true}}); err != nil {
 		t.Fatalf("保存租户 A WebView 失败: %v", err)

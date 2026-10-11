@@ -15,7 +15,9 @@ cos_bucket_url: "https://<bucket-appid>.cos.<region>.myqcloud.com"
 # 小程序未单独配置 cos_cdn_url 时使用的默认 CDN 根地址
 cos_cdn_url: "https://cdn.example.com"
 
-# 2. 数据库连接配置 (生产环境强制要求真实密码，支持环境变量覆盖: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+# 2. 数据库连接配置 (生产环境强制要求真实密码，支持环境变量覆盖: DB_DRIVER, DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+# db_driver: 数据库驱动类型，可选 mysql / pg，默认 mysql；切换 pg 时端口通常为 5432
+db_driver: "mysql"
 db_host: "127.0.0.1"
 db_port: "3306"
 db_user: "root"

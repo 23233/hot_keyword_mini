@@ -46,7 +46,7 @@ func TestGenerateRandomToken(t *testing.T) {
 
 // TestReplayAttackDetection 测试 Refresh Token 重放攻击拦截逻辑
 func TestReplayAttackDetection(t *testing.T) {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		t.Skip("数据库未初始化，跳过持久化重放测试")
 	}
 
@@ -67,9 +67,9 @@ func TestReplayAttackDetection(t *testing.T) {
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
-	_ = db.Mysql.Create(&session).Error
+	_ = db.DB.Create(&session).Error
 	defer func() {
-		db.Mysql.Where("session_id = ?", session.SessionID).Delete(&models.UserSession{})
+		db.DB.Where("session_id = ?", session.SessionID).Delete(&models.UserSession{})
 	}()
 
 	// 2. 模拟黑客拿已被轮换的旧 Refresh Token 再次尝试刷新

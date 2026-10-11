@@ -61,7 +61,7 @@ func ValidateDynamicPageForRelease(page *models.DynamicPage) ValidationReport {
 
 // validateWebViewKeysForRelease 校验发布页面引用的 WebView 入口属于当前租户且处于启用状态。
 func validateWebViewKeysForRelease(appID string, blocks []models.BlockItem) error {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 	var entries []WebViewEntry

@@ -1,7 +1,7 @@
 <!-- readme.md -->
 # 通用 SDUI 动态组件与 AI 破甲资讯小程序系统
 
-本项目是面向微信小程序的通用服务端驱动动态引擎（Server-Driven UI, SDUI），支持资讯、会员、单篇付费文章、评论、短剧、游戏、查询和下载等页面由协议灵活编排。当前默认租户为“ai破甲”资讯导航站。系统采用 **Golang (Iris + Gorm)** 与 **Taro 4 + React**，界面遵循**苹果人机交互设计规范 (Apple HIG)**，并配备多租户管理工作台、MCP 编排服务和微信开发者工具验收脚本。
+本项目是面向微信小程序的通用服务端驱动动态引擎（Server-Driven UI, SDUI），支持资讯、会员、单篇付费文章、评论、短剧、游戏、查询和下载等页面由协议灵活编排。当前默认租户为“ai破甲”资讯导航站。系统采用 **Golang (Iris + Gorm)** 与 **Taro 4 + React**，数据库支持 **MySQL / PostgreSQL 双驱动**，界面遵循**苹果人机交互设计规范 (Apple HIG)**，并配备多租户管理工作台、MCP 编排服务和微信开发者工具验收脚本。
 
 > **开发权威基线**：后续通用能力、Block、Action、后台配置、MCP 编排、两个 AppID 的本地开发和视觉/微信验收，统一遵循 [SDUI通用能力平台开发与验收规范](./doc/SDUI通用能力平台开发与验收规范.md) `v1.0.2`。迁移分析报告仅用于记录取证和方案背景，与规范冲突时以规范为准。
 
@@ -171,7 +171,27 @@ go build ./...
 go run main.go
 ```
 
-### 2. 体验可视化管理后台
+### 2. 数据库双驱动 (MySQL / PostgreSQL)
+
+服务端通过 `config.yaml` 的 `db_driver` 字段选择数据库，业务代码完全无感：
+
+- `db_driver: "mysql"`（默认）：连接参数 `db_host/db_port/db_user/db_password/db_name` 指向 MySQL 实例；
+- `db_driver: "pg"`：同一组连接参数指向 PostgreSQL 实例（端口通常 5432），连接串固定 `sslmode=disable TimeZone=UTC`，与 MySQL 侧 `loc=UTC` 时区语义对齐；
+- 全部支持环境变量覆盖：`DB_DRIVER / DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME`，`db_driver` 取值非法时启动直接报错。
+
+双库兼容约定：长文本字段（积木树 Blocks、文章 Markdown 等）不写死列类型，由 GORM 驱动自动生成（MySQL=longtext / PG=text）；slug 与 page_id 在服务入口统一小写化，规避 MySQL ci 排序规则与 PG 区分大小写的语义差异；重复键等数据库错误经 GORM `TranslateError` 翻译为统一错误（`gorm.ErrDuplicatedKey`），业务判断与具体数据库解耦。
+
+集成验收测试使用真实数据库实例建随机临时库跑全链路，两种方言均需通过：
+
+```bash
+# MySQL 侧验收（连接参数取自 config.yaml）
+ACCEPTANCE_DB=mysql go test ./system/... ./services/... -run 'TestPreflightCompositeUniqueConflicts|TestLocalDatabaseAcceptance'
+
+# PostgreSQL 侧验收（DB_* 环境变量指向 PG 实例，无需修改 config.yaml）
+ACCEPTANCE_DB=pg DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=你的密码 go test ./system/... ./services/... -run 'TestPreflightCompositeUniqueConflicts|TestLocalDatabaseAcceptance'
+```
+
+### 3. 体验可视化管理后台
 启动后端后，浏览器直接访问：
 👉 **`http://localhost:8080/admin`**
 1. **多小程序管理**：顶部切换或添加小程序；
@@ -180,7 +200,7 @@ go run main.go
 4. **一键生成分享卡片**：点击“⚡ 自动生成微信 5:4 分享卡片”，即刻实时预览并在发布后下发；
 5. **发布生效**：点击右上角“⚡ 保存并同步至小程序”，线上小程序无需重新发布代码包，按页面 ETag/HTTP 缓存失效策略读取新版本。
 
-### 3. 小程序前端编译与调试
+### 4. 小程序前端编译与调试
 ```bash
 # 进入小程序目录
 cd minifront
@@ -195,13 +215,13 @@ pnpm run build:weapp
 & "C:\Program Files (x86)\Tencent\微信web开发者工具\cli.bat" open --project "c:\Users\Admin\Desktop\projects\hot_keyword_mini\minifront"
 ```
 
-### 4. 微信支付配置（每个小程序独立普通商户）
+### 5. 微信支付配置（每个小程序独立普通商户）
 
 在管理后台为对应 AppID 填写 `payment_mch_id`、`payment_mch_serial_no`、`payment_api_v3_key`、`payment_private_key`。支付回调地址由后端根据 `public_base_url` 和 AppID 自动生成，不再在后台手工填写。其中 `payment_private_key` 是商户 API 私钥 `apiclient_key.pem` 的完整 PEM 内容，不是商户证书文件；`payment_mch_serial_no` 是商户 API 证书 `apiclient_cert.pem` 的证书序列号，平台证书由 SDK 使用 API v3 Key 自动下载和轮换。还必须在微信支付商户平台完成该小程序 AppID 与商户号绑定并开通 JSAPI/小程序支付权限。
 
 商品通过商品表维护，前端动作只提交 SKU，金额始终由后端读取 `price_fen`。支付通知地址必须使用路径携带 AppID，例如 `https://实际域名/api/v1/payment/notify/wx2e8feeb13a20fb1b`；支付成功后客户端通过 `GET /api/v1/payment/orders/{out_trade_no}` 查询最终状态。
 
-### 5. COS 图片存储与小程序 CDN 配置
+### 6. COS 图片存储与小程序 CDN 配置
 
 当前状态：COS 上传链路已接入，所有新图片对象统一使用固定 `miniapps/` 前缀。管理后台通过短时 PUT 预签名地址直传，页面协议和业务表只保存 CDN 访问地址。代码不会在每次上传时附加对象 ACL，访问权限完全由 COS 控制台配置的 `miniapps/*` 规则负责。
 
@@ -220,7 +240,7 @@ COS_CDN_URL=https://默认CDN域名（可选）
 
 管理后台中的 SDUI 图片、短剧封面和自定义分享图统一调用同一个预签名上传接口，上传成功后自动回填当前小程序的 CDN 地址。行业模板和新增积木不再写入外部示例图片，避免小程序依赖未配置的第三方图片域名。
 
-### 6. MCP Token 管理
+### 7. MCP Token 管理
 
 登录管理后台后进入“AI MCP 智能编排”，填写令牌名称和权限即可创建全局 MCP Token。令牌不绑定单个小程序，明文仅在创建成功时显示一次，数据库只保存 SHA-256 哈希。调用 `/api/v1/mcp` 时通过 `X-MCP-Key` 提交令牌；页面工具必须在 arguments 中显式传入已注册的 `app_id`，部署环境仍可用 `MCP_ALLOWED_TENANTS` 设置总白名单。
 
@@ -232,7 +252,7 @@ AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。�
 
 MCP 的安全边界：内部 MCP 可通过 `sdui.admin.execute` 代理已登记的管理后台业务操作，但不开放管理员账号和 MCP Token 管理；不允许任意数据库迁移、任意 HTTP 代理或任意脚本执行。敏感配置写入必须显式二次确认并记录审计。
 
-### 7. 生产上线预检
+### 8. 生产上线预检
 
 后台通过 `GET /api/v1/admin/production-readiness?app_id=...`，MCP 通过只读工具 `sdui.production.readiness` 检查每个租户的生产配置。报告只返回缺失或格式错误的字段名，不返回 AppSecret、支付私钥、API v3 Key、地图 Key 等原文。
 

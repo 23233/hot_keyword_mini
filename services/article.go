@@ -114,7 +114,7 @@ func (s *ArticleService) ListPublishedForViewer(appID string, categoryID int64, 
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	query := db.Mysql.Where("app_id = ? AND status = ?", appID, "published")
+	query := db.DB.Where("app_id = ? AND status = ?", appID, "published")
 	if categoryID > 0 {
 		query = query.Where("category_id = ?", categoryID)
 	}
@@ -138,7 +138,7 @@ func (s *ArticleService) GetPublished(appID string, id int64, level int) (*Artic
 // GetPublishedForViewer 返回文章详情；正文、试读片段和单篇购买权限均在服务端裁剪。
 func (s *ArticleService) GetPublishedForViewer(appID string, id int64, level int, userID int64) (*ArticleDetail, error) {
 	var article models.Article
-	if err := db.Mysql.Where("app_id = ? AND id = ? AND status = ?", appID, id, "published").First(&article).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND id = ? AND status = ?", appID, id, "published").First(&article).Error; err != nil {
 		return nil, err
 	}
 	purchased := userID > 0 && s.hasPurchase(appID, userID, article.ID)
@@ -161,11 +161,11 @@ func (s *ArticleService) GetPublishedForViewer(appID string, id int64, level int
 }
 
 func (s *ArticleService) hasPurchase(appID string, userID, articleID int64) bool {
-	if db.Mysql == nil || userID <= 0 || articleID <= 0 {
+	if db.DB == nil || userID <= 0 || articleID <= 0 {
 		return false
 	}
 	var count int64
-	db.Mysql.Model(&models.ArticlePurchase{}).Where("app_id = ? AND user_id = ? AND article_id = ?", appID, userID, articleID).Count(&count)
+	db.DB.Model(&models.ArticlePurchase{}).Where("app_id = ? AND user_id = ? AND article_id = ?", appID, userID, articleID).Count(&count)
 	return count > 0
 }
 
@@ -200,9 +200,11 @@ func MarkdownToHTML(markdown string) string {
 
 // SaveCategory 保存资讯栏目。
 func (s *ArticleService) SaveCategory(category *models.ArticleCategory) error {
-	if category == nil || category.AppID == "" || category.Slug == "" || category.Name == "" {
+	if category == nil || category.AppID == "" || strings.TrimSpace(category.Slug) == "" || category.Name == "" {
 		return errors.New("栏目参数不完整")
 	}
+	// slug 统一小写规范化：避免 MySQL(ci 排序规则) 与 PostgreSQL(区分大小写) 下唯一索引与查询语义不一致
+	category.Slug = strings.ToLower(strings.TrimSpace(category.Slug))
 	category.Status = strings.TrimSpace(category.Status)
 	if category.Status == "" {
 		category.Status = "active"
@@ -210,7 +212,7 @@ func (s *ArticleService) SaveCategory(category *models.ArticleCategory) error {
 	if category.Status != "active" && category.Status != "inactive" {
 		return errors.New("栏目状态必须为 active 或 inactive")
 	}
-	return db.Mysql.Where("app_id = ? AND slug = ?", category.AppID, category.Slug).Assign(map[string]interface{}{"name": category.Name, "summary": category.Summary, "sort": category.Sort, "status": category.Status, "updated_at": time.Now()}).FirstOrCreate(category).Error
+	return db.DB.Where("app_id = ? AND slug = ?", category.AppID, category.Slug).Assign(map[string]interface{}{"name": category.Name, "summary": category.Summary, "sort": category.Sort, "status": category.Status, "updated_at": time.Now()}).FirstOrCreate(category).Error
 }
 
 var articleAdminStatuses = map[string]bool{"draft": true, "reviewing": true, "published": true, "archived": true}
@@ -220,7 +222,9 @@ func (s *ArticleService) ValidateArticleConfig(article *models.Article) error {
 	if article == nil || strings.TrimSpace(article.AppID) == "" || strings.TrimSpace(article.Slug) == "" || strings.TrimSpace(article.Title) == "" || strings.TrimSpace(article.Markdown) == "" {
 		return errors.New("文章参数不完整")
 	}
-	article.AppID, article.Slug, article.Title = strings.TrimSpace(article.AppID), strings.TrimSpace(article.Slug), strings.TrimSpace(article.Title)
+	// slug 统一小写规范化：避免 MySQL(ci 排序规则) 与 PostgreSQL(区分大小写) 下唯一索引与查询语义不一致
+	article.AppID, article.Title = strings.TrimSpace(article.AppID), strings.TrimSpace(article.Title)
+	article.Slug = strings.ToLower(strings.TrimSpace(article.Slug))
 	article.Status = strings.TrimSpace(article.Status)
 	if article.Status == "" {
 		article.Status = "draft"
@@ -233,13 +237,13 @@ func (s *ArticleService) ValidateArticleConfig(article *models.Article) error {
 	}
 	if article.CategoryID > 0 {
 		var category models.ArticleCategory
-		if err := db.Mysql.Where("app_id = ? AND id = ?", article.AppID, article.CategoryID).First(&category).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND id = ?", article.AppID, article.CategoryID).First(&category).Error; err != nil {
 			return errors.New("文章栏目不存在或不属于当前小程序")
 		}
 	}
 	if article.RequiredLevel > 0 {
 		var plan models.MembershipLevel
-		if err := db.Mysql.Where("app_id = ? AND level = ?", article.AppID, article.RequiredLevel).First(&plan).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND level = ?", article.AppID, article.RequiredLevel).First(&plan).Error; err != nil {
 			return fmt.Errorf("文章要求的会员等级 level %d 尚未配置", article.RequiredLevel)
 		}
 	}
@@ -256,7 +260,7 @@ func (s *ArticleService) ValidateArticleConfig(article *models.Article) error {
 			return errors.New("付费文章必须提供正文开头的免费试读内容")
 		}
 		var plan models.MembershipLevel
-		if err := db.Mysql.Where("app_id = ? AND sku = ?", article.AppID, article.PaySKU).First(&plan).Error; err == nil {
+		if err := db.DB.Where("app_id = ? AND sku = ?", article.AppID, article.PaySKU).First(&plan).Error; err == nil {
 			return errors.New("单篇文章 SKU 不能与会员套餐重复")
 		}
 	}
@@ -277,7 +281,7 @@ func (s *ArticleService) SaveArticle(article *models.Article) error {
 		article.CreatedAt = now
 	}
 	updates := map[string]interface{}{"category_id": article.CategoryID, "slug": article.Slug, "title": article.Title, "summary": article.Summary, "cover_url": article.CoverURL, "markdown": article.Markdown, "free_markdown": article.FreeMarkdown, "is_paid": article.IsPaid, "pay_sku": article.PaySKU, "price_fen": article.PriceFen, "author": article.Author, "tags": article.Tags, "required_level": article.RequiredLevel, "allow_comments": article.AllowComments, "status": article.Status, "published_at": article.PublishedAt, "updated_at": article.UpdatedAt}
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
+	return db.DB.Transaction(func(tx *gorm.DB) error {
 		var existing models.Article
 		oldSKU := ""
 		query := tx.Where("app_id = ?", article.AppID)
@@ -343,11 +347,11 @@ func (s *ArticleService) SeedDefaultContent(appID string) error {
 		}
 	}
 	var featured models.ArticleCategory
-	if err := db.Mysql.Where("app_id = ? AND slug = ?", appID, "featured").First(&featured).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND slug = ?", appID, "featured").First(&featured).Error; err != nil {
 		return err
 	}
 	var members models.ArticleCategory
-	if err := db.Mysql.Where("app_id = ? AND slug = ?", appID, "members").First(&members).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND slug = ?", appID, "members").First(&members).Error; err != nil {
 		return err
 	}
 	now := time.Now()
@@ -361,12 +365,12 @@ func (s *ArticleService) SeedDefaultContent(appID string) error {
 		if article.IsPaid && article.PaySKU == "" {
 			article.PaySKU = "article_" + article.Slug
 		}
-		if err := db.Mysql.Where("app_id = ? AND slug = ?", appID, article.Slug).Assign(map[string]interface{}{"category_id": article.CategoryID, "title": article.Title, "summary": article.Summary, "cover_url": article.CoverURL, "markdown": article.Markdown, "free_markdown": article.FreeMarkdown, "is_paid": article.IsPaid, "pay_sku": article.PaySKU, "price_fen": article.PriceFen, "author": article.Author, "tags": article.Tags, "required_level": article.RequiredLevel, "allow_comments": article.AllowComments, "status": article.Status, "published_at": article.PublishedAt, "updated_at": now}).FirstOrCreate(&article).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND slug = ?", appID, article.Slug).Assign(map[string]interface{}{"category_id": article.CategoryID, "title": article.Title, "summary": article.Summary, "cover_url": article.CoverURL, "markdown": article.Markdown, "free_markdown": article.FreeMarkdown, "is_paid": article.IsPaid, "pay_sku": article.PaySKU, "price_fen": article.PriceFen, "author": article.Author, "tags": article.Tags, "required_level": article.RequiredLevel, "allow_comments": article.AllowComments, "status": article.Status, "published_at": article.PublishedAt, "updated_at": now}).FirstOrCreate(&article).Error; err != nil {
 			return err
 		}
 		if article.IsPaid {
 			product := models.Product{AppID: appID, SKU: article.PaySKU, Name: article.Title, Description: article.Summary, PriceFen: article.PriceFen, Status: models.ProductStatusActive, CreatedAt: now, UpdatedAt: now}
-			if err := db.Mysql.Where("app_id = ? AND sku = ?", appID, article.PaySKU).Assign(map[string]interface{}{"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": now}).FirstOrCreate(&product).Error; err != nil {
+			if err := db.DB.Where("app_id = ? AND sku = ?", appID, article.PaySKU).Assign(map[string]interface{}{"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": now}).FirstOrCreate(&product).Error; err != nil {
 				return err
 			}
 		}

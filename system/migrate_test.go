@@ -2,24 +2,27 @@
 package system
 
 import (
-	"database/sql"
-	"fmt"
+	"hot_keyword/config"
 	"hot_keyword/db"
-	"os"
 	"strings"
 	"testing"
-	"time"
-
-	mysqlDriver "github.com/go-sql-driver/mysql"
-	"github.com/spf13/viper"
-	gormmysql "gorm.io/driver/mysql"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
-// legacyArticlesDDL 模拟未升级的旧生产表结构（无组合唯一索引，允许写入脏数据）
-const legacyArticlesDDL = `
-CREATE TABLE articles (
+// legacyArticlesDDL 模拟未升级的旧生产表结构（无组合唯一索引，允许写入脏数据），按验收方言返回对应 DDL。
+func legacyArticlesDDL(dialect string) string {
+	if dialect == config.DBDriverPostgres {
+		return `CREATE TABLE articles (
+	id BIGSERIAL PRIMARY KEY,
+	app_id VARCHAR(64) NOT NULL DEFAULT '',
+	slug VARCHAR(128) NOT NULL DEFAULT '',
+	title VARCHAR(255) NOT NULL DEFAULT '',
+	markdown TEXT,
+	status VARCHAR(16) DEFAULT 'draft',
+	created_at TIMESTAMP,
+	updated_at TIMESTAMP
+)`
+	}
+	return `CREATE TABLE articles (
 	id BIGINT AUTO_INCREMENT PRIMARY KEY,
 	app_id VARCHAR(64) NOT NULL DEFAULT '',
 	slug VARCHAR(128) NOT NULL DEFAULT '',
@@ -29,58 +32,41 @@ CREATE TABLE articles (
 	created_at DATETIME,
 	updated_at DATETIME
 )`
+}
 
-// TestPreflightCompositeUniqueConflicts 在真实 MySQL 上验证组合唯一索引预检：
+// TestPreflightCompositeUniqueConflicts 在真实数据库 (ACCEPTANCE_DB=mysql|pg) 上验证组合唯一索引预检：
 // 空库跳过、干净存量表通过、同租户重复与空 app_id 遗留行被拦截且错误信息可读。
-// 设置 ACCEPTANCE_MYSQL=1 执行；只使用随机命名的临时库，结束后删除。
+// 只使用随机命名的临时库，结束后删除。
 func TestPreflightCompositeUniqueConflicts(t *testing.T) {
-	if os.Getenv("ACCEPTANCE_MYSQL") != "1" {
-		t.Skip("设置 ACCEPTANCE_MYSQL=1 执行独立数据库验收")
-	}
-	v := viper.New()
-	v.SetConfigFile("../config.yaml")
-	if err := v.ReadInConfig(); err != nil {
+	dialect, err := db.AcceptanceDialect()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if v.GetString("app_env") != "development" {
-		t.Fatal("仅允许开发配置执行验收")
+	if dialect == "" {
+		t.Skip("设置 ACCEPTANCE_DB=mysql 或 ACCEPTANCE_DB=pg 执行独立数据库验收")
 	}
-	c := mysqlDriver.NewConfig()
-	c.User, c.Passwd = v.GetString("db_user"), v.GetString("db_password")
-	c.Net, c.Addr = "tcp", v.GetString("db_host")+":"+v.GetString("db_port")
-	c.ParseTime = true
-	c.Timeout = 10 * time.Second
-
-	// 1. 使用无库名连接创建随机临时验收库，结束后删除，不触碰已有业务库
-	conn, err := sql.Open("mysql", c.FormatDSN())
+	cfg, err := db.AcceptanceTestConfig("../config.yaml")
 	if err != nil {
-		t.Fatal("创建数据库连接失败")
+		t.Fatal(err)
 	}
-	defer conn.Close()
-	name := fmt.Sprintf("hk_preflight_%d", time.Now().UnixNano())
-	if _, err := conn.Exec("CREATE DATABASE `" + name + "`"); err != nil {
-		t.Fatalf("创建随机验收库失败: %v", err)
-	}
-	defer func() {
-		_, _ = conn.Exec("DROP DATABASE `" + name + "`")
-	}()
-
-	c.DBName = name
-	testDB, err := gorm.Open(gormmysql.Open(c.FormatDSN()), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	testDB, cleanup, err := db.OpenAcceptanceTestDB(cfg, dialect)
 	if err != nil {
-		t.Fatalf("连接随机验收库失败: %v", err)
+		t.Fatal(err)
 	}
+	defer cleanup()
+	sqlDB, _ := testDB.DB()
+	defer sqlDB.Close()
 
 	// 场景一：空库（表不存在）应直接跳过预检
-	original := db.Mysql
-	db.Mysql = testDB
-	defer func() { db.Mysql = original }()
+	original := db.DB
+	db.DB = testDB
+	defer func() { db.DB = original }()
 	if err := preflightCompositeUniqueConflicts(); err != nil {
 		t.Fatalf("空库预检应直接跳过: %v", err)
 	}
 
 	// 场景二：干净的旧结构存量表应通过预检
-	if err := testDB.Exec(legacyArticlesDDL).Error; err != nil {
+	if err := testDB.Exec(legacyArticlesDDL(dialect)).Error; err != nil {
 		t.Fatalf("初始化旧结构表失败: %v", err)
 	}
 	if err := testDB.Exec("INSERT INTO articles (app_id, slug, title, status) VALUES ('wx516563cfe994bbc6', 'only-one', '正常行', 'published')").Error; err != nil {

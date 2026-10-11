@@ -49,7 +49,7 @@ func (s *WechatAuditService) accessToken(ctx context.Context, appID string) (str
 	wechatAuditTokenCache.Unlock()
 	if cached.Token != "" && time.Now().Before(cached.ExpiresAt) { return cached.Token, nil }
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil { return "", errors.New("小程序配置不存在") }
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil { return "", errors.New("小程序配置不存在") }
 	if strings.TrimSpace(app.AppSecret) == "" { return "", errors.New("当前小程序未配置 AppSecret，无法调用微信内容审核") }
 	endpoint := "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=" + url.QueryEscape(appID) + "&secret=" + url.QueryEscape(app.AppSecret)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

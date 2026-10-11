@@ -56,7 +56,7 @@ func NewDramaService() *DramaService {
 // GetDefaultDrama 获取默认《猴王下山》短剧信息；数据不存在时只返回错误，不在查询路径写入种子数据。
 func (s *DramaService) GetDefaultDrama() (*models.Drama, error) {
 	var drama models.Drama
-	err := db.Mysql.Where("title = ?", "猴王下山").First(&drama).Error
+	err := db.DB.Where("title = ?", "猴王下山").First(&drama).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("短剧不存在: 猴王下山")
@@ -77,14 +77,14 @@ func (s *DramaService) GetHomeData(modeOverride string) (*DramaHomeResponse, err
 
 	// 2. 查询全部选集列表(按集数升序排列)
 	var episodes []*models.DramaEpisode
-	err = db.Mysql.Where("drama_id = ?", drama.ID).Order("episode_num asc").Find(&episodes).Error
+	err = db.DB.Where("drama_id = ?", drama.ID).Order("episode_num asc").Find(&episodes).Error
 	if err != nil {
 		return nil, fmt.Errorf("获取剧集选集失败: %w", err)
 	}
 
 	// 3. 读取页面布局配置
 	var pageConfig models.PageConfig
-	err = db.Mysql.Where("drama_id = ?", drama.ID).First(&pageConfig).Error
+	err = db.DB.Where("drama_id = ?", drama.ID).First(&pageConfig).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("读取页面配置失败: %w", err)
 	}
@@ -168,7 +168,7 @@ func (s *DramaService) SwitchDisplayMode(mode string) error {
 	if err != nil {
 		return err
 	}
-	return db.Mysql.Model(&models.PageConfig{}).
+	return db.DB.Model(&models.PageConfig{}).
 		Where("drama_id = ?", drama.ID).
 		Update("display_mode", mode).Error
 }
@@ -194,7 +194,7 @@ func (s *DramaService) seedDefaultDramaData() (*models.Drama, error) {
 		Highlights:      "【高能预警】第3集金箍棒初露锋芒震碎豪车！第12集猴王大寿亮出齐天金令，四大家族家主齐下跪！第45集十万妖王云集江城，迎战域外战神！",
 	}
 
-	if err := db.Mysql.Create(&drama).Error; err != nil {
+	if err := db.DB.Create(&drama).Error; err != nil {
 		return nil, err
 	}
 
@@ -226,7 +226,7 @@ func (s *DramaService) seedDefaultDramaData() (*models.Drama, error) {
 		})
 	}
 
-	if err := db.Mysql.CreateInBatches(episodes, 40).Error; err != nil {
+	if err := db.DB.CreateInBatches(episodes, 40).Error; err != nil {
 		logger.JM.Errorf("批量插入剧集选集失败: %v", err)
 	}
 
@@ -277,7 +277,7 @@ func (s *DramaService) seedDefaultDramaData() (*models.Drama, error) {
 		ShareCover:     drama.CoverUrl,
 	}
 
-	if err := db.Mysql.Create(&pageConfig).Error; err != nil {
+	if err := db.DB.Create(&pageConfig).Error; err != nil {
 		logger.JM.Errorf("创建默认页面配置失败: %v", err)
 	}
 
@@ -359,7 +359,7 @@ func (s *DramaService) GetDramaDetail(dramaID int64) (*models.Drama, []*models.D
 	defaultDrama, err := s.GetDefaultDrama()
 	if err == nil && (dramaID == defaultDrama.ID || dramaID == 0) {
 		var episodes []*models.DramaEpisode
-		_ = db.Mysql.Where("drama_id = ?", defaultDrama.ID).Order("episode_num asc").Find(&episodes).Error
+		_ = db.DB.Where("drama_id = ?", defaultDrama.ID).Order("episode_num asc").Find(&episodes).Error
 		return defaultDrama, episodes, nil
 	}
 
@@ -374,7 +374,7 @@ func (s *DramaService) GetDramaDetail(dramaID int64) (*models.Drama, []*models.D
 
 	// 默认回退
 	var episodes []*models.DramaEpisode
-	_ = db.Mysql.Where("drama_id = ?", defaultDrama.ID).Order("episode_num asc").Find(&episodes).Error
+	_ = db.DB.Where("drama_id = ?", defaultDrama.ID).Order("episode_num asc").Find(&episodes).Error
 	return defaultDrama, episodes, nil
 }
 

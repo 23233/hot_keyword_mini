@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/23233/ggg/ut"
-	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/downloader"
@@ -55,7 +54,7 @@ func NewPaymentService() *PaymentService { return &PaymentService{} }
 
 // CreateSandboxOrder 创建本地支付沙箱订单。沙箱不访问微信支付，也不要求商户参数。
 func (s *PaymentService) CreateSandboxOrder(appID string, userID int64, openID, productSKU, idempotencyKey string) (*models.PaymentOrder, error) {
-	if db.Mysql == nil || appID == "" || userID <= 0 || openID == "" || strings.TrimSpace(productSKU) == "" {
+	if db.DB == nil || appID == "" || userID <= 0 || openID == "" || strings.TrimSpace(productSKU) == "" {
 		return nil, errors.New("支付沙箱订单参数不完整")
 	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
@@ -64,17 +63,17 @@ func (s *PaymentService) CreateSandboxOrder(appID string, userID int64, openID, 
 	}
 	attach := "sandbox:" + idempotencyKey
 	var existing models.PaymentOrder
-	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; err == nil {
+	if err := db.DB.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; err == nil {
 		return &existing, nil
 	}
 	var product models.Product
-	if err := db.Mysql.Where("app_id = ? AND sku = ? AND status = ?", appID, productSKU, models.ProductStatusActive).First(&product).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND sku = ? AND status = ?", appID, productSKU, models.ProductStatusActive).First(&product).Error; err != nil {
 		return nil, errors.New("商品不存在或已下架")
 	}
 	now := time.Now()
 	order := &models.PaymentOrder{AppID: appID, UserID: userID, ProductID: product.ID, OutTradeNo: "S" + time.Now().Format("20060102150405") + strings.ToUpper(ut.RandomStr(10)), OpenID: openID, Description: product.Name, AmountFen: product.PriceFen, Status: models.PaymentOrderPending, Attach: attach, Sandbox: true, CreatedAt: now, UpdatedAt: now}
-	if err := db.Mysql.Create(order).Error; err != nil {
-		if isDuplicateKeyError(err) && db.Mysql.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error == nil {
+	if err := db.DB.Create(order).Error; err != nil {
+		if isDuplicateKeyError(err) && db.DB.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error == nil {
 			return &existing, nil
 		}
 		return nil, fmt.Errorf("创建支付沙箱订单失败: %w", err)
@@ -84,11 +83,11 @@ func (s *PaymentService) CreateSandboxOrder(appID string, userID int64, openID, 
 
 // ApplySandboxTransition 本地回调与正式回调共用事务和权益逻辑。
 func (s *PaymentService) ApplySandboxTransition(appID string, userID int64, outTradeNo, transition string) (*models.PaymentOrder, error) {
-	if db.Mysql == nil || appID == "" || userID <= 0 || strings.TrimSpace(outTradeNo) == "" {
+	if db.DB == nil || appID == "" || userID <= 0 || strings.TrimSpace(outTradeNo) == "" {
 		return nil, errors.New("支付沙箱参数不完整")
 	}
 	var order models.PaymentOrder
-	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND out_trade_no = ? AND sandbox = ?", appID, userID, outTradeNo, true).First(&order).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND user_id = ? AND out_trade_no = ? AND sandbox = ?", appID, userID, outTradeNo, true).First(&order).Error; err != nil {
 		return nil, errors.New("支付沙箱订单不存在")
 	}
 	return commitPaymentTransition(&order, transition, "sandbox-tx-"+strings.ToLower(ut.RandomStr(10)), nil)
@@ -97,7 +96,7 @@ func (s *PaymentService) ApplySandboxTransition(appID string, userID int64, outT
 // commitPaymentTransition 原子提交订单与权益，行锁防止回调、查单、退款互相覆盖。
 func commitPaymentTransition(input *models.PaymentOrder, transition, transactionID string, paidAt *time.Time) (*models.PaymentOrder, error) {
 	var order models.PaymentOrder
-	err := db.Mysql.Transaction(func(tx *gorm.DB) error {
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND app_id = ? AND user_id = ?", input.ID, input.AppID, input.UserID).First(&order).Error; err != nil {
 			return err
 		}
@@ -159,10 +158,10 @@ func nextSandboxPaymentStatus(current, transition string) (string, bool, error) 
 // ApplySandboxNotify 模拟微信支付回调，保持订单更新与正式回调相同的幂等语义。
 func (s *PaymentService) ApplySandboxNotify(appID, outTradeNo string, success bool) (*models.PaymentOrder, error) {
 	var order models.PaymentOrder
-	if db.Mysql == nil || appID == "" || outTradeNo == "" {
+	if db.DB == nil || appID == "" || outTradeNo == "" {
 		return nil, errors.New("支付沙箱回调参数不完整")
 	}
-	if err := db.Mysql.Where("app_id = ? AND out_trade_no = ? AND sandbox = ?", appID, outTradeNo, true).First(&order).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND out_trade_no = ? AND sandbox = ?", appID, outTradeNo, true).First(&order).Error; err != nil {
 		return nil, errors.New("支付沙箱订单不存在")
 	}
 	if success {
@@ -233,11 +232,11 @@ func (s *PaymentService) CreateJSAPIOrder(ctx context.Context, appID string, use
 		return nil, nil, errors.New("幂等键长度不能超过 123 个字符")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return nil, nil, fmt.Errorf("小程序配置不存在: %w", err)
 	}
 	var product models.Product
-	if err := db.Mysql.Where("app_id = ? AND sku = ? AND status = ?", appID, productSKU, models.ProductStatusActive).First(&product).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND sku = ? AND status = ?", appID, productSKU, models.ProductStatusActive).First(&product).Error; err != nil {
 		return nil, nil, errors.New("商品不存在或已下架")
 	}
 	if product.PriceFen <= 0 {
@@ -256,14 +255,14 @@ func (s *PaymentService) CreateJSAPIOrder(ctx context.Context, appID string, use
 		return nil, nil, err
 	}
 	var existing models.PaymentOrder
-	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; err == nil {
+	if err := db.DB.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; err == nil {
 		return s.reusePaymentOrder(ctx, &app, &existing)
 	}
 	outTradeNo := fmt.Sprintf("%s%d%s", time.Now().Format("20060102150405"), userID%100000, strings.ToUpper(ut.RandomStr(8)))
 	order := &models.PaymentOrder{AppID: appID, UserID: userID, ProductID: product.ID, OutTradeNo: outTradeNo, OpenID: openID, Description: product.Name, AmountFen: product.PriceFen, Status: models.PaymentOrderPending, Attach: attach, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Mysql.Create(order).Error; err != nil {
+	if err := db.DB.Create(order).Error; err != nil {
 		if isDuplicateKeyError(err) {
-			if findErr := db.Mysql.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; findErr == nil {
+			if findErr := db.DB.Where("app_id = ? AND user_id = ? AND attach = ?", appID, userID, attach).First(&existing).Error; findErr == nil {
 				return s.reusePaymentOrder(ctx, &app, &existing)
 			}
 		}
@@ -275,7 +274,7 @@ func (s *PaymentService) CreateJSAPIOrder(ctx context.Context, appID string, use
 func (s *PaymentService) prepayOrder(ctx context.Context, app *models.MiniApp, order *models.PaymentOrder) (*models.PaymentOrder, *JSAPIPaymentParams, error) {
 	client, err := s.clientForApp(ctx, app)
 	if err != nil {
-		_ = db.Mysql.Model(order).Update("status", models.PaymentOrderFailed).Error
+		_ = db.DB.Model(order).Update("status", models.PaymentOrderFailed).Error
 		return nil, nil, err
 	}
 	notifyURL, err := config.Cfg.PaymentNotifyURL(app.AppID)
@@ -285,15 +284,15 @@ func (s *PaymentService) prepayOrder(ctx context.Context, app *models.MiniApp, o
 	svc := jsapi.JsapiApiService{Client: client}
 	resp, _, err := svc.PrepayWithRequestPayment(ctx, jsapi.PrepayRequest{Appid: core.String(app.AppID), Mchid: core.String(app.PaymentMchID), Description: core.String(order.Description), OutTradeNo: core.String(order.OutTradeNo), Attach: core.String(order.Attach), NotifyUrl: core.String(notifyURL), Amount: &jsapi.Amount{Total: core.Int64(order.AmountFen), Currency: core.String("CNY")}, Payer: &jsapi.Payer{Openid: core.String(order.OpenID)}})
 	if err != nil {
-		_ = db.Mysql.Model(order).Update("status", models.PaymentOrderFailed).Error
+		_ = db.DB.Model(order).Update("status", models.PaymentOrderFailed).Error
 		return nil, nil, fmt.Errorf("微信支付预下单失败: %w", err)
 	}
 	if resp == nil || resp.PrepayId == nil {
-		_ = db.Mysql.Model(order).Update("status", models.PaymentOrderFailed).Error
+		_ = db.DB.Model(order).Update("status", models.PaymentOrderFailed).Error
 		return nil, nil, errors.New("微信支付未返回 prepay_id")
 	}
 	order.PrepayID = *resp.PrepayId
-	if err := db.Mysql.Model(order).Updates(map[string]interface{}{"prepay_id": order.PrepayID, "updated_at": time.Now()}).Error; err != nil {
+	if err := db.DB.Model(order).Updates(map[string]interface{}{"prepay_id": order.PrepayID, "updated_at": time.Now()}).Error; err != nil {
 		return nil, nil, err
 	}
 	return order, &JSAPIPaymentParams{AppID: valueOrEmpty(resp.Appid), TimeStamp: valueOrEmpty(resp.TimeStamp), NonceStr: valueOrEmpty(resp.NonceStr), Package: valueOrEmpty(resp.Package), SignType: valueOrEmpty(resp.SignType), PaySign: valueOrEmpty(resp.PaySign)}, nil
@@ -313,9 +312,10 @@ func (s *PaymentService) reusePaymentOrder(ctx context.Context, app *models.Mini
 	return order, params, err
 }
 
+// isDuplicateKeyError 判断是否为唯一键冲突错误。
+// 依赖 GORM TranslateError：MySQL 1062 与 PostgreSQL 23505 均被翻译为 gorm.ErrDuplicatedKey，双数据库通用。
 func isDuplicateKeyError(err error) bool {
-	var mysqlErr *mysqlDriver.MySQLError
-	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
+	return errors.Is(err, gorm.ErrDuplicatedKey)
 }
 
 func (s *PaymentService) signPaymentParams(ctx context.Context, app *models.MiniApp, prepayID string) (*JSAPIPaymentParams, error) {
@@ -364,7 +364,7 @@ func (s *PaymentService) ApplyNotify(ctx context.Context, app *models.MiniApp, r
 		return errors.New("支付通知状态无效")
 	}
 	var order models.PaymentOrder
-	if err := db.Mysql.Where("app_id = ? AND out_trade_no = ?", app.AppID, *transaction.OutTradeNo).First(&order).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND out_trade_no = ?", app.AppID, *transaction.OutTradeNo).First(&order).Error; err != nil {
 		return errors.New("支付订单不存在")
 	}
 	if transaction.Amount == nil || transaction.Amount.Total == nil || *transaction.Amount.Total != order.AmountFen {
@@ -403,11 +403,11 @@ func (s *PaymentService) GetOrderStatus(ctx context.Context, appID string, userI
 		return nil, errors.New("订单查询参数不完整")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return nil, errors.New("小程序配置不存在")
 	}
 	var order models.PaymentOrder
-	if err := db.Mysql.Where("app_id = ? AND user_id = ? AND out_trade_no = ?", appID, userID, outTradeNo).First(&order).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND user_id = ? AND out_trade_no = ?", appID, userID, outTradeNo).First(&order).Error; err != nil {
 		return nil, errors.New("支付订单不存在")
 	}
 	if order.Status == models.PaymentOrderPaid {

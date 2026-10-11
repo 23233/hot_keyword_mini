@@ -27,12 +27,12 @@ func NewTemplateService() *TemplateService {
 // ListTemplates 返回内置模板与指定小程序可复用的用户模板。
 func (s *TemplateService) ListTemplates(appID, businessType string) ([]*SDUITemplate, error) {
 	templates := s.registry.ListTemplates(businessType)
-	if strings.TrimSpace(appID) == "" || db.Mysql == nil {
+	if strings.TrimSpace(appID) == "" || db.DB == nil {
 		return templates, nil
 	}
 
 	var records []models.DynamicPageTemplate
-	query := db.Mysql.Where("app_id = ?", appID)
+	query := db.DB.Where("app_id = ?", appID)
 	if strings.TrimSpace(businessType) != "" {
 		query = query.Where("business_type = ?", businessType)
 	}
@@ -67,12 +67,12 @@ func (s *TemplateService) GetTemplate(appID, templateID string) (*SDUITemplate, 
 	if strings.TrimSpace(appID) == "" {
 		return nil, fmt.Errorf("未找到行业模板: %s", templateID)
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化，无法读取用户模板")
 	}
 
 	var record models.DynamicPageTemplate
-	if err := db.Mysql.Where("app_id = ? AND template_id = ?", appID, templateID).First(&record).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND template_id = ?", appID, templateID).First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("未找到模板: %s", templateID)
 		}
@@ -83,7 +83,7 @@ func (s *TemplateService) GetTemplate(appID, templateID string) (*SDUITemplate, 
 
 // SaveCustomTemplate 新建或更新用户模板，并在持久化前复用页面协议校验。
 func (s *TemplateService) SaveCustomTemplate(template *SDUITemplate, operator string, expectedRevision int) (*SDUITemplate, error) {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化，无法保存用户模板")
 	}
 	if template == nil {
@@ -105,7 +105,7 @@ func (s *TemplateService) SaveCustomTemplate(template *SDUITemplate, operator st
 	}
 
 	var saved models.DynamicPageTemplate
-	err = db.Mysql.Transaction(func(tx *gorm.DB) error {
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		var existing models.DynamicPageTemplate
 		findErr := tx.Where("app_id = ? AND template_id = ?", prepared.AppID, prepared.TemplateID).First(&existing).Error
 		if errors.Is(findErr, gorm.ErrRecordNotFound) {
@@ -154,11 +154,11 @@ func (s *TemplateService) DeleteCustomTemplate(appID, templateID string, expecte
 	if expectedRevision <= 0 {
 		return errors.New("删除模板必须提供有效的 expected_revision")
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return errors.New("数据库未初始化，无法删除用户模板")
 	}
 
-	result := db.Mysql.Where("app_id = ? AND template_id = ? AND revision = ?", appID, templateID, expectedRevision).Delete(&models.DynamicPageTemplate{})
+	result := db.DB.Where("app_id = ? AND template_id = ? AND revision = ?", appID, templateID, expectedRevision).Delete(&models.DynamicPageTemplate{})
 	if result.Error != nil {
 		return result.Error
 	}

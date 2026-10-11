@@ -103,7 +103,7 @@ func ContextGetUser(ctx iris.Context) (*models.User, error) {
 	// 1. 若携带 sessionId，执行强校验检测是否已被主动撤销或踢出
 	if sid, ok := claims[JwtSessionId].(string); ok && sid != "" {
 		var session models.UserSession
-		if err := db.Mysql.Where("session_id = ?", sid).First(&session).Error; err != nil {
+		if err := db.DB.Where("session_id = ?", sid).First(&session).Error; err != nil {
 			return nil, errors.New("会话不存在或已过期")
 		}
 		if session.Revoked {
@@ -125,7 +125,7 @@ func ContextGetUser(ctx iris.Context) (*models.User, error) {
 			uid = v
 		}
 		if uid > 0 {
-			if err := db.Mysql.Where("id = ?", uid).First(&user).Error; err == nil {
+			if err := db.DB.Where("id = ?", uid).First(&user).Error; err == nil {
 				return &user, nil
 			}
 		}
@@ -134,7 +134,7 @@ func ContextGetUser(ctx iris.Context) (*models.User, error) {
 	// 降级使用 openid 与 app_id 查询
 	openId, _ := claims["openId"].(string)
 	appId, _ := claims[JwtAppId].(string)
-	query := db.Mysql.Where("wechat_openid = ?", openId)
+	query := db.DB.Where("wechat_openid = ?", openId)
 	if appId != "" {
 		query = query.Where("app_id = ?", appId)
 	}
@@ -231,8 +231,8 @@ func ValidateTokenSessionAndTenant(tokenStr string, expectedAppID string) (*mode
 		return nil, nil, nil, errors.New("凭据格式不合规: 缺少 sessionId 会话信息，禁止无状态绕过撤销检查")
 	}
 	var session models.UserSession
-	if db.Mysql != nil {
-		if err := db.Mysql.Where("session_id = ?", sid).First(&session).Error; err != nil {
+	if db.DB != nil {
+		if err := db.DB.Where("session_id = ?", sid).First(&session).Error; err != nil {
 			return nil, nil, nil, errors.New("会话不存在或已失效")
 		}
 		if session.Revoked {
@@ -248,8 +248,8 @@ func ValidateTokenSessionAndTenant(tokenStr string, expectedAppID string) (*mode
 
 	// 3. 提取关联用户
 	var user models.User
-	if db.Mysql != nil && session.UserID > 0 {
-		_ = db.Mysql.Where("id = ?", session.UserID).First(&user)
+	if db.DB != nil && session.UserID > 0 {
+		_ = db.DB.Where("id = ?", session.UserID).First(&user)
 	}
 
 	return &session, &user, claims, nil

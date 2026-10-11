@@ -300,7 +300,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			updateMap["floating_button"] = string(fbJSON)
 		}
 
-		err = db.Mysql.Model(&models.PageConfig{}).
+		err = db.DB.Model(&models.PageConfig{}).
 			Where("drama_id = ?", drama.ID).
 			Updates(updateMap).Error
 		if err != nil {
@@ -338,7 +338,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			"web_url":          req.WebUrl,
 		}
 
-		err := db.Mysql.Model(&models.Drama{}).Where("id = ?", req.ID).Updates(updateData).Error
+		err := db.DB.Model(&models.Drama{}).Where("id = ?", req.ID).Updates(updateData).Error
 		if err != nil {
 			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "更新短剧信息失败: " + err.Error()})
@@ -492,7 +492,7 @@ func RegisterAdminRoutes(party iris.Party) {
 	adminParty.Get("/products", func(ctx iris.Context) {
 		appID := strings.TrimSpace(ctx.URLParam("app_id"))
 		var products []models.Product
-		if err := db.Mysql.Where("app_id = ?", appID).Order("id asc").Find(&products).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).Order("id asc").Find(&products).Error; err != nil {
 			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "获取商品失败: " + err.Error()})
 			return
@@ -516,7 +516,7 @@ func RegisterAdminRoutes(party iris.Party) {
 		}
 		product.CreatedAt = time.Now()
 		product.UpdatedAt = time.Now()
-		if err := db.Mysql.Where("app_id = ? AND sku = ?", product.AppID, product.SKU).Assign(map[string]interface{}{"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": product.UpdatedAt}).FirstOrCreate(&product).Error; err != nil {
+		if err := db.DB.Where("app_id = ? AND sku = ?", product.AppID, product.SKU).Assign(map[string]interface{}{"name": product.Name, "description": product.Description, "price_fen": product.PriceFen, "status": product.Status, "updated_at": product.UpdatedAt}).FirstOrCreate(&product).Error; err != nil {
 			ctx.StatusCode(iris.StatusInternalServerError)
 			ctx.JSON(iris.Map{"code": 500, "msg": "保存商品失败: " + err.Error()})
 			return
@@ -533,7 +533,7 @@ func RegisterAdminRoutes(party iris.Party) {
 			return
 		}
 		var rows []models.PlatformOperation
-		query := db.Mysql.Where("app_id = ?", appID).Order("updated_at desc")
+		query := db.DB.Where("app_id = ?", appID).Order("updated_at desc")
 		if endpoint := strings.TrimSpace(ctx.URLParam("endpoint")); endpoint != "" {
 			query = query.Where("kind = ?", endpoint)
 		}
@@ -663,6 +663,8 @@ func RegisterAdminRoutes(party iris.Party) {
 			ctx.JSON(iris.Map{"code": 400, "msg": "页面参数不合法"})
 			return
 		}
+		// page_id 统一小写规范化，保证 MySQL 与 PostgreSQL 下 (app_id, page_id) 唯一语义一致
+		req.PageID = strings.ToLower(strings.TrimSpace(req.PageID))
 
 		operator := ctx.Values().GetString("admin_username")
 		if operator == "" {
@@ -855,6 +857,8 @@ func RegisterAdminRoutes(party iris.Party) {
 			ctx.JSON(iris.Map{"code": 400, "msg": "请完整提供 template_id, app_id 与 page_id"})
 			return
 		}
+		// page_id 统一小写规范化，保证 MySQL 与 PostgreSQL 下 (app_id, page_id) 唯一语义一致
+		req.PageID = strings.ToLower(strings.TrimSpace(req.PageID))
 
 		page, err := templateService.ApplyTemplateToPage(req.TemplateID, req.AppID, req.PageID, req.Title)
 		if err != nil {

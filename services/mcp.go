@@ -857,7 +857,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if !hasScope(scopes, "read") {
 			return nil, errors.New("权限不足: 需要 read 权限以查询小程序列表")
 		}
-		if db.Mysql == nil {
+		if db.DB == nil {
 			return nil, errors.New("数据库未初始化，无法查询小程序列表")
 		}
 		apps, err := m.sduiService.ListApps()
@@ -920,7 +920,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		}
 		// 验收工具还要读取草稿，否则新页面必须先发布才能被检查，无法满足发布前门禁。
 		var drafts []models.DynamicPageDraft
-		if err := db.Mysql.Where("app_id = ?", appID).Order("updated_at desc").Find(&drafts).Error; err != nil {
+		if err := db.DB.Where("app_id = ?", appID).Order("updated_at desc").Find(&drafts).Error; err != nil {
 			return nil, fmt.Errorf("读取验收草稿失败: %w", err)
 		}
 		for _, draft := range drafts {
@@ -1241,11 +1241,12 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		if err := ensureMCPAppExists(appID); err != nil {
 			return nil, err
 		}
-		pageID = strings.TrimSpace(pageID)
+		// page_id 统一小写规范化，保证 MySQL 与 PostgreSQL 下 (app_id, page_id) 唯一语义一致
+		pageID = strings.ToLower(strings.TrimSpace(pageID))
 		if pageID == "" {
 			return nil, errors.New("page_id 为必填参数")
 		}
-		if db.Mysql != nil {
+		if db.DB != nil {
 			if _, err := m.sduiService.FindRawDraft(appID, pageID); err == nil {
 				return nil, errors.New("page_id 已存在草稿；请先调用 sdui.page.get，再使用 sdui.page.patch 修改")
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1293,7 +1294,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		if db.Mysql != nil {
+		if db.DB != nil {
 			if err := m.sduiService.SaveDraftWithAudit(&draft, actorID, 0); err != nil {
 				return nil, fmt.Errorf("保存页面草稿失败: %w", err)
 			}
@@ -1389,7 +1390,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			if err := applyMCPPageTenant(directPage, args, tenantID); err != nil {
 				return nil, err
 			}
-			if db.Mysql != nil {
+			if db.DB != nil {
 				if err := ensureMCPAppExists(directPage.AppID); err != nil {
 					return nil, err
 				}
@@ -1404,7 +1405,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			if err := applyMCPPageTenant(directPage, args, tenantID); err != nil {
 				return nil, err
 			}
-			if db.Mysql != nil {
+			if db.DB != nil {
 				if err := ensureMCPAppExists(directPage.AppID); err != nil {
 					return nil, err
 				}
@@ -1428,7 +1429,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		}
 
 		var page *models.DynamicPage
-		if db.Mysql != nil {
+		if db.DB != nil {
 			// 优先校验正在编辑的草稿
 			if draft, err := m.sduiService.FindRawDraft(appID, pageID); err == nil && draft != nil {
 				page = &models.DynamicPage{
@@ -1518,7 +1519,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		}
 
 		var targetPage *models.DynamicPage
-		if db.Mysql != nil {
+		if db.DB != nil {
 			// 优先消费当前草稿
 			if draft, err := m.sduiService.FindRawDraft(appID, pageID); err == nil && draft != nil {
 				targetPage = &models.DynamicPage{
@@ -1682,7 +1683,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, errors.New("expected_revision 必须为人工审查时 page.get 返回的正整数草稿版本")
 		}
 
-		if db.Mysql == nil {
+		if db.DB == nil {
 			return nil, errors.New("无数据库环境，无法执行持久化发布")
 		}
 
@@ -2010,11 +2011,11 @@ func ensureMCPAppExists(appID string) error {
 	if allowed := mcpAllowedTenantSet(); len(allowed) > 0 && !allowed[appID] {
 		return fmt.Errorf("小程序 %s 不在 MCP_ALLOWED_TENANTS 白名单中", appID)
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return errors.New("数据库未初始化，无法校验小程序")
 	}
 	var app models.MiniApp
-	err := db.Mysql.Where("app_id = ?", appID).First(&app).Error
+	err := db.DB.Where("app_id = ?", appID).First(&app).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("小程序 %s 尚未注册", appID)
 	}

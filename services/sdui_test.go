@@ -742,7 +742,7 @@ func TestGlassBlurFalseRoundTrip(t *testing.T) {
 
 // TestSaveDraft_CASConflict 测试并发乐观锁 CAS 机制
 func TestSaveDraft_CASConflict(t *testing.T) {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		t.Skip("数据库未初始化，跳过持久化 CAS 并发测试")
 	}
 
@@ -751,7 +751,7 @@ func TestSaveDraft_CASConflict(t *testing.T) {
 	pageID := "cas_test_page"
 
 	// 清理历史残留
-	db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).Delete(&models.DynamicPageDraft{})
+	db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).Delete(&models.DynamicPageDraft{})
 
 	draft1 := &models.DynamicPageDraft{
 		AppID:        appID,
@@ -801,7 +801,7 @@ func TestSaveDraft_CASConflict(t *testing.T) {
 	}
 
 	// 清理测试数据
-	db.Mysql.Where("app_id = ? AND page_id = ?", appID, pageID).Delete(&models.DynamicPageDraft{})
+	db.DB.Where("app_id = ? AND page_id = ?", appID, pageID).Delete(&models.DynamicPageDraft{})
 }
 
 // TestFilterBlocksByCapabilities 验证基于客户端能力集的积木协商过滤与 Fallback 优雅降级

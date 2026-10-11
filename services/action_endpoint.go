@@ -162,7 +162,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 	}
 
 	// 兜底模式: 当数据库未初始化时 (如单元测试环境)
-	if db.Mysql == nil {
+	if db.DB == nil {
 		fakeCode := "VIP888-MOCK" + strings.ToUpper(ut.RandomStr(4))
 		return map[string]interface{}{
 			"package_id": packageID,
@@ -174,7 +174,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 
 	// 1. 幂等检查: 若相同幂等键曾请求过，直接返回先前生成的兑换码
 	var idemRecord models.GameRedeemRecord
-	if err := db.Mysql.Where("app_id = ? AND idempotency_key = ?", appID, idempotencyKey).First(&idemRecord).Error; err == nil {
+	if err := db.DB.Where("app_id = ? AND idempotency_key = ?", appID, idempotencyKey).First(&idemRecord).Error; err == nil {
 		return map[string]interface{}{
 			"package_id": idemRecord.PackageID,
 			"code":       idemRecord.RedeemCode,
@@ -184,7 +184,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 
 	// 2. 防重检查: 同一访客标识对同一礼包限领一次；匿名访客由上层生成稳定指纹标识。
 	var userRecord models.GameRedeemRecord
-	if err := db.Mysql.Where("app_id = ? AND package_id = ? AND open_id = ?", appID, packageID, openID).First(&userRecord).Error; err == nil {
+	if err := db.DB.Where("app_id = ? AND package_id = ? AND open_id = ?", appID, packageID, openID).First(&userRecord).Error; err == nil {
 		// 已领过，返回之前领取的兑换码，不额外扣减库存
 		return map[string]interface{}{
 			"package_id": userRecord.PackageID,
@@ -197,7 +197,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 	// 2.1 匿名频控: 匿名访客 1 小时内跨礼包累计领取上限，防止轮换礼包或伪造身份刷库存
 	if strings.HasPrefix(openID, "guest_") {
 		var guestCount int64
-		if err := db.Mysql.Model(&models.GameRedeemRecord{}).
+		if err := db.DB.Model(&models.GameRedeemRecord{}).
 			Where("app_id = ? AND open_id = ? AND claimed_at > ?", appID, openID, time.Now().Add(-time.Hour)).
 			Count(&guestCount).Error; err == nil && guestCount >= anonymousRedeemHourlyLimit {
 			return nil, errors.New("领取过于频繁，请稍后再试")
@@ -205,7 +205,7 @@ func (s *ActionEndpointService) handleGameRedeem(appID, openID string, payload m
 	}
 
 	// 3. 开启数据库事务，并采用行级排他锁 (SELECT ... FOR UPDATE) 防超发
-	tx := db.Mysql.Begin()
+	tx := db.DB.Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
@@ -298,7 +298,7 @@ func (s *ActionEndpointService) handleQueryScore(appID, openID string, payload m
 // handlePlatformSandbox 兼容既有入口；数据库可用时执行真实持久化领域逻辑。
 func (s *ActionEndpointService) handlePlatformSandbox(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
 	endpoint := domainText(payload, "_endpoint")
-	if db.Mysql == nil {
+	if db.DB == nil {
 		status, err := nextPlatformStatus(endpoint, "", payload)
 		if err != nil {
 			return nil, err
@@ -306,7 +306,7 @@ func (s *ActionEndpointService) handlePlatformSandbox(appID, openID string, payl
 		return platformSandboxResult(appID, openID, endpoint, domainText(payload, "id"), idempotencyKey, payload, status), nil
 	}
 	var user models.User
-	if err := db.Mysql.Where("app_id = ? AND wechat_openid = ?", appID, openID).First(&user).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND wechat_openid = ?", appID, openID).First(&user).Error; err != nil {
 		return nil, domainError("UNAUTHORIZED", "用户尚未登录")
 	}
 	clean := make(map[string]interface{}, len(payload))

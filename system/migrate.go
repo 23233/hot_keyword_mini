@@ -33,7 +33,7 @@ type compositeUniquePreflight struct {
 // 返回聚合后的明确错误 (指出具体表、列和行数)，避免启动时只暴露晦涩的 MySQL 建索引错误。
 // 空库 (表尚不存在) 直接跳过，不影响全新环境首次启动。
 func preflightCompositeUniqueConflicts() error {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 	checks := []compositeUniquePreflight{
@@ -46,14 +46,15 @@ func preflightCompositeUniqueConflicts() error {
 	var problems []string
 	for _, check := range checks {
 		// 全新环境表尚不存在，无需预检
-		if !db.Mysql.Migrator().HasTable(check.table) {
+		if !db.DB.Migrator().HasTable(check.table) {
 			continue
 		}
 
 		// 1. app_id 为空的遗留行：组合唯一索引 (app_id, ...) 建立时必然冲突
+		// 表名均为小写标识符，裸写不加引号以保证 MySQL 与 PostgreSQL 双方言兼容
 		var emptyCount int64
-		if err := db.Mysql.Raw(
-			"SELECT COUNT(*) FROM `" + check.table + "` WHERE app_id = '' OR app_id IS NULL",
+		if err := db.DB.Raw(
+			"SELECT COUNT(*) FROM " + check.table + " WHERE app_id = '' OR app_id IS NULL",
 		).Scan(&emptyCount).Error; err != nil {
 			return fmt.Errorf("组合唯一索引预检失败: 表 %s 查询 app_id 空值异常: %w", check.table, err)
 		}
@@ -63,9 +64,9 @@ func preflightCompositeUniqueConflicts() error {
 
 		// 2. 同一租户内组合列重复的行
 		var dupCount int64
-		if err := db.Mysql.Raw(
+		if err := db.DB.Raw(
 			"SELECT COUNT(*) FROM (SELECT " + strings.Join(check.columns, ", ") +
-				" FROM `" + check.table + "` GROUP BY " + strings.Join(check.columns, ", ") +
+				" FROM " + check.table + " GROUP BY " + strings.Join(check.columns, ", ") +
 				" HAVING COUNT(*) > 1) AS dup_probe",
 		).Scan(&dupCount).Error; err != nil {
 			return fmt.Errorf("组合唯一索引预检失败: 表 %s 查询重复数据异常: %w", check.table, err)
@@ -122,7 +123,7 @@ func Migrate() error {
 		&models.ContentAuditRecord{},
 	}
 
-	err := db.Mysql.AutoMigrate(migrateList...)
+	err := db.DB.AutoMigrate(migrateList...)
 	if err != nil {
 		log.Fatalf("无法自动迁移数据库: %v", err)
 		return err
@@ -137,8 +138,8 @@ func Migrate() error {
 		{&models.ArticleCategory{}, "idx_article_category_app_slug"},
 		{&models.Article{}, "idx_article_app_slug"},
 	} {
-		if db.Mysql.Migrator().HasIndex(item.model, item.name) {
-			if err := db.Mysql.Migrator().DropIndex(item.model, item.name); err != nil {
+		if db.DB.Migrator().HasIndex(item.model, item.name) {
+			if err := db.DB.Migrator().DropIndex(item.model, item.name); err != nil {
 				return err
 			}
 		}
@@ -149,12 +150,12 @@ func Migrate() error {
 
 // EnsureInitialAdmin 仅负责确保管理员账户存在，不初始化任何业务种子数据。
 func EnsureInitialAdmin() error {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 
 	var adminUser models.AdminUser
-	errAdmin := db.Mysql.Where("username = ?", "admin").First(&adminUser).Error
+	errAdmin := db.DB.Where("username = ?", "admin").First(&adminUser).Error
 	if errAdmin == nil && adminUser.ID != 0 {
 		oldHasher := sha256.New()
 		oldHasher.Write([]byte("admin123456" + adminUser.Salt))
@@ -170,7 +171,7 @@ func EnsureInitialAdmin() error {
 		newSalt := "sdui_salt_" + ut.RandomStr(16)
 		newHasher := sha256.New()
 		newHasher.Write([]byte(newPwd + newSalt))
-		if err := db.Mysql.Model(&adminUser).Updates(map[string]interface{}{
+		if err := db.DB.Model(&adminUser).Updates(map[string]interface{}{
 			"password_hash": hex.EncodeToString(newHasher.Sum(nil)),
 			"salt":          newSalt,
 			"status":        "active",
@@ -209,25 +210,25 @@ func EnsureInitialAdmin() error {
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
-	return db.Mysql.Create(&superAdmin).Error
+	return db.DB.Create(&superAdmin).Error
 }
 
 // EnsureAIBreakthroughData 将默认小程序名称切换为 ai 破甲，并初始化三档会员与导航内容。
 func EnsureAIBreakthroughData() error {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 	const appID = "wx516563cfe994bbc6"
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		app = models.MiniApp{AppID: appID, AppName: "ai破甲", CurrentPage: "home", ReleaseMode: "normal", FallbackPageID: "home", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-		if err := db.Mysql.Create(&app).Error; err != nil {
+		if err := db.DB.Create(&app).Error; err != nil {
 			return err
 		}
-	} else if err := db.Mysql.Model(&app).Updates(map[string]interface{}{"app_name": "ai破甲", "updated_at": time.Now()}).Error; err != nil {
+	} else if err := db.DB.Model(&app).Updates(map[string]interface{}{"app_name": "ai破甲", "updated_at": time.Now()}).Error; err != nil {
 		return err
 	}
 	if strings.TrimSpace(app.CapabilityMatrix) == "" {
@@ -235,7 +236,7 @@ func EnsureAIBreakthroughData() error {
 		if matrixErr != nil {
 			return matrixErr
 		}
-		if err := db.Mysql.Model(&app).Updates(map[string]interface{}{"capability_matrix": matrix, "updated_at": time.Now()}).Error; err != nil {
+		if err := db.DB.Model(&app).Updates(map[string]interface{}{"capability_matrix": matrix, "updated_at": time.Now()}).Error; err != nil {
 			return err
 		}
 	}
@@ -257,7 +258,7 @@ func EnsureAIBreakthroughData() error {
 // EnsureSDUIAcceptanceData 在开发环境同步固定的 SDUI 全量验收页面。
 // 该页面只用于微信开发者工具验收，不覆盖运营页面，也不会在生产环境调用。
 func EnsureSDUIAcceptanceData() error {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 	if err := ensureWebViewRegistry("wx516563cfe994bbc6"); err != nil {
@@ -301,19 +302,19 @@ func EnsureSDUIAcceptanceData() error {
 // ensureWebViewRegistry 为本地验收租户补齐同一份受控 WebView 入口。
 func ensureWebViewRegistry(appID string) error {
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return err
 	}
 	if strings.TrimSpace(app.WebViewRegistry) != "" {
 		return nil
 	}
 	registry, _ := json.Marshal([]services.WebViewEntry{{URLKey: "component-lab", URL: "https://wx.a0free.com", Purpose: "SDUI 组件验收 WebView", Version: "2026.09", Enabled: true}})
-	return db.Mysql.Model(&app).Updates(map[string]interface{}{"webview_registry": string(registry), "updated_at": time.Now()}).Error
+	return db.DB.Model(&app).Updates(map[string]interface{}{"webview_registry": string(registry), "updated_at": time.Now()}).Error
 }
 
 // EnsureLocalSDUITenants 初始化两个本地验收租户及其通用能力矩阵。
 func EnsureLocalSDUITenants() error {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil
 	}
 	type tenant struct {
@@ -331,10 +332,10 @@ func EnsureLocalSDUITenants() error {
 			return err
 		}
 		var app models.MiniApp
-		err = db.Mysql.Where("app_id = ?", item.AppID).First(&app).Error
+		err = db.DB.Where("app_id = ?", item.AppID).First(&app).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			app = models.MiniApp{AppID: item.AppID, AppName: item.Name, CurrentPage: "home", ReleaseMode: "normal", FallbackPageID: "home", CapabilityMatrix: matrix, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-			if err := db.Mysql.Create(&app).Error; err != nil {
+			if err := db.DB.Create(&app).Error; err != nil {
 				return err
 			}
 		} else if err != nil {
@@ -342,14 +343,14 @@ func EnsureLocalSDUITenants() error {
 		}
 		// 本地验收租户必须启用全部 ready 能力，才能验证公共运行时和发布门禁。
 		if app.CapabilityMatrix != matrix {
-			if err := db.Mysql.Model(&app).Updates(map[string]interface{}{"capability_matrix": matrix, "updated_at": time.Now()}).Error; err != nil {
+			if err := db.DB.Model(&app).Updates(map[string]interface{}{"capability_matrix": matrix, "updated_at": time.Now()}).Error; err != nil {
 				return err
 			}
 			app.CapabilityMatrix = matrix
 		}
 		if strings.TrimSpace(app.WebViewRegistry) == "" {
 			registry, _ := json.Marshal([]services.WebViewEntry{{URLKey: "component-lab", URL: "https://wx.a0free.com", Purpose: "SDUI 组件验收 WebView", Version: "2026.09", Enabled: true}})
-			if err := db.Mysql.Model(&app).Updates(map[string]interface{}{"webview_registry": string(registry), "updated_at": time.Now()}).Error; err != nil {
+			if err := db.DB.Model(&app).Updates(map[string]interface{}{"webview_registry": string(registry), "updated_at": time.Now()}).Error; err != nil {
 				return err
 			}
 		}
@@ -391,14 +392,14 @@ func ensureSDUIAcceptancePage(appID, title string) error {
 func ensureLocalGameDataAndPages(appID string) error {
 	const packageID = "pkg_game_novice_888"
 	var packageConfig models.GameRedeemPackage
-	err := db.Mysql.Where("app_id = ? AND package_id = ?", appID, packageID).First(&packageConfig).Error
+	err := db.DB.Where("app_id = ? AND package_id = ?", appID, packageID).First(&packageConfig).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		packageConfig = models.GameRedeemPackage{
 			AppID: appID, PackageID: packageID, GameID: "game_default", Title: "设身处地游戏公测礼包",
 			Description: "新游公测礼包，领取后复制兑换码到游戏内使用", TotalStock: 10000, RemainingStock: 10000,
 			CodePrefix: "GAME-", CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		}
-		if err := db.Mysql.Create(&packageConfig).Error; err != nil {
+		if err := db.DB.Create(&packageConfig).Error; err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -619,7 +620,7 @@ func SeedMultiTenantAndSDUIData() error {
 
 	// 1. 初始化默认小程序
 	var count int64
-	db.Mysql.Model(&models.MiniApp{}).Where("app_id = ?", defaultAppID).Count(&count)
+	db.DB.Model(&models.MiniApp{}).Where("app_id = ?", defaultAppID).Count(&count)
 	if count == 0 {
 		defaultApp := models.MiniApp{
 			AppID:          defaultAppID,
@@ -631,14 +632,14 @@ func SeedMultiTenantAndSDUIData() error {
 			CreatedAt:      time.Now(),
 			UpdatedAt:      time.Now(),
 		}
-		if err := db.Mysql.Create(&defaultApp).Error; err != nil {
+		if err := db.DB.Create(&defaultApp).Error; err != nil {
 			return err
 		}
 	}
 
 	// 2. 初始化默认 SDUI 首页 (如果不存在)
 	var pageCount int64
-	db.Mysql.Model(&models.DynamicPage{}).Where("app_id = ? AND page_id = ?", defaultAppID, "home").Count(&pageCount)
+	db.DB.Model(&models.DynamicPage{}).Where("app_id = ? AND page_id = ?", defaultAppID, "home").Count(&pageCount)
 	if pageCount == 0 {
 		blocksJSON := `[
 			{
@@ -742,14 +743,14 @@ func SeedMultiTenantAndSDUIData() error {
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		if err := db.Mysql.Create(&homePage).Error; err != nil {
+		if err := db.DB.Create(&homePage).Error; err != nil {
 			return err
 		}
 	}
 
 	// 3. 初始化默认游戏公测礼包数据
 	var pkgCount int64
-	db.Mysql.Model(&models.GameRedeemPackage{}).Where("app_id = ? AND package_id = ?", defaultAppID, "pkg_game_novice_888").Count(&pkgCount)
+	db.DB.Model(&models.GameRedeemPackage{}).Where("app_id = ? AND package_id = ?", defaultAppID, "pkg_game_novice_888").Count(&pkgCount)
 	if pkgCount == 0 {
 		defaultPkg := models.GameRedeemPackage{
 			AppID:          defaultAppID,
@@ -763,7 +764,7 @@ func SeedMultiTenantAndSDUIData() error {
 			CreatedAt:      time.Now(),
 			UpdatedAt:      time.Now(),
 		}
-		_ = db.Mysql.Create(&defaultPkg).Error
+		_ = db.DB.Create(&defaultPkg).Error
 	}
 
 	return nil

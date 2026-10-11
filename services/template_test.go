@@ -192,7 +192,7 @@ func TestComponentLabTemplateCoverage(t *testing.T) {
 
 // TestCustomTemplateCRUD 验证用户模板在可用数据库环境中的创建、读取、更新、删除闭环。
 func TestCustomTemplateCRUD(t *testing.T) {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		t.Skip("数据库未初始化，跳过用户模板持久化 CRUD 测试")
 	}
 	service := NewTemplateService()
@@ -217,7 +217,7 @@ func TestCustomTemplateCRUD(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = service.DeleteCustomTemplate(appID, templateID, created.Revision+1)
-		_ = db.Mysql.Where("app_id = ? AND template_id = ?", appID, templateID).Delete(&models.DynamicPageTemplate{}).Error
+		_ = db.DB.Where("app_id = ? AND template_id = ?", appID, templateID).Delete(&models.DynamicPageTemplate{}).Error
 	})
 	if created.Builtin || created.Revision != 1 {
 		t.Fatalf("创建后模板元数据异常: %+v", created)

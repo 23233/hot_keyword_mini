@@ -210,11 +210,11 @@ func CapabilityMatrixForApp(app *models.MiniApp) (map[string]models.CapabilityMa
 
 // ValidatePageCapabilities 校验页面依赖的能力是否已在租户矩阵中启用。
 func ValidatePageCapabilities(appID string, blocks []models.BlockItem) (CapabilityValidationReport, error) {
-	if strings.TrimSpace(appID) == "" || db.Mysql == nil {
+	if strings.TrimSpace(appID) == "" || db.DB == nil {
 		return ValidatePageCapabilitiesForMatrix(blocks, nil, false), nil
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return CapabilityValidationReport{}, fmt.Errorf("读取租户能力矩阵失败: %w", err)
 	}
 	matrix, err := CapabilityMatrixForApp(&app)
@@ -309,11 +309,11 @@ func ListAppCapabilities(appID string) ([]AppCapabilityStatus, error) {
 	if strings.TrimSpace(appID) == "" {
 		return nil, errors.New("AppID 不能为空")
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", appID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
 		return nil, fmt.Errorf("读取小程序失败: %w", err)
 	}
 	matrix, err := CapabilityMatrixForApp(&app)
@@ -346,10 +346,10 @@ func ConfigureAppCapability(appID, capability string, entry models.CapabilityMat
 	if err := ValidateCapabilityMatrix(map[string]models.CapabilityMatrixEntry{capability: entry}); err != nil {
 		return err
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return errors.New("数据库未初始化")
 	}
-	return db.Mysql.Transaction(func(tx *gorm.DB) error {
+	return db.DB.Transaction(func(tx *gorm.DB) error {
 		var app models.MiniApp
 		if err := tx.Where("app_id = ?", appID).First(&app).Error; err != nil {
 			return fmt.Errorf("读取小程序失败: %w", err)

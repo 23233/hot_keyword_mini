@@ -49,7 +49,7 @@ func CreateMCPAccessToken(name string, scopes []string) (*models.MCPAccessToken,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := db.Mysql.Create(record).Error; err != nil {
+	if err := db.DB.Create(record).Error; err != nil {
 		return nil, "", err
 	}
 	return record, rawToken, nil
@@ -58,23 +58,23 @@ func CreateMCPAccessToken(name string, scopes []string) (*models.MCPAccessToken,
 // ListMCPAccessTokens 查询全局 MCP 令牌。
 func ListMCPAccessTokens() ([]models.MCPAccessToken, error) {
 	var list []models.MCPAccessToken
-	err := db.Mysql.Order("id desc").Find(&list).Error
+	err := db.DB.Order("id desc").Find(&list).Error
 	return list, err
 }
 
 // DeleteMCPAccessToken 删除指定 MCP 令牌。
 func DeleteMCPAccessToken(id int64) error {
-	return db.Mysql.Delete(&models.MCPAccessToken{}, id).Error
+	return db.DB.Delete(&models.MCPAccessToken{}, id).Error
 }
 
 // AuthenticateMCPAccessToken 校验数据库 MCP 令牌并更新最后使用时间。
 func AuthenticateMCPAccessToken(rawToken string) (*models.MCPAccessToken, error) {
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化")
 	}
 	hash := sha256.Sum256([]byte(strings.TrimSpace(rawToken)))
 	var record models.MCPAccessToken
-	err := db.Mysql.Where("token_hash = ? AND status = 'active'", hex.EncodeToString(hash[:])).First(&record).Error
+	err := db.DB.Where("token_hash = ? AND status = 'active'", hex.EncodeToString(hash[:])).First(&record).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("MCP 访问令牌无效")
@@ -82,7 +82,7 @@ func AuthenticateMCPAccessToken(rawToken string) (*models.MCPAccessToken, error)
 		return nil, err
 	}
 	now := time.Now()
-	_ = db.Mysql.Model(&record).Update("last_used_at", now).Error
+	_ = db.DB.Model(&record).Update("last_used_at", now).Error
 	record.LastUsedAt = &now
 	return &record, nil
 }

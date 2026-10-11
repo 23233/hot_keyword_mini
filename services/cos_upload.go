@@ -63,11 +63,11 @@ func PrepareCOSUpload(ctx context.Context, req COSUploadRequest) (*COSUploadResu
 	if originalExt := strings.ToLower(path.Ext(req.FileName)); originalExt == ".jpeg" || originalExt == extension {
 		extension = originalExt
 	}
-	if db.Mysql == nil {
+	if db.DB == nil {
 		return nil, errors.New("数据库未初始化")
 	}
 	var app models.MiniApp
-	if err := db.Mysql.Where("app_id = ?", req.AppID).First(&app).Error; err != nil {
+	if err := db.DB.Where("app_id = ?", req.AppID).First(&app).Error; err != nil {
 		return nil, fmt.Errorf("小程序不存在: %w", err)
 	}
 
