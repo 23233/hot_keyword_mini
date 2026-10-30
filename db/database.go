@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"hot_keyword/config"
 	"log"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/23233/ggg/logger"
 	"gorm.io/driver/mysql"
@@ -39,8 +42,31 @@ func InitDB(cfg *config.Config) error {
 		return err
 	}
 
+	// 统一配置连接池，避免默认无上限连接拖垮数据库。
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("获取数据库连接池失败: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(envInt("DB_MAX_OPEN_CONNS", 30))
+	sqlDB.SetMaxIdleConns(envInt("DB_MAX_IDLE_CONNS", 10))
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
+
 	logger.JM.Infof("%s 连接成功", cfg.DBDriver)
 	return nil
+}
+
+// envInt 读取正整数环境变量，非法或未配置时返回默认值。
+func envInt(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 // openMySQL 构建 MySQL 方言连接配置，保持原有 DSN 格式与时区 (UTC) 行为不变

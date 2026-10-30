@@ -76,12 +76,27 @@ func GetDynamicPageHandler(ctx iris.Context) {
 	envelope, err := srv.GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(appID, pageID, queryParams, isAuthenticated, clientCaps, viewerUserID)
 	if err != nil {
 		logger.JM.Warnf("获取动态页面协议失败: %v", err)
+		ctx.Header("Cache-Control", "no-store")
 		ctx.StatusCode(http.StatusNotFound)
 		_ = ctx.JSON(iris.Map{
 			"code": 404,
 			"msg":  "获取动态页面失败: " + err.Error(),
 		})
 		return
+	}
+
+	// 个性化或受保页面必须先声明缓存策略，401/304 也不能被公共缓存复用。
+	privateCache := isAuthenticated || envelope.Page.RequireAuth ||
+		envelope.Page.BusinessType == "ai_breakthrough" || envelope.Page.BusinessType == "ai_article" ||
+		envelope.Page.PageID == "maintenance"
+	ctx.Header("ETag", envelope.Cache.ETag)
+	if privateCache {
+		ctx.Header("Vary", "X-WX-AppID, X-SDUI-Version, X-Client-Capabilities, Authorization")
+		ctx.Header("Cache-Control", "private, no-store, max-age=0")
+	} else {
+		// 匿名公共页面才允许短时公共缓存，且必须按租户和客户端能力拆分变体。
+		ctx.Header("Vary", "X-WX-AppID, X-SDUI-Version, X-Client-Capabilities")
+		ctx.Header("Cache-Control", "public, max-age=30")
 	}
 
 	// 若页面声明全页受保，且未提供有效登录凭证，服务端隔离返回 401 拦截
@@ -91,17 +106,12 @@ func GetDynamicPageHandler(ctx iris.Context) {
 		return
 	}
 
-	// 支持 ETag 条件缓存，避免重复传输相同 Revision 的页面协议
+	// 支持 ETag 条件缓存；ETag 已包含查询参数、能力、登录态和访问者摘要。
 	clientETag := ctx.GetHeader("If-None-Match")
 	if clientETag != "" && clientETag == envelope.Cache.ETag {
 		ctx.StatusCode(http.StatusNotModified)
 		return
 	}
-
-	ctx.Header("ETag", envelope.Cache.ETag)
-	// 页面内容依赖租户与客户端能力协商，公共缓存必须按这两个请求头拆分变体。
-	ctx.Header("Vary", "X-WX-AppID, X-SDUI-Version, X-Client-Capabilities")
-	ctx.Header("Cache-Control", "public, max-age=30")
 
 	// 按照统一信封结构直接返回
 	_ = ctx.JSON(envelope)

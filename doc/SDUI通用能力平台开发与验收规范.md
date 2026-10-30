@@ -1,11 +1,11 @@
 <!-- SDUI通用能力平台开发与验收规范.md -->
 # SDUI 通用能力平台开发与验收规范
 
-> 文档版本：`v1.0.2`
+> 文档版本：`v1.0.12`
 > 
 > 文档状态：开发与验收基线，生效
 > 
-> 最后修订：2026-09-11
+> 最后修订：2026-10-29
 > 
 > 适用范围：`hot_keyword_mini` 统一后端、`设身处地游戏` 小程序、`dcl/斗艺馆` 小程序
 > 
@@ -42,6 +42,16 @@
 | `v1.0.0` | 2026-09-10 | 建立统一 SDUI 能力平台、两个 AppID、本地开发规则、行业通用状态机和视觉/微信/MCP 验收门禁 | 生效 |
 | `v1.0.1` | 2026-09-11 | 明确 `sdui.acceptance.run` 为只读验收编排工具，补充工具边界、输出和权限契约；确认线上公共地址为 `https://wx.a0free.com` | 生效 |
 | `v1.0.2` | 2026-09-11 | WebView 注册表按 AppID 隔离并强制 `url_key`；新增 `sdui.webview.list/validate` 契约；匿名游戏兑换、隐藏页面安全兜底和双 AppID 本地首发页面完成固定 | 生效 |
+| `v1.0.3` | 2026-10-29 | 发布门禁校验动作端点/同源 URL/导航目标/SKU；新增页面积木数、协议大小、repeat 和请求体上限；个性化页面 ETag 与缓存隔离；租户兜底页/应急模式/维护页；块级错误边界与消息列表 ScrollView | 生效 |
+| `v1.0.4` | 2026-10-29 | WebView 页面只接受 `url_key`/`drama_id`，由服务端解析已登记地址；公开动作端点、支付创建、会员下单和 WebView 解析实时校验租户能力矩阵 | 生效 |
+| `v1.0.12` | 2026-10-30 | 首页/动态页统一 `SDUIPageContainer`；SDUI 内核通过 `PageEntityAssembler`/`PageEnvelopeEnricher` 注册表装配业务数据，AI/短剧/游戏/查询/下载不再硬编码在内核 | 生效 |
+| `v1.0.11` | 2026-10-30 | 分享落地新增 `share_config.access`（public/auth/membership/owner），受限内容服务端清空积木并下发提示；WebView 打开时透传 `sdui_font_size/sdui_font_scale/sdui_theme`，并支持好友/朋友圈分享与登录/失效提示 | 生效 |
+| `v1.0.10` | 2026-10-30 | 浅色主题补齐正文/表单标题/空态/骨架屏对比度；按微信 `fontSizeSetting` 应用 1.0-1.35 字缩放，按钮/输入框/弹层高度自适应；新增浅色组件验收页 | 生效 |
+| `v1.0.9` | 2026-10-30 | `review.list` 增加 offset/has_more 与 SQL 聚合；`order.list` 增加分页；`cart_summary` 报价写入 `cart_quote` 供 `cart_item_list` 覆盖行价格；优惠券锁定每 30 分钟定时回收；生产强校验 `CSRF_SECRET` | 生效 |
+| `v1.0.8` | 2026-10-30 | 新增优惠券 `coupon.define`/`coupon.claim`/`coupon.list`：按定义锁定库存、一用户一券；支付支持 `coupon_id`，服务端校验门槛并原子锁定，支付成功核销、退款/关闭/失败释放，锁定超过 3 小时（大于微信预支付订单有效期）可重新使用并支持 `coupon.cleanup` 批量回收；`coupon_list` 支持 auto_load | 生效 |
+| `v1.0.7` | 2026-10-30 | `request_payment` 支持 `items` 购物车明细；PaymentOrder 增加 `kind/items`，支付成功按服务端报价落地领域订单、退款同步状态，购物车订单不参与会员权益发放；新增用户 `order.list` 订单列表 | 生效 |
+| `v1.0.6` | 2026-10-30 | 新增 `review.list`/`review.submit` 评价持久化：评价绑定本人已完成订单、一单一评、1-5 星与 5-500 字；`review_summary` 传 `product_id`/`sku` 时自动加载并展示统计；新增公开 `cart.quote` 按服务端商品配置重算购物车金额，`cart_summary` 可开启 `server_quote`；`request_payment` 支持多 SKU `items` 并落地购物车订单 | 生效 |
+| `v1.0.5` | 2026-10-30 | 弹层统一 `RootPortal` 挂页面根节点，避免毛玻璃祖先限制固定定位；网格改 `minmax(0,1fr)`，≤480px 时密集交互块独占整行；客户端 repeat 动态数组截断 200 项；补 iPhone 5 窄屏与超长文本/长列表验收证据 | 生效 |
 
 ## 一、目标与边界
 
@@ -119,7 +129,8 @@
 - 可选的 `visible_when`、`repeat` 和数据绑定；
 - 可选 `action`/`events`，动作只能引用白名单 Action；
 - 苹果 HIG 风格的稳定尺寸、间距、字号、颜色和可访问性语义；
-- Web/H5 预览、微信开发者工具和真实小程序运行时的一致表现。
+- Web/H5 预览、微信开发者工具和真实小程序运行时的一致表现；
+- 单页顶层积木不超过 500 个、Blocks JSON 不超过 1 MB、单块 `repeat.items` 不超过 200 项；超限必须在发布校验阶段拒绝。客户端对 `repeat.path` 等动态求值数组同样截断到 200 项。
 
 ### 2.3 Action 规范
 
@@ -209,13 +220,20 @@ Action 必须具备：
 - 所有 Action 已在公共注册表中；
 - 页面依赖的能力在该 AppID 中不是 `disabled` 或 `blocked`；
 - 数据源属于当前租户且字段在白名单内；
+- `request_data`/`request` 只能引用已登记的受控端点，或命中同源相对 URL 白名单；端点和 URL 必须是字面量；
 - WebView 只能引用已登记 `url_key`；
+- `navigate_page` 目标页面必须已发布且未隐藏（系统初始化互链页面族由 `SaveSystemSeedPage` 豁免目标存在性检查，但仍校验端点、URL 和 SKU）；
+- `request_payment`、`create_order` 和购物车动作必须携带 SKU；
 - 页面路径未隐藏，目标页面已发布；
+- 单页顶层积木不超过 500 个、Blocks JSON 不超过 1 MB、单块 `repeat.items` 不超过 200 项；
+- 同一积木的 `request_data`/`request_payment` 在途时，客户端必须拒绝重复触发，避免双击产生重复请求或订单；
 - 页面使用的最低客户端版本不高于当前审核版本；
 - 隐私、类目、域名和支付/资金配置门禁通过；
 - 页面有可用的错误态、空态和安全回退页。
 
 不满足任一条件，发布接口、后台发布按钮和 MCP `sdui.page.publish` 必须返回机器可读错误，不得写入线上页面。
+
+运行时还必须执行能力门禁：公开动作端点、支付创建、会员下单、WebView 票据与解析接口必须实时检查租户能力矩阵；`disabled`/`blocked` 能力不得仅靠“页面已发布”绕过。
 
 ### 4.3 页面与能力的动态控制
 
@@ -399,6 +417,11 @@ MCP 验收规则：
 - 两个 AppID 都完成租户隔离、能力矩阵和发布门禁测试；
 - 后台和 MCP 对同一页面得到相同校验结果；
 - 隐藏页面不能通过公开路径、首页或导航访问；公开路径请求必须安全兜底到已发布且未隐藏的首页或维护页，响应不得包含被隐藏页面的标题、Block 或业务数据；
+- 租户 `fallback_page_id` 和 `release_mode=fallback` 必须真实生效；无可用页面时必须返回可渲染维护页；
+- 个性化页面（登录态、会员、`require_auth`、AI 文章/门户）不得使用公共缓存；ETag 必须覆盖页面 revision、查询参数、客户端能力、登录态和访问者摘要；
+- 单请求体不超过 2 MB；页面协议超过块数、大小或 repeat 上限时必须拒绝发布；
+- 公开动作端点、支付创建、会员下单、WebView 票据与解析必须实时校验租户能力矩阵；
+- WebView 页面不得接受裸 `url` 参数；只允许 `url_key` 或服务端保存的短剧/剧集 ID；
 - 任意未知 Block、Action、URL、能力或跨租户参数都被拒绝；
 - 发布、回滚、首页切换、能力启用和 WebView 变更都有审计记录。
 

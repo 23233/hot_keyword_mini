@@ -13,8 +13,8 @@ func TestMCPToolDefinitions(t *testing.T) {
 	service := NewMCPService()
 	tools := service.GetToolDefinitions()
 
-	if len(tools) != 28 {
-		t.Fatalf("预期注册 28 个受控工具，实际为 %d", len(tools))
+	if len(tools) != 30 {
+		t.Fatalf("预期注册 30 个受控工具，实际为 %d", len(tools))
 	}
 
 	expectedTools := map[string]bool{
@@ -46,6 +46,8 @@ func TestMCPToolDefinitions(t *testing.T) {
 		"sdui.payment.sandbox":      false,
 		"sdui.production.readiness": false,
 		"sdui.admin.execute":        false,
+		"sdui.domain.list":          false,
+		"sdui.domain.execute":       false,
 	}
 
 	for _, tool := range tools {

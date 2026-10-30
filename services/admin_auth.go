@@ -15,6 +15,14 @@ import (
 
 	"github.com/23233/ggg/ut"
 	"github.com/golang-jwt/jwt/v4"
+	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	// adminPasswordSaltMarker 标记使用 bcrypt 的管理员密码记录。
+	adminPasswordSaltMarker = "bcrypt"
+	// adminPasswordMinLength 管理员密码最小长度。
+	adminPasswordMinLength = 8
 )
 
 // adminUsernameRegexp 管理员用户名格式安全正则（防注入与异常控制字符）
@@ -37,16 +45,47 @@ func NewAdminAuthService() *AdminAuthService {
 	return &AdminAuthService{}
 }
 
-// HashPassword 计算加盐哈希
+// HashPassword 计算历史 SHA-256 加盐哈希，仅用于兼容既有账户与迁移校验。
 func (s *AdminAuthService) HashPassword(password, salt string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(password + salt))
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// VerifyPassword 校验密码一致性
+// HashPasswordSecure 使用 bcrypt 计算管理员密码哈希，新账户与重置密码统一使用该格式。
+func (s *AdminAuthService) HashPasswordSecure(password string) (string, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("生成安全密码哈希失败: %w", err)
+	}
+	return string(hashed), nil
+}
+
+// VerifyPassword 校验密码；bcrypt 记录走 bcrypt 比对，历史记录回退 SHA-256。
 func (s *AdminAuthService) VerifyPassword(password, salt, expectedHash string) bool {
-	return s.HashPassword(password, salt) == expectedHash
+	if strings.HasPrefix(expectedHash, "$2") {
+		return bcrypt.CompareHashAndPassword([]byte(expectedHash), []byte(password)) == nil
+	}
+	legacy := s.HashPassword(password, salt)
+	// 使用固定长度比较，降低哈希比对时序侧信道风险。
+	return subtleCompare(legacy, expectedHash)
+}
+
+// needsPasswordUpgrade 判断历史密码记录是否需要在登录成功后升级为 bcrypt。
+func needsPasswordUpgrade(expectedHash string) bool {
+	return !strings.HasPrefix(expectedHash, "$2")
+}
+
+// subtleCompare 以常量时间比较两个等长字符串。
+func subtleCompare(left, right string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	var diff byte
+	for index := 0; index < len(left); index++ {
+		diff |= left[index] ^ right[index]
+	}
+	return diff == 0
 }
 
 // GenerateAdminToken 为管理员签发专用的 24 小时访问凭证
@@ -139,6 +178,18 @@ func (s *AdminAuthService) AdminLogin(username, password string) (*models.AdminU
 		return nil, "", errors.New("管理员账户不存在或密码错误")
 	}
 
+	// 历史 SHA-256 账户在登录成功后透明升级为 bcrypt，避免一次性强制全员改密。
+	if needsPasswordUpgrade(user.PasswordHash) {
+		if upgraded, err := s.HashPasswordSecure(password); err == nil {
+			user.PasswordHash, user.Salt = upgraded, adminPasswordSaltMarker
+			_ = db.DB.Model(&user).Updates(map[string]interface{}{
+				"password_hash": upgraded,
+				"salt":          adminPasswordSaltMarker,
+				"updated_at":    time.Now(),
+			}).Error
+		}
+	}
+
 	// 记录最后登录时间
 	now := time.Now()
 	user.LastLoginAt = &now
@@ -189,8 +240,8 @@ func (s *AdminAuthService) CreateAdminUser(username, password, realName, role st
 		return nil, errors.New("用户名仅支持3-32位字母、数字、下划线和减号")
 	}
 
-	if len(password) < 6 {
-		return nil, errors.New("密码长度不能低于6位")
+	if len(password) < adminPasswordMinLength {
+		return nil, fmt.Errorf("密码长度不能低于%d位", adminPasswordMinLength)
 	}
 
 	if role == "" {
@@ -204,13 +255,15 @@ func (s *AdminAuthService) CreateAdminUser(username, password, realName, role st
 			return nil, fmt.Errorf("账号 '%s' 已存在，请使用其他用户名", username)
 		}
 
-		salt := "admin_salt_" + ut.RandomStr(16)
-		pwdHash := s.HashPassword(password, salt)
+		pwdHash, err := s.HashPasswordSecure(password)
+		if err != nil {
+			return nil, err
+		}
 
 		user := models.AdminUser{
 			Username:     username,
 			PasswordHash: pwdHash,
-			Salt:         salt,
+			Salt:         adminPasswordSaltMarker,
 			RealName:     realName,
 			Role:         role,
 			Status:       "active",
@@ -259,12 +312,15 @@ func (s *AdminAuthService) UpdateAdminUser(id int64, realName, role, status, new
 		user.Status = status
 	}
 	if newPassword != "" {
-		if len(newPassword) < 6 {
-			return nil, errors.New("新密码长度不能少于6位")
+		if len(newPassword) < adminPasswordMinLength {
+			return nil, fmt.Errorf("新密码长度不能少于%d位", adminPasswordMinLength)
 		}
-		salt := "admin_salt_" + ut.RandomStr(16)
-		updates["salt"] = salt
-		updates["password_hash"] = s.HashPassword(newPassword, salt)
+		pwdHash, err := s.HashPasswordSecure(newPassword)
+		if err != nil {
+			return nil, err
+		}
+		updates["salt"] = adminPasswordSaltMarker
+		updates["password_hash"] = pwdHash
 	}
 
 	updates["updated_at"] = time.Now()

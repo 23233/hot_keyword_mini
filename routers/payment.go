@@ -13,9 +13,28 @@ import (
 	"github.com/kataras/iris/v12"
 )
 
+type createPaymentOrderItem struct {
+	SKU      string `json:"sku"`
+	Quantity int64  `json:"quantity"`
+}
+
 type createPaymentOrderRequest struct {
-	SKU            string `json:"sku"`
-	IdempotencyKey string `json:"idempotency_key"`
+	SKU            string                   `json:"sku"`
+	Items          []createPaymentOrderItem `json:"items"`
+	CouponID       string                   `json:"coupon_id"`
+	IdempotencyKey string                   `json:"idempotency_key"`
+}
+
+// cartPaymentItems 将购物车明细转换为领域服务入参；空的 items 返回 nil。
+func cartPaymentItems(items []createPaymentOrderItem) []map[string]interface{} {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		result = append(result, map[string]interface{}{"sku": item.SKU, "quantity": item.Quantity})
+	}
+	return result
 }
 
 // PaymentOrderStatusHandler 查询当前用户在本小程序下的支付订单状态。
@@ -64,6 +83,16 @@ func CreatePaymentOrderHandler(ctx iris.Context) {
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
 		return
 	}
+	// 运行时能力门禁：支付能力被禁用时，直接拒绝创建支付订单。
+	if allowed, capabilityErr := services.EnsureAppCapability(appID, []string{"payment"}); capabilityErr != nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		_ = ctx.JSON(iris.Map{"code": 500, "error_code": "CAPABILITY_CHECK_FAILED", "msg": "能力状态检查失败"})
+		return
+	} else if !allowed {
+		ctx.StatusCode(iris.StatusForbidden)
+		_ = ctx.JSON(iris.Map{"code": 403, "error_code": "CAPABILITY_DISABLED", "msg": "当前小程序未启用支付能力"})
+		return
+	}
 	authHeader := ctx.GetHeader("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		ctx.StatusCode(iris.StatusUnauthorized)
@@ -81,12 +110,24 @@ func CreatePaymentOrderHandler(ctx iris.Context) {
 		openID, _ = claims["openId"].(string)
 	}
 	var req createPaymentOrderRequest
-	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.SKU) == "" {
+	if err := ctx.ReadJSON(&req); err != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
-		_ = ctx.JSON(iris.Map{"code": 400, "msg": "商品 SKU 不能为空"})
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "支付参数格式错误"})
 		return
 	}
-	order, params, err := services.NewPaymentService().CreateJSAPIOrder(ctx.Request().Context(), appID, user.ID, openID, req.SKU, req.IdempotencyKey)
+	cartItems := cartPaymentItems(req.Items)
+	if len(cartItems) == 0 && strings.TrimSpace(req.SKU) == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "商品 SKU 或购物车明细不能为空"})
+		return
+	}
+	var order interface{}
+	var params interface{}
+	if len(cartItems) > 0 {
+		order, params, err = services.NewPaymentService().CreateCartJSAPIOrderWithCoupon(ctx.Request().Context(), appID, user.ID, openID, cartItems, req.IdempotencyKey, req.CouponID)
+	} else {
+		order, params, err = services.NewPaymentService().CreateJSAPIOrderWithCoupon(ctx.Request().Context(), appID, user.ID, openID, req.SKU, req.IdempotencyKey, req.CouponID)
+	}
 	if err != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})
@@ -138,12 +179,24 @@ func CreateSandboxPaymentOrderHandler(ctx iris.Context) {
 		return
 	}
 	var req createPaymentOrderRequest
-	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.SKU) == "" {
+	if err := ctx.ReadJSON(&req); err != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
-		_ = ctx.JSON(iris.Map{"code": 400, "msg": "商品 SKU 不能为空"})
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "支付参数格式错误"})
 		return
 	}
-	order, err := services.NewPaymentService().CreateSandboxOrder(appID, userID, openID, req.SKU, req.IdempotencyKey)
+	cartItems := cartPaymentItems(req.Items)
+	if len(cartItems) == 0 && strings.TrimSpace(req.SKU) == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
+		_ = ctx.JSON(iris.Map{"code": 400, "msg": "商品 SKU 或购物车明细不能为空"})
+		return
+	}
+	var order *models.PaymentOrder
+	var err error
+	if len(cartItems) > 0 {
+		order, err = services.NewPaymentService().CreateSandboxCartOrderWithCoupon(appID, userID, openID, cartItems, req.IdempotencyKey, req.CouponID)
+	} else {
+		order, err = services.NewPaymentService().CreateSandboxOrderWithCoupon(appID, userID, openID, req.SKU, req.IdempotencyKey, req.CouponID)
+	}
 	if err != nil {
 		ctx.StatusCode(iris.StatusBadRequest)
 		_ = ctx.JSON(iris.Map{"code": 400, "msg": err.Error()})

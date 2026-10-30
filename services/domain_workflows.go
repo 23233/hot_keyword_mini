@@ -3,14 +3,211 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"hot_keyword/models"
 	"hot_keyword/sdk"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// membershipOpen 返回当前用户的会员状态与可售套餐，供 open_membership 动作使用。
+// 该端点只读，不发放权益；真正的开通必须在支付回调事务中完成。
+func (c *domainContext) membershipOpen() (interface{}, error) {
+	var plans []models.MembershipLevel
+	if err := c.tx.Where("app_id = ? AND status = ?", c.app, "active").Order("level asc").Find(&plans).Error; err != nil {
+		return nil, err
+	}
+
+	var membership models.UserMembership
+	status := "inactive"
+	level := 0
+	var expiresAt interface{}
+	err := c.tx.Where("app_id = ? AND user_id = ?", c.app, c.user).First(&membership).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if err == nil && membership.ExpiresAt.After(time.Now()) {
+		status, level, expiresAt = "active", membership.Level, membership.ExpiresAt
+	}
+
+	return map[string]interface{}{
+		"status":     status,
+		"level":      level,
+		"expires_at": expiresAt,
+		"plans":      plans,
+		"message":    "会员状态已刷新",
+		"updated_at": time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+// profileData 管理当前用户的地址簿与发票资料；数据按用户隔离，管理员不代填。
+func (c *domainContext) profileData(endpoint string) (interface{}, error) {
+	switch endpoint {
+	case "address.list", "invoice.get":
+		kind := "address"
+		if endpoint == "invoice.get" {
+			kind = "invoice"
+		}
+		var records []models.DomainRecord
+		if err := c.tx.Where("app_id = ? AND user_id = ? AND kind = ?", c.app, c.user, kind).
+			Order("created_at desc, id desc").Find(&records).Error; err != nil {
+			return nil, err
+		}
+		items := make([]map[string]interface{}, 0, len(records))
+		for index := range records {
+			items = append(items, publicDomain(&records[index]))
+		}
+		if endpoint == "invoice.get" {
+			if len(items) == 0 {
+				return map[string]interface{}{"invoice": nil}, nil
+			}
+			return map[string]interface{}{"invoice": items[0]}, nil
+		}
+		return map[string]interface{}{"items": items}, nil
+
+	case "address.save":
+		name := domainText(c.payload, "name")
+		phone := domainText(c.payload, "phone")
+		region := domainText(c.payload, "region")
+		detail := domainText(c.payload, "detail")
+		if name == "" || phone == "" || region == "" || detail == "" {
+			return nil, domainError("INVALID_ARGUMENT", "地址信息不完整")
+		}
+		data := map[string]interface{}{
+			"name": name, "phone": phone, "region": region, "detail": detail,
+			"is_default": c.payload["is_default"] == true,
+		}
+		var record *models.DomainRecord
+		if id := domainText(c.payload, "id"); id != "" {
+			loaded, err := c.load(id, "address")
+			if err != nil {
+				return nil, err
+			}
+			if loaded.UserID != c.user {
+				return nil, domainError("FORBIDDEN", "不能修改他人地址")
+			}
+			if err := c.save(loaded, data); err != nil {
+				return nil, err
+			}
+			record = loaded
+		} else {
+			created, err := c.create("address", "active", data)
+			if err != nil {
+				return nil, err
+			}
+			record = created
+		}
+		if data["is_default"] == true {
+			c.clearOtherAddressDefaults(record.ID)
+		}
+		return publicDomain(record), nil
+
+	case "address.delete":
+		id := domainText(c.payload, "id")
+		if id == "" {
+			return nil, domainError("INVALID_ARGUMENT", "地址标识不能为空")
+		}
+		record, err := c.load(id, "address")
+		if err != nil {
+			return nil, err
+		}
+		if record.UserID != c.user {
+			return nil, domainError("FORBIDDEN", "不能删除他人地址")
+		}
+		if err := c.tx.Delete(record).Error; err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"id": record.ID, "status": "deleted"}, nil
+
+	case "invoice.save":
+		invoiceType := domainText(c.payload, "type")
+		if invoiceType == "" {
+			invoiceType = "personal"
+		}
+		title := domainText(c.payload, "title")
+		taxNo := domainText(c.payload, "tax_no")
+		if title == "" {
+			return nil, domainError("INVALID_ARGUMENT", "发票抬头不能为空")
+		}
+		if invoiceType == "company" && taxNo == "" {
+			return nil, domainError("INVALID_ARGUMENT", "企业发票税号不能为空")
+		}
+		data := map[string]interface{}{"type": invoiceType, "title": title, "tax_no": taxNo, "email": domainText(c.payload, "email")}
+		var existing models.DomainRecord
+		err := c.tx.Where("app_id = ? AND user_id = ? AND kind = ?", c.app, c.user, "invoice").First(&existing).Error
+		if err == nil {
+			if err := c.save(&existing, data); err != nil {
+				return nil, err
+			}
+			return publicDomain(&existing), nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		created, err := c.create("invoice", "active", data)
+		if err != nil {
+			return nil, err
+		}
+		return publicDomain(created), nil
+
+	default:
+		return nil, domainError("UNKNOWN_ENDPOINT", "未登记地址或发票操作")
+	}
+}
+
+// clearOtherAddressDefaults 将同一用户的其他地址取消默认标记。
+func (c *domainContext) clearOtherAddressDefaults(keepID string) {
+	var records []models.DomainRecord
+	if err := c.tx.Where("app_id = ? AND user_id = ? AND kind = ? AND id <> ?", c.app, c.user, "address", keepID).
+		Find(&records).Error; err != nil {
+		return
+	}
+	for index := range records {
+		data := recordData(&records[index])
+		if isDefault, _ := data["is_default"].(bool); !isDefault {
+			continue
+		}
+		data["is_default"] = false
+		_ = c.save(&records[index], data)
+	}
+}
 
 func (c *domainContext) order(endpoint string) (interface{}, error) {
 	p := c.payload
+	if endpoint == "order.list" {
+		limit := int64(20)
+		if value, err := domainNumber(p, "limit"); err == nil && value > 0 {
+			limit = value
+		}
+		if limit > 50 {
+			limit = 50
+		}
+		offset := int64(0)
+		if value, err := domainNumber(p, "offset"); err == nil && value > 0 {
+			offset = value
+		}
+		var total int64
+		if err := c.tx.Model(&models.DomainRecord{}).
+			Where("app_id = ? AND user_id = ? AND kind = ?", c.app, c.user, "order").Count(&total).Error; err != nil {
+			return nil, err
+		}
+		var records []models.DomainRecord
+		if err := c.tx.Where("app_id = ? AND user_id = ? AND kind = ?", c.app, c.user, "order").
+			Order("created_at desc, id desc").Limit(int(limit)).Offset(int(offset)).Find(&records).Error; err != nil {
+			return nil, err
+		}
+		items := make([]map[string]interface{}, 0, len(records))
+		for index := range records {
+			items = append(items, publicDomain(&records[index]))
+		}
+		return map[string]interface{}{"items": items, "total": total, "has_more": offset+int64(len(items)) < total}, nil
+	}
 	if endpoint == "order.create" {
 		var product models.Product
 		if err := c.tx.Where("app_id = ? AND sku = ? AND status = ?", c.app, domainText(p, "sku"), models.ProductStatusActive).First(&product).Error; err != nil {
@@ -157,13 +354,19 @@ func (c *domainContext) checkPayment(r *models.DomainRecord, data map[string]int
 	if err != nil || amount != payment.AmountFen {
 		return domainError("PAYMENT_MISMATCH", "支付金额不匹配")
 	}
-	// 支付订单只允许绑定一个领域实体，绑定记录与状态在同一事务提交。
-	var count int64
-	if err := c.tx.Model(&models.DomainRecord{}).Where("app_id = ? AND id <> ? AND JSON_UNQUOTE(JSON_EXTRACT(data, '$.out_trade_no')) = ?", c.app, r.ID, payment.OutTradeNo).Count(&count).Error; err != nil {
+	// 支付订单只允许绑定一个领域实体。这里按租户与用户读取候选订单后在 Go 内比较，
+	// 不使用 MySQL 专有的 JSON_EXTRACT，保证 MySQL 与 PostgreSQL 的行为完全一致。
+	// 支付单本身已通过 user_id 限定归属，因此只需在同一用户自己的订单中查重。
+	var boundOrders []models.DomainRecord
+	if err := c.tx.Select("id", "data").
+		Where("app_id = ? AND user_id = ? AND kind = ? AND id <> ?", c.app, r.UserID, "order", r.ID).
+		Find(&boundOrders).Error; err != nil {
 		return err
 	}
-	if count > 0 {
-		return domainError("PAYMENT_REUSED", "付款已绑定其他订单")
+	for index := range boundOrders {
+		if bound, _ := recordData(&boundOrders[index])["out_trade_no"].(string); bound == payment.OutTradeNo {
+			return domainError("PAYMENT_REUSED", "付款已绑定其他订单")
+		}
 	}
 	data["out_trade_no"] = payment.OutTradeNo
 	return nil
@@ -406,4 +609,239 @@ func (c *domainContext) media(endpoint string) (interface{}, error) {
 		return nil, err
 	}
 	return publicDomain(r), nil
+}
+
+// review 处理评价提交与商品评价读取；评价必须绑定本人已完成的订单。
+func (c *domainContext) review(endpoint string) (interface{}, error) {
+	if endpoint == "review.list" {
+		productID, err := domainNumber(c.payload, "product_id")
+		if err != nil || productID <= 0 {
+			sku := domainText(c.payload, "sku")
+			if sku == "" {
+				return nil, domainError("INVALID_ARGUMENT", "product_id 或 sku 不能为空")
+			}
+			var product models.Product
+			if err := c.tx.Where("app_id = ? AND sku = ? AND status = ?", c.app, sku, models.ProductStatusActive).First(&product).Error; err != nil {
+				return nil, domainError("NOT_FOUND", "商品不存在或已下架")
+			}
+			productID = product.ID
+		}
+		limit := 20
+		if value, err := domainNumber(c.payload, "limit"); err == nil && value > 0 {
+			limit = int(value)
+		}
+		offset := 0
+		if value, err := domainNumber(c.payload, "offset"); err == nil && value > 0 {
+			offset = int(value)
+		}
+		return ListProductReviews(c.app, productID, limit, offset)
+	}
+	if endpoint != "review.submit" {
+		return nil, domainError("UNKNOWN_ENDPOINT", "未登记评价操作")
+	}
+
+	orderID := domainText(c.payload, "order_id")
+	if orderID == "" {
+		return nil, domainError("INVALID_ARGUMENT", "order_id 不能为空")
+	}
+	rating, err := domainNumber(c.payload, "rating")
+	if err != nil || rating < 1 || rating > 5 {
+		return nil, domainError("INVALID_ARGUMENT", "评分必须为 1-5")
+	}
+	content := strings.TrimSpace(domainText(c.payload, "content"))
+	if length := utf8.RuneCountInString(content); length < 5 || length > 500 {
+		return nil, domainError("INVALID_ARGUMENT", "评价内容需为 5-500 字")
+	}
+
+	order, err := c.load(orderID, "order")
+	if err != nil {
+		return nil, err
+	}
+	switch order.Status {
+	case "created", "cancelled", "refunded":
+		return nil, domainError("INVALID_STATE", "订单未完成，暂不可评价")
+	}
+	orderData := recordData(order)
+	productID := recordInt(orderData["product_id"])
+	if productID <= 0 {
+		return nil, domainError("INVALID_ARGUMENT", "订单缺少商品信息")
+	}
+	sku, _ := orderData["sku"].(string)
+
+	// 同一订单只允许一条评价；评价量有限，逐条扫描订单号以规避 JSON SQL 的双方言差异。
+	var reviews []models.DomainRecord
+	if err := c.tx.Where("app_id = ? AND kind = ? AND user_id = ?", c.app, "review", c.user).Find(&reviews).Error; err != nil {
+		return nil, err
+	}
+	for index := range reviews {
+		if recordData(&reviews[index])["order_id"] == orderID {
+			return nil, domainError("CONFLICT", "该订单已评价")
+		}
+	}
+
+	nickname := "匿名用户"
+	var user models.User
+	if err := c.tx.Where("app_id = ? AND id = ?", c.app, c.user).First(&user).Error; err == nil && strings.TrimSpace(user.NickName) != "" {
+		nickname = strings.TrimSpace(user.NickName)
+	}
+
+	record, err := c.create("review", "published", map[string]interface{}{
+		"order_id":   orderID,
+		"product_id": productID,
+		"sku":        sku,
+		"rating":     rating,
+		"content":    content,
+		"nickname":   nickname,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return nil, err
+	}
+	// PeerID 用于按商品聚合评价，Rating 用于 SQL 聚合均分与分布；写入后更新以复用统一创建流程。
+	record.PeerID = int64(productID)
+	record.Rating = int(rating)
+	if err := c.tx.Model(record).Updates(map[string]interface{}{"peer_id": record.PeerID, "rating": record.Rating}).Error; err != nil {
+		return nil, err
+	}
+	return publicDomain(record), nil
+}
+
+// coupon 处理优惠券定义、领取与用户券列表。
+func (c *domainContext) coupon(endpoint string) (interface{}, error) {
+	switch endpoint {
+	case "coupon.define":
+		if !c.admin {
+			return nil, domainError("FORBIDDEN", "仅管理员可定义优惠券")
+		}
+		title := domainText(c.payload, "title")
+		amount, err := domainNumber(c.payload, "amount_fen")
+		if err != nil || amount <= 0 || amount > couponMaxAmountFen {
+			return nil, domainError("INVALID_ARGUMENT", "优惠金额无效")
+		}
+		minSpend, err := domainNumber(c.payload, "min_spend_fen")
+		if err != nil {
+			minSpend = 0
+		}
+		stock, err := domainNumber(c.payload, "total_stock")
+		if err != nil || stock <= 0 {
+			return nil, domainError("INVALID_ARGUMENT", "发行数量必须大于 0")
+		}
+		validUntilText := domainText(c.payload, "valid_until")
+		validUntil, err := time.Parse(time.RFC3339, validUntilText)
+		if err != nil || !validUntil.After(time.Now()) {
+			return nil, domainError("INVALID_ARGUMENT", "有效期必须晚于当前时间")
+		}
+		if title == "" {
+			return nil, domainError("INVALID_ARGUMENT", "优惠券标题不能为空")
+		}
+		data := map[string]interface{}{
+			"title": title, "amount_fen": amount, "min_spend_fen": minSpend,
+			"total_stock": stock, "valid_until": validUntil.UTC().Format(time.RFC3339),
+		}
+		if validFromText := domainText(c.payload, "valid_from"); validFromText != "" {
+			validFrom, err := time.Parse(time.RFC3339, validFromText)
+			if err != nil || validFrom.After(validUntil) {
+				return nil, domainError("INVALID_ARGUMENT", "生效时间无效")
+			}
+			data["valid_from"] = validFrom.UTC().Format(time.RFC3339)
+		}
+		if description := domainText(c.payload, "description"); description != "" {
+			data["description"] = description
+		}
+		record, err := c.create(couponKindDefinition, "active", data)
+		if err != nil {
+			return nil, err
+		}
+		return publicDomain(record), nil
+
+	case "coupon.claim":
+		definitionID := domainText(c.payload, "definition_id")
+		if definitionID == "" {
+			return nil, domainError("INVALID_ARGUMENT", "definition_id 不能为空")
+		}
+		var definition models.DomainRecord
+		if err := c.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND app_id = ? AND kind = ?", definitionID, c.app, couponKindDefinition).
+			First(&definition).Error; err != nil {
+			return nil, domainError("NOT_FOUND", "优惠券不存在")
+		}
+		if definition.Status != "active" {
+			return nil, domainError("INVALID_STATE", "优惠券已停止发放")
+		}
+		defData := recordData(&definition)
+		amount, minSpend, validUntil, title, err := couponRules(defData)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		if now.After(validUntil) {
+			return nil, domainError("INVALID_STATE", "优惠券已过期")
+		}
+		if validFromText := couponString(defData["valid_from"]); validFromText != "" {
+			if validFrom, parseErr := time.Parse(time.RFC3339, validFromText); parseErr == nil && now.Before(validFrom) {
+				return nil, domainError("INVALID_STATE", "优惠券尚未生效")
+			}
+		}
+		couponID := fmt.Sprintf("coupon_%s_%d", definitionID, c.user)
+		var existing models.DomainRecord
+		if err := c.tx.Where("id = ? AND app_id = ?", couponID, c.app).First(&existing).Error; err == nil {
+			return publicDomain(&existing), nil
+		}
+		stock := couponInt(defData["total_stock"])
+		var claimed int64
+		if err := c.tx.Model(&models.DomainRecord{}).
+			Where("app_id = ? AND kind = ? AND id LIKE ?", c.app, couponKindUser, "coupon_"+definitionID+"_%").
+			Count(&claimed).Error; err != nil {
+			return nil, err
+		}
+		if stock > 0 && claimed >= stock {
+			return nil, domainError("CONFLICT", "优惠券已领完")
+		}
+		data := map[string]interface{}{
+			"definition_id": definitionID, "title": title, "amount_fen": amount,
+			"min_spend_fen": minSpend, "valid_until": validUntil.UTC().Format(time.RFC3339),
+			"claimed_at": now.UTC().Format(time.RFC3339),
+		}
+		encoded, err := json.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
+		record := models.DomainRecord{
+			ID: couponID, AppID: c.app, UserID: c.user, Kind: couponKindUser, Status: "available",
+			Data: string(encoded), Revision: 1, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := c.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error; err != nil {
+			return nil, err
+		}
+		if err := c.tx.Where("id = ?", couponID).First(&record).Error; err != nil {
+			return nil, err
+		}
+		return publicDomain(&record), nil
+
+	case "coupon.cleanup":
+		if !c.admin {
+			return nil, domainError("FORBIDDEN", "仅管理员可回收优惠券锁定")
+		}
+		released, err := cleanupCouponReservations(c.tx, c.app)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"released": released}, nil
+
+	case "coupon.list":
+		var records []models.DomainRecord
+		if err := c.tx.Where("app_id = ? AND user_id = ? AND kind = ?", c.app, c.user, couponKindUser).
+			Order("created_at desc, id desc").Limit(100).Find(&records).Error; err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		items := make([]map[string]interface{}, 0, len(records))
+		for index := range records {
+			item := publicDomain(&records[index])
+			item["status"] = couponStatus(&records[index], now)
+			items = append(items, item)
+		}
+		return map[string]interface{}{"items": items}, nil
+	}
+	return nil, domainError("UNKNOWN_ENDPOINT", "未登记优惠券操作")
 }

@@ -41,5 +41,9 @@ redis_enable: true
 # - ADMIN_JWT_SECRET: "高强度管理后台管理员JWT加密密钥 (不可使用默认占位符)"
 # - MCP_AUTH_KEY: "高强度AI MCP模型上下文协议API调用密钥 (不可使用默认占位符)"
 # - WECHAT_MINI_APP_ID / WECHAT_MINI_SECRET: "可选的单租户兼容配置；正式多小程序配置请写入 mini_apps 表"
+# - DEFAULT_MINIAPP_APP_ID / DEFAULT_MINIAPP_APP_SECRET: "首次启动自举默认小程序时使用；密钥禁止写入仓库"
+# - CSRF_SECRET: "Web 表单 CSRF Cookie 签名密钥；未配置时使用进程内随机密钥"
+# - DB_MAX_OPEN_CONNS / DB_MAX_IDLE_CONNS: "数据库连接池上限与空闲连接数，默认 30 / 10"
+# - HTTP_RATE_LIMIT_PER_MINUTE: "全站每来源地址每分钟请求上限，默认 600"
 # - MCP_ALLOWED_TENANTS: "MCP密钥绑定的租户白名单 (多个用逗号分隔，防越权)"
 # ==============================================================================

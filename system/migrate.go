@@ -168,12 +168,14 @@ func EnsureInitialAdmin() error {
 		if newPwd == "" {
 			newPwd = ut.RandomStr(16)
 		}
-		newSalt := "sdui_salt_" + ut.RandomStr(16)
-		newHasher := sha256.New()
-		newHasher.Write([]byte(newPwd + newSalt))
+		// 重置密码统一使用 bcrypt，旧 SHA-256 记录只用于上面的弱默认密码识别。
+		newHash, err := services.NewAdminAuthService().HashPasswordSecure(newPwd)
+		if err != nil {
+			return err
+		}
 		if err := db.DB.Model(&adminUser).Updates(map[string]interface{}{
-			"password_hash": hex.EncodeToString(newHasher.Sum(nil)),
-			"salt":          newSalt,
+			"password_hash": newHash,
+			"salt":          "bcrypt",
 			"status":        "active",
 			"updated_at":    time.Now(),
 		}).Error; err != nil {
@@ -197,13 +199,15 @@ func EnsureInitialAdmin() error {
 		log.Printf("==================================================================")
 	}
 
-	salt := "sdui_salt_" + ut.RandomStr(16)
-	hasher := sha256.New()
-	hasher.Write([]byte(initialPwd + salt))
+	// 新账户密码统一使用 bcrypt 存储。
+	initialHash, err := services.NewAdminAuthService().HashPasswordSecure(initialPwd)
+	if err != nil {
+		return err
+	}
 	superAdmin := models.AdminUser{
 		Username:     "admin",
-		PasswordHash: hex.EncodeToString(hasher.Sum(nil)),
-		Salt:         salt,
+		PasswordHash: initialHash,
+		Salt:         "bcrypt",
 		RealName:     "系统超级管理员",
 		Role:         "super_admin",
 		Status:       "active",
@@ -265,26 +269,28 @@ func EnsureSDUIAcceptanceData() error {
 		return err
 	}
 
-	const (
-		appID      = "wx516563cfe994bbc6"
-		pageID     = "component_lab_acceptance_20260907"
-		templateID = "tpl_sdui_component_lab"
-		title      = "SDUI 全量组件验收"
-	)
+	if err := syncComponentLabPage("wx516563cfe994bbc6", "component_lab_acceptance_20260907", "SDUI 全量组件验收", "dark_glass"); err != nil {
+		return err
+	}
+	// 同一套积木再发布一份浅色主题页面，用于浅色模式真机验收。
+	return syncComponentLabPage("wx516563cfe994bbc6", "component_lab_light_20261030", "SDUI 全量组件验收（浅色）", "light_clean")
+}
 
+// syncComponentLabPage 按模板同步指定主题的组件验收页，供开发者工具逐块截图。
+func syncComponentLabPage(appID, pageID, title, theme string) error {
+	const templateID = "tpl_sdui_component_lab"
 	service := services.NewSDUIService()
 	existing, err := service.GetRawPage(appID, pageID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) && !strings.Contains(err.Error(), "页面不存在") {
 		return err
 	}
-
 	page, err := services.NewTemplateService().ApplyTemplateToPage(templateID, appID, pageID, title)
 	if err != nil {
 		return err
 	}
 	page.Status = "published"
 	page.RequireAuth = false
-
+	page.Theme = theme
 	if existing != nil {
 		// 验收页由模板唯一维护；只有协议内容或发布元数据变化时才创建新快照。
 		if existing.Status == page.Status && existing.Title == page.Title && existing.BusinessType == page.BusinessType &&
@@ -295,8 +301,7 @@ func EnsureSDUIAcceptanceData() error {
 		}
 		page.Revision = existing.Revision
 	}
-
-	return service.SavePageWithAudit(page, "system", "同步 SDUI 全量组件验收模板", 0)
+	return service.SaveSystemSeedPage(page, "system", "同步 SDUI 全量组件验收模板", 0)
 }
 
 // ensureWebViewRegistry 为本地验收租户补齐同一份受控 WebView 入口。
@@ -385,7 +390,7 @@ func ensureSDUIAcceptancePage(appID, title string) error {
 	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 		return findErr
 	}
-	return services.NewSDUIService().SavePageWithAudit(page, "system", "同步租户 SDUI 验收页", 0)
+	return services.NewSDUIService().SaveSystemSeedPage(page, "system", "同步租户 SDUI 验收页", 0)
 }
 
 // ensureLocalGameDataAndPages 初始化设身处地游戏的本地礼包数据和四个首发页面。
@@ -544,7 +549,7 @@ func ensureLocalSeedPage(page *models.DynamicPage) error {
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	return service.SavePageWithAudit(page, "system", "初始化本地 SDUI 首发页面", 0)
+	return service.SaveSystemSeedPage(page, "system", "初始化本地 SDUI 首发页面", 0)
 }
 
 // ensureSDUIAcceptanceDraft 为指定租户同步同一份隐藏验收草稿，供 MCP、Web 预览和微信开发者工具复用。
@@ -610,15 +615,19 @@ func ensureAIBreakthroughPage(appID, pageID, templateID, title string) error {
 	if existingRevision > 0 {
 		page.Revision = existingRevision
 	}
-	return services.NewSDUIService().SavePageWithAudit(page, "system", "初始化 AI 破甲资讯模板", 0)
+	return services.NewSDUIService().SaveSystemSeedPage(page, "system", "初始化 AI 破甲资讯模板", 0)
 }
 
 // SeedMultiTenantAndSDUIData 自举初始化多租户小程序与默认 SDUI 页面
 func SeedMultiTenantAndSDUIData() error {
-	defaultAppID := "wx516563cfe994bbc6"
-	defaultSecret := "673ac42e8aaec2f9cfa5547e780f7658"
+	defaultAppID := strings.TrimSpace(os.Getenv("DEFAULT_MINIAPP_APP_ID"))
+	if defaultAppID == "" {
+		defaultAppID = "wx516563cfe994bbc6"
+	}
+	// 小程序密钥只能通过环境变量注入，禁止把真实 AppSecret 写入仓库或镜像。
+	defaultSecret := strings.TrimSpace(os.Getenv("DEFAULT_MINIAPP_APP_SECRET"))
 
-	// 1. 初始化默认小程序
+	// 1. 初始化默认小程序；未注入密钥时保持为空，由生产预检提示补齐。
 	var count int64
 	db.DB.Model(&models.MiniApp{}).Where("app_id = ?", defaultAppID).Count(&count)
 	if count == 0 {

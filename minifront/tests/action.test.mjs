@@ -23,9 +23,13 @@ function loadActions(overrides = {}) {
       require: (id) => {
         if (id === '@tarojs/taro') return { default: taro }
         if (id === './auth') return { ensureSession: async () => true }
-        if (id === './request') return { request: async (options) => { calls.push({ method: 'request', options }); return overrides.request ? overrides.request(options) : { status: 'success' } } }
+        if (id === './request') return {
+          getCurrentAppId: () => 'wx-test',
+          request: async (options) => { calls.push({ method: 'request', options }); return overrides.request ? overrides.request(options) : { status: 'success' } }
+        }
         if (id === '../config/env') return { resolveRemoteUrl: value => value }
         if (id === './condition') return load('condition')
+        if (id === './cart') return load('cart')
         throw new Error(`未声明的测试依赖: ${id}`)
       }
     })
@@ -60,6 +64,55 @@ test('reset_state 清空实际页面状态且不污染原对象', async () => {
   assert.deepEqual(original, { first: 1, second: true })
 })
 
+test('repeat 动态数组在客户端最多展开 200 项', () => {
+  const { capRepeatItems, MAX_REPEAT_ITEMS } = loadActions()
+  const capped = capRepeatItems(Array.from({ length: 300 }, (_, index) => index))
+  assert.equal(MAX_REPEAT_ITEMS, 200)
+  assert.equal(capped.length, 200)
+  assert.equal(capped[199], 199)
+  assert.equal(capRepeatItems([1, 2]).length, 2)
+})
+
+test('request_data 按 target 自动切换块级 loading 与恢复', async () => {
+  let resolveRequest
+  const { dispatchAction } = loadActions({ request: () => new Promise((resolve) => { resolveRequest = resolve }) })
+  const states = []
+  const pending = dispatchAction({ type: 'request_data', payload: { endpoint: 'query.score', target: 'block-x' } }, {
+    setBlockState: (id, state) => states.push([id, state])
+  })
+  assert.deepEqual(states, [['block-x', 'loading']])
+  resolveRequest({ status: 'success' })
+  await pending
+  assert.deepEqual(states, [['block-x', 'loading'], ['block-x', 'normal']])
+})
+
+test('同一积木的 request_data 在途时拒绝重复触发，完成后恢复', async () => {
+  const resolvers = []
+  const { dispatchAction, calls } = loadActions({ request: () => new Promise((resolve) => { resolvers.push(resolve) }) })
+  const context = { __block_id: 'block-lock', setBlockState: () => {} }
+  const first = dispatchAction({ type: 'request_data', payload: { endpoint: 'query.score' } }, context)
+  const second = await dispatchAction({ type: 'request_data', payload: { endpoint: 'query.score' } }, context)
+  assert.equal(second, false)
+  assert.equal(calls.filter((call) => call.method === 'request').length, 1)
+  resolvers[0]({ status: 'ok' })
+  await first
+  const third = dispatchAction({ type: 'request_data', payload: { endpoint: 'query.score' } }, context)
+  await Promise.resolve()
+  assert.equal(calls.filter((call) => call.method === 'request').length, 2)
+  resolvers[1]({ status: 'ok' })
+  await third
+})
+
+test('request_data 失败时把 target 块切换到 error 状态', async () => {
+  const { dispatchAction } = loadActions({ request: async () => { throw new Error('模拟失败') } })
+  const states = []
+  const ok = await dispatchAction({ type: 'request_data', payload: { endpoint: 'query.score', target: 'block-y' } }, {
+    setBlockState: (id, state) => states.push([id, state])
+  })
+  assert.equal(ok, false)
+  assert.deepEqual(states, [['block-y', 'loading'], ['block-y', 'error']])
+})
+
 test('query.score 是端点名称，不得被当作 query 数据绑定', async () => {
   const { dispatchAction, calls } = loadActions()
   await dispatchAction({ type: 'request_data', payload: { endpoint: 'query.score', body: { query_value: '测试' } } }, { query: {} })
@@ -85,6 +138,50 @@ test('缺少支付参数时拒绝调起微信支付', async () => {
   const { dispatchAction, calls } = loadActions()
   assert.equal(await dispatchAction({ type: 'request_payment', payload: { sku: 'sku-test' } }), false)
   assert.equal(calls.filter(call => call.method === 'requestPayment').length, 0)
+})
+
+test('购物车支付使用 items 明细并跳过单 SKU 限制', async () => {
+  const { dispatchAction, calls } = loadActions({
+    request: async () => ({
+      payment: { timeStamp: 1, nonceStr: 'n', package: 'p', paySign: 's' },
+      order: { out_trade_no: '' }
+    })
+  })
+  const result = await dispatchAction({ type: 'request_payment', payload: { items: [{ sku: 'a', quantity: 2 }, { sku: 'b', quantity: 1 }] } }, {})
+  assert.ok(result)
+  const request = calls.find(call => call.method === 'request')
+  assert.deepEqual(JSON.parse(JSON.stringify(request.options.data.items)), [{ sku: 'a', quantity: 2 }, { sku: 'b', quantity: 1 }])
+  assert.equal(request.options.data.sku, undefined)
+  assert.ok(calls.some(call => call.method === 'requestPayment'))
+})
+
+test('支付动作透传优惠券 ID', async () => {
+  const { dispatchAction, calls } = loadActions({
+    request: async () => ({
+      payment: { timeStamp: 1, nonceStr: 'n', package: 'p', paySign: 's' },
+      order: { out_trade_no: '' }
+    })
+  })
+  const result = await dispatchAction({
+    type: 'request_payment',
+    payload: { items: [{ sku: 'a', quantity: 1 }], coupon_id: 'coupon-1' }
+  }, {})
+  assert.ok(result)
+  const request = calls.find(call => call.method === 'request')
+  assert.equal(request.options.data.coupon_id, 'coupon-1')
+})
+
+test('购物车支付可从 actionPayload.items 取明细', async () => {
+  const { dispatchAction, calls } = loadActions({
+    request: async () => ({
+      payment: { timeStamp: 1, nonceStr: 'n', package: 'p', paySign: 's' },
+      order: { out_trade_no: '' }
+    })
+  })
+  const result = await dispatchAction({ type: 'request_payment' }, { actionPayload: { items: [{ sku: 'c', quantity: 3 }] } })
+  assert.ok(result)
+  const request = calls.find(call => call.method === 'request')
+  assert.deepEqual(JSON.parse(JSON.stringify(request.options.data.items)), [{ sku: 'c', quantity: 3 }])
 })
 
 test('普通业务树不因 title/children 或 tabs 字段保留绑定', () => {
@@ -241,10 +338,19 @@ test('请求成功默认不再自动复制 result.code', async () => {
   assert.equal(calls.filter(call => call.method === 'setClipboardData').length, 0, '通用层不得代劳复制')
 })
 
-test('open_webview 不得使用 web_url 旁路注入地址', async () => {
+test('open_webview 只传 url_key，不转发裸 URL', async () => {
   const { dispatchAction, calls } = loadActions()
-  const result = await dispatchAction({ type: 'open_webview', payload: { url_key: 'help_center', web_url: 'https://evil.example.com' } }, {})
-  assert.equal(result, false)
+  const result = await dispatchAction({ type: 'open_webview', payload: { url_key: 'help_center', web_url: 'https://evil.example.com', url: 'https://evil.example.com' } }, {})
+  assert.notEqual(result, false)
+  const navigate = calls.find(call => call.method === 'navigateTo')
+  assert.ok(navigate)
+  assert.match(navigate.options.url, /url_key=help_center/)
+  assert.equal(navigate.options.url.includes('evil.example.com'), false)
+})
+
+test('open_webview 缺少 url_key 时拒绝跳转', async () => {
+  const { dispatchAction, calls } = loadActions()
+  assert.equal(await dispatchAction({ type: 'open_webview', payload: {} }, {}), false)
   assert.equal(calls.filter(call => call.method === 'navigateTo').length, 0)
 })
 
@@ -257,4 +363,58 @@ test('嵌套事件序列按序执行并向下传递最新结果', async () => {
   }, { state, updateState: (key, value) => { state[key] = value } })
   // 入口动作成功后，子链 set_state 应已写入共享状态
   assert.equal(state.step, 1)
+})
+
+test('check_capability 按租户能力执行成功或失败链', async () => {
+  const enabled = loadActions()
+  const enabledResult = await enabled.dispatchAction(
+    { type: 'check_capability', payload: { capability: 'payment' } },
+    { viewer: { capabilities: ['payment', 'membership'] } }
+  )
+  assert.equal(enabledResult.enabled, true)
+
+  const disabled = loadActions()
+  const disabledResult = await disabled.dispatchAction(
+    {
+      type: 'check_capability',
+      payload: {
+        capability: 'membership',
+        on_error: [{ type: 'toast', payload: { text: '会员能力未开放' } }]
+      }
+    },
+    { viewer: { capabilities: [] } }
+  )
+  assert.equal(disabledResult, false)
+  assert.ok(disabled.calls.some(call => call.method === 'showToast' && call.options.title === '会员能力未开放'))
+})
+
+test('open_policy 优先调用微信原生隐私协议接口', async () => {
+  const { dispatchAction, calls } = loadActions()
+  await dispatchAction({ type: 'open_policy' }, {})
+  assert.ok(calls.some(call => call.method === 'openPrivacyContract'))
+})
+
+test('add_to_cart 写入租户本地购物车并同步页面状态', async () => {
+  const storage = {}
+  const state = {}
+  const { dispatchAction } = loadActions({
+    taro: {
+      getStorageSync: key => storage[key],
+      setStorageSync: (key, value) => { storage[key] = value }
+    }
+  })
+  const result = await dispatchAction(
+    { type: 'add_to_cart', payload: { sku: 'sku-1', title: '验证商品', price_fen: 990, quantity: 2 } },
+    { state, updateState: (key, value) => { state[key] = value } }
+  )
+  assert.equal(result.count, 2)
+  assert.equal(result.total_fen, 1980)
+  assert.equal(state.cart[0].sku, 'sku-1')
+
+  const updated = await dispatchAction(
+    { type: 'update_cart_quantity', payload: { sku: 'sku-1', quantity: 1 } },
+    { state, updateState: (key, value) => { state[key] = value } }
+  )
+  assert.equal(updated.count, 1)
+  assert.equal(updated.total_fen, 990)
 })

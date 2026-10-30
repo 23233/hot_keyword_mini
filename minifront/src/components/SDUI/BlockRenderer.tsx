@@ -57,8 +57,28 @@ import {
   WithdrawFormBlock
 } from './DomainBlocks'
 import { evaluateCondition } from '../../utils/condition'
-import { resolveBindingValue, resolveBlockPropsBindings } from '../../utils/action'
+import { capRepeatItems, resolveBindingValue, resolveBlockPropsBindings } from '../../utils/action'
 import { utilityClasses } from './style'
+import { BlockErrorBoundary } from './BlockErrorBoundary'
+import { OverlayBlock } from './OverlayBlock'
+import {
+  SKUSelectorBlock,
+  QuantityStepperBlock,
+  CartItemListBlock,
+  CartSummaryBlock,
+  CouponListBlock,
+  InvoiceFormBlock
+} from './CommerceBlocks'
+import {
+  AddressBookBlock,
+  AddressFormBlock,
+  FilterBarBlock,
+  FilterSheetBlock,
+  RatingBlock,
+  ReviewSummaryBlock,
+  ProfileCardBlock,
+  UserHeaderBlock
+} from './InteractionBlocks'
 import './sdui.scss'
 
 interface BlockRendererProps {
@@ -160,6 +180,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
     }
 
     if (repeatList.length > 0) {
+      repeatList = capRepeatItems(repeatList)
       return (
         <View className="sdui-repeat-container">
           {repeatList.map((itemData, idx) => {
@@ -209,11 +230,13 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       ? {
           ...blockContext,
           ...extraContext,
+          __block_id: block.id,
           item: finalItem,
           $item: finalItem
         }
       : {
           ...blockContext,
+          __block_id: block.id,
           item: finalItem ?? blockContext?.item,
           $item: finalItem ?? blockContext?.$item ?? blockContext?.item
         }
@@ -253,7 +276,9 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   const flatUtility = style.utilities?.includes('layout/flat')
   const cardUtility = style.utilities?.includes('layout/card')
   const contentBlock = ['collection_nav', 'category_nav', 'content_feed', 'article_feed', 'content_detail', 'article_detail', 'offer_list', 'membership_plan_list', 'discussion_thread', 'comment_thread'].includes(block.type)
-  const shouldApplyGlass = !isSpacer && !flatUtility && !cardUtility && (
+  // 弹层使用 position: fixed 覆盖视口；毛玻璃的 backdrop-filter 会创建固定定位包含块，必须禁用。
+  const overlayBlock = ['dialog', 'action_sheet', 'bottom_sheet', 'filter_sheet'].includes(block.type)
+  const shouldApplyGlass = !isSpacer && !overlayBlock && !flatUtility && !cardUtility && (
     style.glass_blur !== undefined
       ? !!style.glass_blur
       : (!isNested && !contentBlock && !['text', 'rich_text', 'image', 'video', 'action_button', 'spacer'].includes(block.type))
@@ -426,6 +451,40 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
       case 'compliance_panel':
         return <GenericBlock block={resolvedBlock} onAction={handleWrappedAction} />
 
+      // 通用交互与交易编排块
+      case 'dialog':
+      case 'action_sheet':
+      case 'bottom_sheet':
+        return <OverlayBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'sku_selector':
+        return <SKUSelectorBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'quantity_stepper':
+        return <QuantityStepperBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'cart_item_list':
+        return <CartItemListBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'cart_summary':
+        return <CartSummaryBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'coupon_list':
+        return <CouponListBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'invoice_form':
+        return <InvoiceFormBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'address_book':
+        return <AddressBookBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'address_form':
+        return <AddressFormBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'filter_bar':
+        return <FilterBarBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'filter_sheet':
+        return <FilterSheetBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'rating':
+        return <RatingBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'review_summary':
+        return <ReviewSummaryBlock block={resolvedBlock} onAction={handleWrappedAction} context={blockContext} />
+      case 'profile_card':
+        return <ProfileCardBlock block={resolvedBlock} onAction={handleWrappedAction} />
+      case 'user_header':
+        return <UserHeaderBlock block={resolvedBlock} onAction={handleWrappedAction} />
+
       // 已纳入协议的业务扩展块使用通用渲染器，确保不会出现空白页
       case 'result_table':
       case 'event_card':
@@ -449,8 +508,20 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onAction, c
   }
 
   return (
-    <View className={wrapperClass} style={wrapperStyle}>
-      {renderInner()}
+    <View id={block.id} className={wrapperClass} style={wrapperStyle}>
+      <BlockErrorBoundary block={block}>
+        {renderInner()}
+      </BlockErrorBoundary>
     </View>
   )
 }
+
+/**
+ * 页面顶层积木渲染器：在 BlockRenderer 外再包一层错误边界，
+ * 兜住 BlockRenderer 自身在求值/调度阶段抛出的异常。
+ */
+export const SafeBlockRenderer: React.FC<BlockRendererProps> = (props) => (
+  <BlockErrorBoundary block={props.block}>
+    <BlockRenderer {...props} />
+  </BlockErrorBoundary>
+)

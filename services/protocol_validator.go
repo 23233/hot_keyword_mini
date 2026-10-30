@@ -3,6 +3,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hot_keyword/db"
 	"hot_keyword/models"
@@ -31,6 +32,11 @@ type ValidationReport struct {
 
 // ValidateDynamicPageForRelease 执行协议与租户能力矩阵的一致发布校验。
 func ValidateDynamicPageForRelease(page *models.DynamicPage) ValidationReport {
+	return validateDynamicPageForRelease(page, true)
+}
+
+// validateDynamicPageForRelease 可选跳过导航目标存在性检查，供系统初始化互链页面族使用。
+func validateDynamicPageForRelease(page *models.DynamicPage, checkNavigationTargets bool) ValidationReport {
 	report := ValidateDynamicPage(page)
 	if page == nil || !report.IsValid {
 		return report
@@ -53,6 +59,10 @@ func ValidateDynamicPageForRelease(page *models.DynamicPage) ValidationReport {
 		report.Errors = append(report.Errors, capabilityReport.Errors...)
 	}
 	if err := validateWebViewKeysForRelease(page.AppID, blocks); err != nil {
+		report.IsValid = false
+		report.Errors = append(report.Errors, err.Error())
+	}
+	if err := validateActionTargetsForRelease(page, blocks, checkNavigationTargets); err != nil {
 		report.IsValid = false
 		report.Errors = append(report.Errors, err.Error())
 	}
@@ -83,13 +93,16 @@ func validateWebViewKeysForRelease(appID string, blocks []models.BlockItem) erro
 		if action == nil {
 			return nil
 		}
-		if action.Type == "open_webview" {
-			if err := loadEntries(); err != nil {
-				return err
-			}
+		if action.Type == "open_webview" || action.Type == "open_policy" {
 			urlKey, _ := action.Payload["url_key"].(string)
-			if _, err := findWebViewEntry(entries, urlKey); err != nil {
-				return fmt.Errorf("WebView url_key %q 不可用: %w", urlKey, err)
+			// open_policy 无 url_key 时走微信原生隐私协议，不依赖 WebView 登记表。
+			if action.Type == "open_webview" || strings.TrimSpace(urlKey) != "" {
+				if err := loadEntries(); err != nil {
+					return err
+				}
+				if _, err := findWebViewEntry(entries, urlKey); err != nil {
+					return fmt.Errorf("WebView url_key %q 不可用: %w", urlKey, err)
+				}
 			}
 		}
 		for index := range action.OnSuccess {
@@ -146,6 +159,212 @@ func validateWebViewKeysForRelease(appID string, blocks []models.BlockItem) erro
 		}
 	}
 	return nil
+}
+
+// 发布门禁使用的同源相对路径白名单，必须与 minifront/src/utils/action.ts 保持一致。
+var releaseAllowedRelativePrefixes = []string{
+	"/api/v1/page/",
+	"/api/v1/action/execute",
+	"/api/v1/drama/",
+	"/api/v1/share/card",
+	"/api/v1/articles",
+	"/api/v1/article-categories",
+	"/api/v1/comments",
+	"/api/v1/membership/plans",
+	"/api/v1/membership/orders",
+}
+
+// 无论白名单如何演化都禁止命中的敏感内部路由前缀。
+var releaseDeniedRelativePrefixes = []string{
+	"/api/v1/admin",
+	"/api/v1/mcp",
+	"/api/v1/payment/notify",
+	"/api/v1/payment/sandbox",
+	"/api/v1/webview/ticket",
+	"/api/v1/content-audit",
+	"/api/v1/code",
+}
+
+// validateActionTargetsForRelease 校验发布页面的动作目标在运行时确实可执行。
+// draft 允许引用尚未发布的页面；只有正式发布才执行这些强校验。
+// checkNavigationTargets=false 时仍校验端点、URL 和 SKU，只跳过导航目标页存在性检查。
+func validateActionTargetsForRelease(page *models.DynamicPage, blocks []models.BlockItem, checkNavigationTargets bool) error {
+	if page == nil {
+		return nil
+	}
+	var problems []string
+	var walkAction func(*models.BlockAction, string)
+	walkAction = func(action *models.BlockAction, path string) {
+		if action == nil {
+			return
+		}
+		payload := action.Payload
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		switch action.Type {
+		case "request_data", "request":
+			endpoint, _ := payload["endpoint"].(string)
+			endpoint = strings.TrimSpace(endpoint)
+			rawURL, _ := payload["url"].(string)
+			rawURL = strings.TrimSpace(rawURL)
+			if endpoint != "" {
+				if strings.Contains(endpoint, "$") || strings.Contains(endpoint, "{{") {
+					problems = append(problems, fmt.Sprintf("%s 的 endpoint 必须是字面量，禁止动态拼接", path))
+				} else if !IsRegisteredActionEndpoint(endpoint) {
+					problems = append(problems, fmt.Sprintf("%s 使用了未登记的受控端点 %q", path, endpoint))
+				}
+			} else if rawURL != "" {
+				if strings.Contains(rawURL, "$") || strings.Contains(rawURL, "{{") {
+					problems = append(problems, fmt.Sprintf("%s 的同源 url 必须是字面量，禁止动态拼接", path))
+				} else if !isAllowedReleaseRelativeURL(rawURL) {
+					problems = append(problems, fmt.Sprintf("%s 的同源 url %q 不在发布白名单内", path, rawURL))
+				}
+			} else {
+				problems = append(problems, fmt.Sprintf("%s 必须声明受控 endpoint 或同源相对 url", path))
+			}
+		case "navigate_page":
+			pageID, _ := payload["page_id"].(string)
+			if strings.TrimSpace(pageID) == "" {
+				pageID, _ = payload["id"].(string)
+			}
+			pageID = strings.TrimSpace(pageID)
+			if pageID == "" {
+				problems = append(problems, fmt.Sprintf("%s 缺少目标 page_id", path))
+				break
+			}
+			if strings.Contains(pageID, "$") || strings.Contains(pageID, "{{") {
+				problems = append(problems, fmt.Sprintf("%s 的导航目标必须是字面量 page_id", path))
+				break
+			}
+			// 系统初始化页面族允许互链尚未发布的页面；对外发布必须校验目标状态。
+			if !checkNavigationTargets || db.DB == nil || pageID == page.PageID {
+				break
+			}
+			var target models.DynamicPage
+			if err := db.DB.Where("app_id = ? AND page_id = ?", page.AppID, pageID).First(&target).Error; err != nil {
+				problems = append(problems, fmt.Sprintf("%s 的导航目标页面 %q 不存在", path, pageID))
+			} else if target.Status != "published" || target.Hidden {
+				problems = append(problems, fmt.Sprintf("%s 的导航目标页面 %q 未发布或已隐藏", path, pageID))
+			}
+		case "request_payment":
+			if !isValidRequestPaymentPayload(payload) {
+				problems = append(problems, fmt.Sprintf("%s 的支付动作缺少 SKU 或购物车明细", path))
+			}
+		case "create_order":
+			sku, _ := payload["sku"].(string)
+			if strings.TrimSpace(sku) == "" {
+				problems = append(problems, fmt.Sprintf("%s 的订单动作缺少 SKU", path))
+			}
+		case "add_to_cart", "update_cart_quantity", "remove_from_cart":
+			sku, _ := payload["sku"].(string)
+			if strings.TrimSpace(sku) == "" {
+				sku, _ = payload["product_sku"].(string)
+			}
+			if strings.TrimSpace(sku) == "" {
+				problems = append(problems, fmt.Sprintf("%s 的购物车动作缺少 SKU", path))
+			}
+		}
+		for index := range action.OnSuccess {
+			walkAction(&action.OnSuccess[index], fmt.Sprintf("%s.on_success[%d]", path, index))
+		}
+		for index := range action.OnError {
+			walkAction(&action.OnError[index], fmt.Sprintf("%s.on_error[%d]", path, index))
+		}
+	}
+
+	var walkAny func(interface{}, string)
+	var walkBlock func(models.BlockItem, string)
+	walkBlock = func(block models.BlockItem, path string) {
+		walkAction(block.Action, path+".action")
+		for eventName, actions := range block.Events {
+			for index := range actions {
+				walkAction(&actions[index], fmt.Sprintf("%s.events.%s[%d]", path, eventName, index))
+			}
+		}
+		for name, state := range map[string]*models.BlockItem{
+			"loading": block.Loading, "empty": block.Empty, "error": block.Error, "fallback": block.Fallback,
+		} {
+			if state != nil {
+				walkBlock(*state, path+"."+name)
+			}
+		}
+		if block.Props != nil {
+			walkAny(block.Props, path+".props")
+		}
+	}
+	walkAny = func(value interface{}, path string) {
+		switch node := value.(type) {
+		case []interface{}:
+			for index, item := range node {
+				walkAny(item, fmt.Sprintf("%s[%d]", path, index))
+			}
+		case map[string]interface{}:
+			// props 中嵌入的动作（purchase_action / locked_action / change_action 等）也要纳入发布门禁。
+			if actionType, ok := node["type"].(string); ok && actionType != "" {
+				if _, hasPayload := node["payload"]; hasPayload {
+					if _, hasID := node["id"]; !hasID {
+						encoded, _ := json.Marshal(node)
+						var embedded models.BlockAction
+						if json.Unmarshal(encoded, &embedded) == nil {
+							walkAction(&embedded, path)
+							return
+						}
+					}
+				}
+			}
+			// 只有同时具备 id 与 type 的对象才视为嵌套 BlockItem，避免把表单 props.type 误判为积木。
+			if _, hasID := node["id"]; hasID {
+				if blockType, ok := node["type"].(string); ok && blockType != "" {
+					encoded, _ := json.Marshal(node)
+					var child models.BlockItem
+					if json.Unmarshal(encoded, &child) == nil {
+						walkBlock(child, path)
+						return
+					}
+				}
+			}
+			for key, item := range node {
+				walkAny(item, path+"."+key)
+			}
+		}
+	}
+	for index := range blocks {
+		walkBlock(blocks[index], fmt.Sprintf("blocks[%d]", index))
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+// isAllowedReleaseRelativeURL 判断动作 URL 是否命中发布同源白名单。
+func isAllowedReleaseRelativeURL(value string) bool {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
+		return false
+	}
+	path := value
+	if index := strings.IndexAny(path, "?#"); index >= 0 {
+		path = path[:index]
+	}
+	for _, prefix := range releaseDeniedRelativePrefixes {
+		if matchesPathPrefix(path, prefix) {
+			return false
+		}
+	}
+	for _, prefix := range releaseAllowedRelativePrefixes {
+		if matchesPathPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesPathPrefix 按路径边界匹配前缀，避免 /api/v1/articles 误匹配 /api/v1/articlesXYZ。
+func matchesPathPrefix(path, prefix string) bool {
+	prefix = strings.TrimSuffix(prefix, "/")
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 // 合法原子积木类型白名单 (严格与 doc/sdui_dynamic_engine_architecture.md 和 schema 对齐)
@@ -235,7 +454,26 @@ var allowedBlockTypes = map[string]bool{
 	"wallet_card":          true,
 	"withdraw_form":        true,
 
-	// 4. 通用自由编排/自定义卡片积木
+	// 5. 通用交互与交易编排块
+	"dialog":           true,
+	"action_sheet":     true,
+	"bottom_sheet":     true,
+	"sku_selector":     true,
+	"quantity_stepper": true,
+	"cart_item_list":   true,
+	"cart_summary":     true,
+	"address_book":     true,
+	"address_form":     true,
+	"coupon_list":      true,
+	"invoice_form":     true,
+	"filter_bar":       true,
+	"filter_sheet":     true,
+	"rating":           true,
+	"review_summary":   true,
+	"profile_card":     true,
+	"user_header":      true,
+
+	// 6. 通用自由编排/自定义卡片积木
 	"custom":       true,
 	"custom_block": true,
 }
@@ -308,6 +546,12 @@ var allowedActionTypes = map[string]bool{
 	"load_ad":                true,
 	"refresh_wallet":         true,
 	"request_withdraw":       true,
+	"check_capability":       true,
+	"open_policy":            true,
+	"add_to_cart":            true,
+	"update_cart_quantity":   true,
+	"remove_from_cart":       true,
+	"clear_cart":             true,
 }
 
 var actionEndpointPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
@@ -321,6 +565,15 @@ const maxActionChainDepth = 16
 
 // 原始 JSON 与嵌入属性递归遍历最大深度
 const maxRawJSONDepth = 64
+
+const (
+	// maxBlocksPerPage 单页顶层积木数量上限，防止超大页面拖垮信封与真机渲染。
+	maxBlocksPerPage = 500
+	// maxPageProtocolBytes 单页 Blocks JSON 字节上限 (1MB)。
+	maxPageProtocolBytes = 1024 * 1024
+	// maxRepeatItemsPerBlock 单块 repeat.items 上限，防止循环展开爆炸。
+	maxRepeatItemsPerBlock = 200
+)
 
 // ValidateDynamicPage 对传入的动态页面协议执行严格结构化校验与安全审计
 func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
@@ -355,6 +608,23 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 		report.Suggestions = append(report.Suggestions, "建议配置醒目的页面主标题以提高转化率")
 	}
 
+	// 分享访问策略：只允许 public/auth/membership/owner，避免拼写错误导致策略静默失效。
+	if strings.TrimSpace(page.ShareConfig) != "" && strings.TrimSpace(page.ShareConfig) != "{}" {
+		var shareConfig models.PageShareConfig
+		if err := json.Unmarshal([]byte(page.ShareConfig), &shareConfig); err != nil {
+			report.IsValid = false
+			report.Errors = append(report.Errors, "share_config JSON 解析失败: "+err.Error())
+		} else if shareConfig.Access != nil {
+			mode := strings.ToLower(strings.TrimSpace(shareConfig.Access.Mode))
+			allowed := map[string]bool{"": true, "public": true, "auth": true, "membership": true, "owner": true}
+			if !allowed[mode] {
+				report.IsValid = false
+				report.Errors = append(report.Errors, fmt.Sprintf("share_config.access.mode 不支持: %s", shareConfig.Access.Mode))
+				report.Suggestions = append(report.Suggestions, "mode 只能是 public、auth、membership 或 owner")
+			}
+		}
+	}
+
 	// 2. 校验 Blocks 积木树
 	if strings.TrimSpace(page.Blocks) == "" || page.Blocks == "[]" {
 		report.Warnings = append(report.Warnings, "页面当前积木组件列表为空")
@@ -363,10 +633,24 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 		return report
 	}
 
+	if len(page.Blocks) > maxPageProtocolBytes {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("页面 Blocks JSON 大小 %d 字节超过上限 %d 字节", len(page.Blocks), maxPageProtocolBytes))
+		report.Suggestions = append(report.Suggestions, "请拆分页面、压缩文本或移除超长内联数据")
+		return report
+	}
+
 	var blocks []models.BlockItem
 	if err := json.Unmarshal([]byte(page.Blocks), &blocks); err != nil {
 		report.IsValid = false
 		report.Errors = append(report.Errors, fmt.Sprintf("Blocks JSON 序列化解析失败: %v", err))
+		return report
+	}
+
+	if len(blocks) > maxBlocksPerPage {
+		report.IsValid = false
+		report.Errors = append(report.Errors, fmt.Sprintf("页面顶层积木数量 %d 超过上限 %d", len(blocks), maxBlocksPerPage))
+		report.Suggestions = append(report.Suggestions, "请拆分页面或合并重复积木")
 		return report
 	}
 
@@ -394,6 +678,15 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("%s 使用了未知积木类型 '%s'，客户端将执行降级占位", pathPrefix, block.Type))
 		}
 		validateStyleUtilities(block.Style, pathPrefix+".style", &report)
+
+		// repeat.items 直接决定客户端展开数量，超限会拖垮渲染。
+		if block.Repeat != nil {
+			if items, ok := block.Repeat["items"].([]interface{}); ok && len(items) > maxRepeatItemsPerBlock {
+				report.IsValid = false
+				report.Errors = append(report.Errors, fmt.Sprintf("%s 的 repeat.items 数量 %d 超过上限 %d", pathPrefix, len(items), maxRepeatItemsPerBlock))
+				report.Suggestions = append(report.Suggestions, "请分页或改用受控数据源，不要一次性展开过多项")
+			}
+		}
 
 		// 检查积木绑定的交互动作合法性
 		if block.Action != nil && block.Action.Type != "" {
@@ -443,6 +736,23 @@ func ValidateDynamicPage(page *models.DynamicPage) ValidationReport {
 				if customURL, _ := payload["web_url"].(string); strings.TrimSpace(customURL) != "" {
 					report.IsValid = false
 					report.Errors = append(report.Errors, fmt.Sprintf("%s WebView 动作不得直接配置 payload.web_url", pathPrefix))
+				}
+			case "open_policy":
+				// 未配置 url_key 时打开微信原生隐私协议；配置时必须引用已登记入口。
+				if customURL, _ := payload["url"].(string); strings.TrimSpace(customURL) != "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("%s 隐私政策动作不得直接配置 payload.url", pathPrefix))
+				}
+				if customURL, _ := payload["web_url"].(string); strings.TrimSpace(customURL) != "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("%s 隐私政策动作不得直接配置 payload.web_url", pathPrefix))
+				}
+			case "check_capability":
+				capability, _ := payload["capability"].(string)
+				if strings.TrimSpace(capability) == "" {
+					report.IsValid = false
+					report.Errors = append(report.Errors, fmt.Sprintf("%s 能力检查动作缺少 payload.capability", pathPrefix))
+					report.Suggestions = append(report.Suggestions, "请填写公共能力注册表中的能力键，如 payment、membership、location")
 				}
 			case "request_data", "request":
 				endpoint, _ := payload["endpoint"].(string)
@@ -855,11 +1165,14 @@ func collectNestedBlocks(value interface{}) []models.BlockItem {
 				if _, isAction := v["payload"]; isAction {
 					return
 				}
-				if raw, err := json.Marshal(v); err == nil {
-					var child models.BlockItem
-					if json.Unmarshal(raw, &child) == nil && child.Type != "" {
-						result = append(result, child)
-						return
+				// form.fields 等数据对象也可能带 type；只有同时具备 id 才是 BlockItem。
+				if _, hasID := v["id"]; hasID {
+					if raw, err := json.Marshal(v); err == nil {
+						var child models.BlockItem
+						if json.Unmarshal(raw, &child) == nil && child.Type != "" && child.ID != "" {
+							result = append(result, child)
+							return
+						}
 					}
 				}
 			}
@@ -1162,6 +1475,42 @@ func isValidRequestPaymentPayload(payload map[string]interface{}) bool {
 		if p, ok := m["path"].(string); ok && strings.TrimSpace(p) != "" {
 			return true
 		}
+	}
+	// 购物车支付：items 可直接为数组，也可绑定到运行时数组 (如 $props.items)。
+	if m, ok := payload["items"].(map[string]interface{}); ok && isBindingActionValue(m) {
+		return true
+	}
+	items, ok := payload["items"].([]interface{})
+	if !ok || len(items) == 0 || len(items) > 20 {
+		return false
+	}
+	for _, raw := range items {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		if !isNonEmptyActionValue(item["sku"]) && !isBindingActionValue(item["sku"]) {
+			return false
+		}
+		if !isCartQuantityActionValue(item["quantity"]) {
+			return false
+		}
+	}
+	return true
+}
+
+// isCartQuantityActionValue 判断购物车数量是否为 1-99 的整数或受控绑定。
+func isCartQuantityActionValue(value interface{}) bool {
+	if isBindingActionValue(value) {
+		return true
+	}
+	switch quantity := value.(type) {
+	case float64:
+		return quantity == math.Trunc(quantity) && quantity >= 1 && quantity <= 99
+	case int:
+		return quantity >= 1 && quantity <= 99
+	case int64:
+		return quantity >= 1 && quantity <= 99
 	}
 	return false
 }

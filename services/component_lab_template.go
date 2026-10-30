@@ -1,7 +1,11 @@
 // Package services component_lab_template.go
 package services
 
-import "hot_keyword/models"
+import (
+	"fmt"
+
+	"hot_keyword/models"
+)
 
 // buildComponentLabTemplate 构建覆盖所有标准积木、嵌套、循环、状态和事件链的验收模板。
 func buildComponentLabTemplate() *SDUITemplate {
@@ -15,6 +19,23 @@ func buildComponentLabTemplate() *SDUITemplate {
 		Loading: &models.BlockItem{ID: "lab_state_loading", Type: "skeleton"},
 		Empty:   &models.BlockItem{ID: "lab_state_empty", Type: "empty", Props: map[string]interface{}{"title": "暂无实验数据"}},
 		Error:   &models.BlockItem{ID: "lab_state_error", Type: "custom", Props: map[string]interface{}{"title": "状态请求失败", "content": "请重试"}},
+	}
+
+	// 超长列表 fixture：验证大列表渲染与滚动稳定性（服务端上限 500 块，此处 80 行）
+	longRows := make([]interface{}, 0, 81)
+	longRows = append(longRows, map[string]interface{}{
+		"id": "lab_long_list_title", "type": "text",
+		"props": map[string]interface{}{"content": "长列表（80 行）", "font_weight": "600"},
+	})
+	for i := 1; i <= 80; i++ {
+		longRows = append(longRows, map[string]interface{}{
+			"id":   fmt.Sprintf("lab_long_row_%03d", i),
+			"type": "text",
+			"props": map[string]interface{}{
+				"content":   fmt.Sprintf("长列表第 %d 行 · 验证长内容滚动与渲染稳定性", i),
+				"max_lines": 1,
+			},
+		})
 	}
 
 	blocks := []models.BlockItem{
@@ -104,7 +125,8 @@ func buildComponentLabTemplate() *SDUITemplate {
 								{ID: "lab_resource", Type: "resource_card", Props: map[string]interface{}{"title": "资源卡片", "fetch_code": "LAB-2026"}, Action: &models.BlockAction{Type: "copy_text", Payload: map[string]interface{}{"text": "LAB-2026"}}},
 								{ID: "lab_game", Type: "game_card", Props: map[string]interface{}{"title": "游戏礼包", "redeem_code": "GIFT-LAB"}},
 								{ID: "lab_form", Type: "form", Props: map[string]interface{}{"title": "查询表单", "placeholder": "输入测试值"}, Action: &models.BlockAction{Type: "request_data", Payload: map[string]interface{}{"endpoint": "query.score"}}},
-								{ID: "lab_episode", Type: "episode_list", Props: map[string]interface{}{"title": "选集", "episodes": []interface{}{map[string]interface{}{"title": "第 1 集"}, map[string]interface{}{"title": "第 2 集"}}}},
+								{ID: "lab_form_v2", Type: "form", Props: map[string]interface{}{"title": "多字段表单 v2", "submit_text": "提交表单", "fields": []interface{}{map[string]interface{}{"key": "name", "label": "姓名", "type": "text", "required": true, "placeholder": "请输入姓名"}, map[string]interface{}{"key": "phone", "label": "电话", "type": "number", "required": true, "placeholder": "请输入手机号"}, map[string]interface{}{"key": "type", "label": "类型", "type": "select", "options": []interface{}{map[string]interface{}{"value": "personal", "label": "个人"}, map[string]interface{}{"value": "company", "label": "企业"}}}, map[string]interface{}{"key": "memo", "label": "备注", "type": "textarea", "placeholder": "请输入备注"}, map[string]interface{}{"key": "agree", "label": "同意条款", "type": "switch"}}}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "lab_form_values", "value": "$values"}}},
+								{ID: "lab_episode", Type: "episode_list", Props: map[string]interface{}{"title": "选集", "total_episodes": 2, "current_episode": 1}},
 								{ID: "lab_item_grid", Type: "item_grid", Props: map[string]interface{}{"title": "项目网格", "items": []interface{}{map[string]interface{}{"title": "项目一"}, map[string]interface{}{"title": "项目二"}}}},
 								{ID: "lab_timeline", Type: "timeline", Props: map[string]interface{}{"nodes": []interface{}{map[string]interface{}{"title": "创建", "time": "09:00"}, map[string]interface{}{"title": "验证", "time": "10:00"}}}},
 								{ID: "lab_score", Type: "score_panel", Props: map[string]interface{}{"title": "综合评分", "score": 98, "level": "A+"}},
@@ -162,6 +184,19 @@ func buildComponentLabTemplate() *SDUITemplate {
 								{ID: "lab_qr_code", Type: "qr_code", Props: map[string]interface{}{"title": "客服二维码", "content": "已登记二维码"}},
 								{ID: "lab_feature_gate", Type: "feature_gate", Props: map[string]interface{}{"title": "功能开关", "content": "由租户能力矩阵控制显示"}},
 								{ID: "lab_compliance_panel", Type: "compliance_panel", Props: map[string]interface{}{"title": "合规提示", "content": "当前为本地验收环境"}},
+								{ID: "lab_sku_selector", Type: "sku_selector", Props: map[string]interface{}{"title": "选择规格", "submit_text": "立即购买", "skus": []interface{}{map[string]interface{}{"sku": "sdui-lab-sku", "label": "标准版", "price_text": "¥9.90", "stock": 10}, map[string]interface{}{"sku": "sdui-lab-sku-pro", "label": "高级版", "price_text": "¥29.90", "stock": 5}}}, Action: &models.BlockAction{Type: "request_payment", Payload: map[string]interface{}{"sku": "sdui-lab-sku"}}},
+								{ID: "lab_quantity_stepper", Type: "quantity_stepper", Props: map[string]interface{}{"title": "购买数量", "value": 1, "min": 1, "max": 9}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "quantity", "value": "$result.value"}}},
+								{ID: "lab_cart_item_list", Type: "cart_item_list", Props: map[string]interface{}{"title": "购物车", "empty_text": "购物车为空", "items": []interface{}{map[string]interface{}{"sku": "sdui-lab-sku", "title": "验证商品", "price_text": "¥9.90", "quantity": 2}}}},
+								{ID: "lab_cart_summary", Type: "cart_summary", Props: map[string]interface{}{"title": "购物车合计", "action_text": "去结算", "items": []interface{}{map[string]interface{}{"price_fen": 990, "quantity": 2}}}, Action: &models.BlockAction{Type: "request_payment", Payload: map[string]interface{}{"sku": "sdui-lab-sku"}}},
+								{ID: "lab_address_book", Type: "address_book", Props: map[string]interface{}{"title": "收货地址", "items": []interface{}{map[string]interface{}{"id": "addr-1", "name": "验收用户", "phone": "13800000000", "region": "广东省深圳市", "detail": "南山区", "is_default": true}}}},
+								{ID: "lab_address_form", Type: "address_form", Props: map[string]interface{}{"title": "新增地址", "submit_text": "保存"}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "address_saved", "value": true}}},
+								{ID: "lab_coupon_list", Type: "coupon_list", Props: map[string]interface{}{"title": "可用优惠券", "items": []interface{}{map[string]interface{}{"id": "coupon-1", "title": "满减券", "amount_text": "¥10", "condition": "满 99 元可用", "valid_until": "2026-12-31", "status": "available"}}}},
+								{ID: "lab_invoice_form", Type: "invoice_form", Props: map[string]interface{}{"title": "发票信息", "submit_text": "保存"}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "invoice_ready", "value": true}}},
+								{ID: "lab_filter_bar", Type: "filter_bar", Props: map[string]interface{}{"title": "筛选", "filters": []interface{}{map[string]interface{}{"key": "sort", "label": "排序", "options": []interface{}{map[string]interface{}{"value": "new", "label": "最新"}, map[string]interface{}{"value": "hot", "label": "最热"}}}}}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "filter_value", "value": "$result.value"}}},
+								{ID: "lab_rating", Type: "rating", Props: map[string]interface{}{"title": "服务评分", "value": 4, "max": 5}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "rating", "value": "$result.value"}}},
+								{ID: "lab_review_summary", Type: "review_summary", Props: map[string]interface{}{"title": "用户评价", "average": 4.8, "total": 12, "distribution": []interface{}{map[string]interface{}{"stars": 5, "count": 10}, map[string]interface{}{"stars": 4, "count": 2}}, "items": []interface{}{map[string]interface{}{"author": "验收用户", "rating": 5, "content": "服务很好"}}}},
+								{ID: "lab_profile_card", Type: "profile_card", Props: map[string]interface{}{"title": "斗师档案", "subtitle": "认证斗师", "stats": []interface{}{map[string]interface{}{"label": "完成服务", "value": 32}}, "badges": []interface{}{"已认证"}}},
+								{ID: "lab_user_header", Type: "user_header", Props: map[string]interface{}{"name": "验收用户", "meta": "会员等级 2 · 注册 180 天", "badges": []interface{}{"年度会员"}}},
 							},
 						},
 					},
@@ -178,6 +213,50 @@ func buildComponentLabTemplate() *SDUITemplate {
 								map[string]interface{}{"key": "state", "title": "状态", "blocks": []interface{}{
 									map[string]interface{}{"id": "lab_tab_empty", "type": "empty", "props": map[string]interface{}{"title": "空态"}},
 									map[string]interface{}{"id": "lab_tab_skeleton", "type": "skeleton"},
+									map[string]interface{}{"id": "lab_state_cart_empty", "type": "cart_item_list", "props": map[string]interface{}{"title": "购物车空态", "items": []interface{}{}, "empty_text": "购物车为空"}},
+									map[string]interface{}{"id": "lab_state_address_empty", "type": "address_book", "props": map[string]interface{}{"title": "地址簿空态", "items": []interface{}{}, "empty_text": "暂无收货地址"}},
+									map[string]interface{}{"id": "lab_state_coupon_empty", "type": "coupon_list", "props": map[string]interface{}{"title": "优惠券空态", "items": []interface{}{}, "empty_text": "暂无可用优惠券"}},
+									map[string]interface{}{"id": "lab_state_review_empty", "type": "review_summary", "props": map[string]interface{}{"title": "评价空态", "items": []interface{}{}, "average": 0, "total": 0, "empty_text": "暂无评价"}},
+									map[string]interface{}{"id": "lab_state_sku_disabled", "type": "sku_selector", "props": map[string]interface{}{"title": "缺货规格", "submit_text": "立即购买", "skus": []interface{}{map[string]interface{}{"sku": "sold-out", "label": "已售罄", "price_text": "¥9.90", "stock": 0}}}},
+									models.BlockItem{
+										ID: "lab_state_form_loading", Type: "form",
+										Props:   map[string]interface{}{"title": "表单加载态", "_state": "loading", "fields": []interface{}{map[string]interface{}{"key": "name", "label": "姓名", "type": "text"}}},
+										Loading: &models.BlockItem{ID: "lab_state_form_loading_fallback", Type: "skeleton", Props: map[string]interface{}{"rows": 3, "hero": false}},
+									},
+									models.BlockItem{
+										ID: "lab_state_form_error", Type: "form",
+										Props: map[string]interface{}{"title": "表单错误态", "_state": "error", "fields": []interface{}{map[string]interface{}{"key": "name", "label": "姓名", "type": "text"}}},
+										Error: &models.BlockItem{ID: "lab_state_form_error_fallback", Type: "empty", Props: map[string]interface{}{"state": "error", "title": "表单加载失败", "desc": "请稍后重试"}},
+									},
+									models.BlockItem{
+										ID: "lab_state_async_success", Type: "form",
+										Props: map[string]interface{}{"title": "异步提交（成功）", "submit_text": "提交并加载", "fields": []interface{}{map[string]interface{}{"key": "memo", "label": "备注", "type": "text", "placeholder": "异步查询成功"}}},
+										Action: &models.BlockAction{Type: "request_data", Payload: map[string]interface{}{
+											"endpoint": "query.score",
+											"target":   "lab_state_async_success",
+											"body":     map[string]interface{}{"query_value": "ASYNC-LAB"},
+											"response": map[string]interface{}{"save_as": "lab_async_result"},
+										}},
+										Loading: &models.BlockItem{ID: "lab_state_async_success_loading", Type: "skeleton", Props: map[string]interface{}{"rows": 3, "hero": false}},
+										Error:   &models.BlockItem{ID: "lab_state_async_success_error", Type: "empty", Props: map[string]interface{}{"state": "error", "title": "异步请求失败", "desc": "请稍后重试"}},
+									},
+									models.BlockItem{
+										ID: "lab_state_async_error", Type: "form",
+										Props: map[string]interface{}{"title": "异步提交（失败）", "submit_text": "提交（触发失败）", "fields": []interface{}{map[string]interface{}{"key": "memo", "label": "备注", "type": "text", "placeholder": "点击提交查看错误兜底"}}},
+										Action: &models.BlockAction{Type: "request_data", Payload: map[string]interface{}{
+											"endpoint": "logistics.refresh",
+											"target":   "lab_state_async_error",
+											"body":     map[string]interface{}{"id": "lab_missing_order"},
+										}},
+										Loading: &models.BlockItem{ID: "lab_state_async_error_loading", Type: "skeleton", Props: map[string]interface{}{"rows": 3, "hero": false}},
+										Error:   &models.BlockItem{ID: "lab_state_async_error_fallback", Type: "empty", Props: map[string]interface{}{"state": "error", "title": "异步请求失败", "desc": "订单不存在或网络异常"}},
+									},
+									map[string]interface{}{"id": "lab_state_long_text", "type": "text", "props": map[string]interface{}{"content": "超长文本用于验证多行截断：这是一段刻意加长的说明文字，覆盖标题、正文、价格说明、售后条款与门店地址等常见场景；在窄屏和长内容同时出现时，文本必须在指定的行数内截断，不能把卡片撑破，也不能把相邻按钮挤出视口。", "max_lines": 3}},
+									map[string]interface{}{"id": "lab_state_long_list", "type": "list", "props": map[string]interface{}{"children": longRows}},
+									map[string]interface{}{"id": "lab_state_review_live", "type": "review_summary", "props": map[string]interface{}{"title": "实时评价（服务端）", "sku": "article_single_product_teardown", "auto_load": true, "empty_text": "暂无评价"}},
+									map[string]interface{}{"id": "lab_state_cart_quote", "type": "cart_summary", "props": map[string]interface{}{"title": "服务端报价", "server_quote": true, "action_text": "去结算", "items": []interface{}{map[string]interface{}{"sku": "ai_breakthrough_member_1", "quantity": 2}, map[string]interface{}{"sku": "article_single_product_teardown", "quantity": 1}}}},
+									map[string]interface{}{"id": "lab_state_coupon_live", "type": "coupon_list", "props": map[string]interface{}{"title": "我的优惠券", "auto_load": true, "selectable": false, "empty_text": "暂无可用优惠券"}},
+									map[string]interface{}{"id": "lab_state_cart_quote_items", "type": "cart_item_list", "props": map[string]interface{}{"title": "报价明细", "items": []interface{}{map[string]interface{}{"sku": "ai_breakthrough_member_1", "quantity": 2, "title": "客户端标题", "price_text": "¥0.01"}, map[string]interface{}{"sku": "article_single_product_teardown", "quantity": 1, "title": "客户端标题", "price_text": "¥0.01"}}}},
 								}},
 							},
 						},
@@ -185,6 +264,10 @@ func buildComponentLabTemplate() *SDUITemplate {
 							"change": {{Type: "toggle_state", Payload: map[string]interface{}{"key": "tab_changed"}}},
 						},
 					},
+					{ID: "lab_dialog", Type: "dialog", Props: map[string]interface{}{"title": "确认操作", "content": "通用弹层验收", "trigger_text": "打开弹窗", "confirm_text": "确认", "cancel_text": "取消", "confirm_action": map[string]interface{}{"type": "toast", "payload": map[string]interface{}{"text": "弹窗已确认"}}}},
+					{ID: "lab_action_sheet", Type: "action_sheet", Props: map[string]interface{}{"title": "选择操作", "trigger_text": "打开动作面板", "cancel_text": "取消", "items": []interface{}{map[string]interface{}{"label": "复制文本", "action": map[string]interface{}{"type": "copy_text", "payload": map[string]interface{}{"text": "SDUI-SHEET"}}}, map[string]interface{}{"label": "显示提示", "action": map[string]interface{}{"type": "toast", "payload": map[string]interface{}{"text": "已选择"}}}}}},
+					{ID: "lab_bottom_sheet", Type: "bottom_sheet", Props: map[string]interface{}{"title": "底部面板", "content": "底部弹层验收", "trigger_text": "打开底部面板", "confirm_text": "完成"}},
+					{ID: "lab_filter_sheet", Type: "filter_sheet", Props: map[string]interface{}{"title": "筛选条件", "trigger_text": "打开筛选", "groups": []interface{}{map[string]interface{}{"key": "price", "label": "价格", "options": []interface{}{map[string]interface{}{"value": "0-100", "label": "100 元以下"}, map[string]interface{}{"value": "100+", "label": "100 元以上"}}}}}, Action: &models.BlockAction{Type: "set_state", Payload: map[string]interface{}{"key": "filters", "value": "$result.selected"}}},
 					{ID: "lab_spacer", Type: "spacer", Props: map[string]interface{}{"height": "32rpx"}},
 					{ID: "lab_bottom_nav", Type: "bottom_nav", Props: map[string]interface{}{"active_key": "lab", "items": []interface{}{map[string]interface{}{"key": "lab", "label": "实验室", "page_id": "component_lab"}, map[string]interface{}{"key": "home", "label": "首页", "page_id": "home"}}}},
 					{ID: "lab_floating_action", Type: "floating_action", Props: map[string]interface{}{"label": "客服", "position": "right"}, Action: &models.BlockAction{Type: "navigate_page", Payload: map[string]interface{}{"page_id": "customer_service"}}},
@@ -264,6 +347,12 @@ func componentLabActionBlocks() []models.BlockItem {
 		{Type: "load_ad", Payload: map[string]interface{}{"slot_id": "lab-ad"}},
 		{Type: "refresh_wallet", Payload: map[string]interface{}{}},
 		{Type: "request_withdraw", Payload: map[string]interface{}{"amount": "10.00"}},
+		{Type: "check_capability", Payload: map[string]interface{}{"capability": "payment"}},
+		{Type: "open_policy"},
+		{Type: "add_to_cart", Payload: map[string]interface{}{"sku": "sdui-lab-sku", "title": "验证商品", "price_fen": 990, "quantity": 1}},
+		{Type: "update_cart_quantity", Payload: map[string]interface{}{"sku": "sdui-lab-sku", "quantity": 2}},
+		{Type: "remove_from_cart", Payload: map[string]interface{}{"sku": "sdui-lab-sku"}},
+		{Type: "clear_cart"},
 	}
 	blocks := []models.BlockItem{{ID: "lab_action_result", Type: "text", Props: map[string]interface{}{"content": "动作结果 {{$state.lab_action}} / 请求 {{$state.lab_request.status}}"}}}
 	for _, action := range actions {

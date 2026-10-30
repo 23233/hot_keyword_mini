@@ -5,6 +5,7 @@ import { ensureSession } from './auth'
 import { request } from './request'
 import { evaluateCondition, isKnownScopedPath } from './condition'
 import { resolveRemoteUrl } from '../config/env'
+import { addCartItem, updateCartItem, removeCartItem, clearCart, cartTotals } from './cart'
 
 /**
  * 统一万能交互动作执行上下文
@@ -32,6 +33,10 @@ export interface ActionContext {
   page?: any
   session?: any
   tenant?: any
+  // 页面依赖的客户端能力声明
+  capabilities?: string[]
+  // 访问者与租户能力摘要；包含已启用的公共能力键
+  viewer?: Record<string, any>
 }
 
 const isHTTPSURL = (value: unknown): boolean => /^https:\/\/[^/\s?#]+(?:[/?#]\S*)?$/i.test(String(value || ''))
@@ -221,6 +226,61 @@ export function resolveBlockPropsBindings(props: Record<string, any>, context: A
     return resolveObjectBindings(value, context)
   }
   return resolve(props) || {}
+}
+
+// 单个 repeat 积木最大展开项数；服务端发布门禁限制 repeat.items，这里兜住 $entity 等动态路径的超大数组
+export const MAX_REPEAT_ITEMS = 200
+
+/** 截断 repeat 展开列表，避免超大动态数组一次渲染拖垮小程序。 */
+export function capRepeatItems<T>(items: T[], max = MAX_REPEAT_ITEMS): T[] {
+  return Array.isArray(items) && items.length > max ? items.slice(0, max) : items
+}
+
+// 块级动作互斥锁：同一积木的同类请求在途时拒绝重复触发，避免双击生成重复订单
+const inFlightActions = new Set<string>()
+
+/** 尝试获取块级动作锁；无块上下文时不加锁，重复触发返回 busy。 */
+function tryAcquireActionLock(context: ActionContext | undefined, key: string): { key: string; busy: boolean } {
+  const blockId = String((context as any)?.__block_id || '')
+  if (!blockId) return { key: '', busy: false }
+  const lockKey = `${blockId}:${key}`
+  if (inFlightActions.has(lockKey)) return { key: '', busy: true }
+  inFlightActions.add(lockKey)
+  return { key: lockKey, busy: false }
+}
+
+/** 创建支付订单、调起微信支付并轮询确认后端状态；data 为 sku 或购物车 items。 */
+async function runPaymentFlow(data: Record<string, any>, idempotencyKey: string): Promise<{ result: any; orderStatus: string }> {
+  const result = await request<any>({ url: '/api/v1/payment/orders', method: 'POST', data: { ...data, idempotency_key: idempotencyKey } })
+  const payment = result?.payment || result
+  if (!payment || !['timeStamp', 'nonceStr', 'package', 'paySign'].every((key) =>
+    (typeof payment[key] === 'string' || (key === 'timeStamp' && typeof payment[key] === 'number')) && String(payment[key]).trim() !== ''
+  )) {
+    throw new Error('服务端返回的支付参数不完整')
+  }
+  await Taro.requestPayment({
+    timeStamp: String(payment.timeStamp),
+    nonceStr: String(payment.nonceStr),
+    package: String(payment.package),
+    signType: payment.signType || 'RSA',
+    paySign: String(payment.paySign)
+  } as any)
+  const outTradeNo = String(result?.order?.out_trade_no || '')
+  let orderStatus = 'pending'
+  if (outTradeNo) {
+    // 支付回调是异步的，短暂轮询后端状态，避免只相信客户端回调。
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500))
+      try {
+        const order = await request<any>({ url: `/api/v1/payment/orders/${encodeURIComponent(outTradeNo)}` })
+        orderStatus = String(order?.status || 'pending')
+        if (orderStatus === 'paid') break
+      } catch (_) {
+        // 支付成功后查询失败不应覆盖微信支付结果，下一次尝试继续确认。
+      }
+    }
+  }
+  return { result, orderStatus }
 }
 
 // 动作级联链最大执行深度熔断阈值，防止协议配置出环或超深导致死循环
@@ -565,7 +625,7 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       break
     }
 
-    // 网页 WebView H5 直达打开
+    // 网页 WebView H5 直达打开：客户端只传 url_key，由 WebView 页面向服务端解析受控地址。
     case 'open_webview': {
       const urlKey = String(payload.url_key || '')
       if (!urlKey) {
@@ -573,31 +633,10 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
         actionSuccess = false
         break
       }
-
-      let targetUrl = String(payload.url || '')
-      if (!targetUrl || !isHTTPSURL(targetUrl)) {
-        Taro.showToast({ title: 'WebView 入口不可用', icon: 'none' })
-        actionSuccess = false
-        break
-      }
-      // 说明：payload.url 只能来自服务端信封装配时按 url_key 注入的登记地址
-      // (ResolveWebViewPayload)；协议自带的 web_url 旁路已移除，与服务端发布门禁保持一致。
-
-      // 需要登录的 WebView 不直接暴露用户标识，先换取一次性短期票据地址。
-      if (action.require_auth) {
-        const ticket = await request<{ url: string }>({
-          url: '/api/v1/webview/ticket',
-          method: 'POST',
-          data: { url_key: urlKey }
-        })
-        if (!ticket?.url) {
-          throw new Error('未能获取一次性 WebView 地址')
-        }
-        targetUrl = ticket.url
-      }
-
+      const authFlag = action.require_auth ? '1' : '0'
+      const pageTheme = String((context?.page as any)?.theme || '')
       Taro.navigateTo({
-        url: `/pages/webview/index?url=${encodeURIComponent(targetUrl)}&title=${encodeURIComponent(payload.title || '')}`
+        url: `/pages/webview/index?url_key=${encodeURIComponent(urlKey)}&title=${encodeURIComponent(payload.title || '')}&auth=${authFlag}&theme=${encodeURIComponent(pageTheme)}`
       })
       break
     }
@@ -627,6 +666,12 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       const idempotencyKey = payload.idempotency_key || `idem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const timeoutMs = Number(payload.timeout_ms || payload.timeout || 15000)
       const stateTarget = typeof payload.target === 'string' ? payload.target : ''
+      const requestLock = tryAcquireActionLock(context, `request:${endpoint || targetUrl}`)
+      if (requestLock.busy) {
+        Taro.showToast({ title: '请求处理中，请稍候', icon: 'none' })
+        actionSuccess = false
+        break
+      }
       if (stateTarget && context?.setBlockState) context.setBlockState(stateTarget, 'loading')
 
       // 1. 严格端点安全白名单门禁: endpoint 优先；若为自定义 url 必须为同源且命中受控业务路由白名单
@@ -788,6 +833,8 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
             icon: 'none'
           })
         }
+      } finally {
+        if (requestLock.key) inFlightActions.delete(requestLock.key)
       }
       break
     }
@@ -807,43 +854,41 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
           sku = String(fallbackSku)
         }
       }
-      if (!sku) {
-        Taro.showToast({ title: '商品 SKU 不能为空', icon: 'none' })
+
+      // 购物车结算：优先使用显式 items，其次复用 cart_summary 传入的 actionPayload.items。
+      const resolvedItems = resolveBindingValue(payload.items, context)
+      const sourceItems = Array.isArray(resolvedItems)
+        ? resolvedItems
+        : (Array.isArray((context as any)?.actionPayload?.items) ? (context as any).actionPayload.items : [])
+      const cartItems = sourceItems
+        .map((item: any) => ({ sku: String(item?.sku || '').trim(), quantity: Math.floor(Number(item?.quantity || 0)) }))
+        .filter((item: any) => item.sku !== '' && item.quantity >= 1 && item.quantity <= 99)
+        .slice(0, 20)
+      if (cartItems.length === 0 && !sku) {
+        Taro.showToast({ title: '商品 SKU 或购物车明细不能为空', icon: 'none' })
+        actionSuccess = false
+        break
+      }
+      const paymentKey = cartItems.length > 0
+        ? `pay:cart:${cartItems.map((item: any) => `${item.sku}x${item.quantity}`).join(',')}`
+        : `pay:${sku}`
+      const paymentLock = tryAcquireActionLock(context, paymentKey)
+      if (paymentLock.busy) {
+        Taro.showToast({ title: '支付处理中，请稍候', icon: 'none' })
         actionSuccess = false
         break
       }
       const idem = String(payload.idempotency_key || `pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
-      const result = await request<any>({ url: '/api/v1/payment/orders', method: 'POST', data: { sku, idempotency_key: idem } })
-      actionResult = result
-      const payment = result?.payment || result
-      if (!payment || !['timeStamp', 'nonceStr', 'package', 'paySign'].every(key =>
-        (typeof payment[key] === 'string' || (key === 'timeStamp' && typeof payment[key] === 'number')) && String(payment[key]).trim() !== ''
-      )) {
-        throw new Error('服务端返回的支付参数不完整')
+      try {
+        const couponID = String(resolveBindingValue(payload.coupon_id, context) || '').trim()
+      const paymentData: Record<string, any> = cartItems.length > 0 ? { items: cartItems } : { sku }
+      if (couponID) paymentData.coupon_id = couponID
+        const { result, orderStatus } = await runPaymentFlow(paymentData, idem)
+        actionResult = result
+        Taro.showToast({ title: orderStatus === 'paid' ? '支付成功' : '支付已提交', icon: orderStatus === 'paid' ? 'success' : 'none' })
+      } finally {
+        if (paymentLock.key) inFlightActions.delete(paymentLock.key)
       }
-      await Taro.requestPayment({
-        timeStamp: String(payment.timeStamp),
-        nonceStr: String(payment.nonceStr),
-        package: String(payment.package),
-        signType: payment.signType || 'RSA',
-        paySign: String(payment.paySign)
-      } as any)
-      const outTradeNo = String(result?.order?.out_trade_no || '')
-      let orderStatus = 'pending'
-      if (outTradeNo) {
-        // 支付回调是异步的，短暂轮询后端状态，避免只相信客户端回调。
-        for (let attempt = 0; attempt < 4; attempt += 1) {
-          if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 500))
-          try {
-            const order = await request<any>({ url: `/api/v1/payment/orders/${encodeURIComponent(outTradeNo)}` })
-            orderStatus = String(order?.status || 'pending')
-            if (orderStatus === 'paid') break
-          } catch (_) {
-            // 支付成功后查询失败不应覆盖微信支付结果，下一次尝试继续确认。
-          }
-        }
-      }
-      Taro.showToast({ title: orderStatus === 'paid' ? '支付成功' : '支付已提交', icon: orderStatus === 'paid' ? 'success' : 'none' })
       break
     }
 
@@ -984,6 +1029,124 @@ export async function dispatchAction(action?: BlockAction | BlockAction[], conte
       actionResult = result
       if (payload.response?.save_as && context?.updateState) context.updateState(payload.response.save_as, result)
       Taro.showToast({ title: result?.message || '操作已提交', icon: 'none' })
+      break
+    }
+
+    // 打开微信原生隐私协议；未提供原生能力时回退到已登记 WebView。
+    case 'open_policy': {
+      const privacyApi = (Taro as any).openPrivacyContract
+        || (typeof wx !== 'undefined' ? (wx as any).openPrivacyContract : undefined)
+      if (typeof privacyApi === 'function') {
+        // 隐私协议是原生弹层，调用后立即返回；失败时仅提示，不阻断后续动作。
+        privacyApi({
+          fail: (error: any) => {
+            Taro.showToast({ title: error?.errMsg || '打开隐私协议失败', icon: 'none' })
+          }
+        })
+        break
+      }
+      const policyKey = String(payload.url_key || '')
+      if (!policyKey) {
+        Taro.showToast({ title: '隐私政策入口未配置', icon: 'none' })
+        actionSuccess = false
+        break
+      }
+      const pageTheme = String((context?.page as any)?.theme || '')
+      Taro.navigateTo({
+        url: `/pages/webview/index?url_key=${encodeURIComponent(policyKey)}&title=${encodeURIComponent(payload.title || '隐私政策')}&auth=0&theme=${encodeURIComponent(pageTheme)}`
+      })
+      break
+    }
+
+    // 检查租户能力是否启用；未启用时执行协议声明的降级动作链。
+    case 'check_capability': {
+      const capability = String(payload.capability || '').trim()
+      if (!capability) {
+        actionSuccess = false
+        Taro.showToast({ title: '能力检查缺少 capability', icon: 'none' })
+        break
+      }
+      const enabledCapabilities: string[] = Array.isArray(context?.viewer?.capabilities)
+        ? context.viewer.capabilities
+        : []
+      const requiredCapabilities: string[] = Array.isArray(context?.capabilities)
+        ? context.capabilities
+        : []
+      const enabled = enabledCapabilities.includes(capability)
+      actionResult = { capability, enabled }
+      if (!enabled) {
+        actionSuccess = false
+        const errorActions = Array.isArray(action.on_error) && action.on_error.length > 0
+          ? action.on_error
+          : (Array.isArray(payload.on_error) ? payload.on_error : [])
+        if (errorActions.length > 0) {
+          await dispatchEvents({ tap: errorActions }, 'tap', { ...context, result: actionResult })
+        } else {
+          Taro.showToast({ title: payload.unavailable_text || '当前功能暂未开放', icon: 'none' })
+        }
+        // requiredCapabilities 仅作为旧后端能力声明的兜底，未启用时仍以 viewer 为准。
+        console.info('[SDUI 能力检查]', capability, enabled, requiredCapabilities)
+        break
+      }
+      break
+    }
+
+    // 本地购物车动作：按当前租户隔离存储，并同步页面响应式状态。
+    case 'add_to_cart': {
+      const sku = String(payload.sku || payload.product_sku || '').trim()
+      if (!sku) {
+        Taro.showToast({ title: '商品 SKU 不能为空', icon: 'none' })
+        actionSuccess = false
+        break
+      }
+      const cart = addCartItem({
+        sku,
+        title: String(payload.title || payload.name || ''),
+        price_fen: payload.price_fen !== undefined ? Number(payload.price_fen) : undefined,
+        price_text: payload.price_text ? String(payload.price_text) : undefined,
+        image_url: payload.image_url ? String(payload.image_url) : undefined,
+        spec: payload.spec ? String(payload.spec) : undefined,
+        quantity: Math.max(1, Number(payload.quantity || 1))
+      })
+      const totals = cartTotals(cart)
+      actionResult = { cart, count: totals.count, total_fen: totals.totalFen }
+      context?.updateState?.('cart', cart)
+      Taro.showToast({ title: payload.toast || '已加入购物车', icon: 'success' })
+      break
+    }
+
+    case 'update_cart_quantity': {
+      const sku = String(payload.sku || payload.product_sku || '').trim()
+      if (!sku) {
+        actionSuccess = false
+        break
+      }
+      const cart = updateCartItem(sku, Number(payload.quantity || 0))
+      const totals = cartTotals(cart)
+      actionResult = { cart, count: totals.count, total_fen: totals.totalFen }
+      context?.updateState?.('cart', cart)
+      break
+    }
+
+    case 'remove_from_cart': {
+      const sku = String(payload.sku || payload.product_sku || '').trim()
+      if (!sku) {
+        actionSuccess = false
+        break
+      }
+      const cart = removeCartItem(sku)
+      const totals = cartTotals(cart)
+      actionResult = { cart, count: totals.count, total_fen: totals.totalFen }
+      context?.updateState?.('cart', cart)
+      Taro.showToast({ title: payload.toast || '已移出购物车', icon: 'none' })
+      break
+    }
+
+    case 'clear_cart': {
+      const cart = clearCart()
+      actionResult = { cart, count: 0, total_fen: 0 }
+      context?.updateState?.('cart', cart)
+      Taro.showToast({ title: payload.toast || '购物车已清空', icon: 'none' })
       break
     }
 

@@ -58,8 +58,10 @@ export const UniversalPlayer: React.FC<UniversalPlayerProps> = ({
       itemList: ['在小程序内直接打开网页', '复制网页链接去浏览器打开'],
       success: (res) => {
         if (res.tapIndex === 0) {
+          // 只传短剧/剧集 ID，由 WebView 页面向服务端解析已配置的 HTTPS 地址。
+          const episodeID = episode?.id || 0
           Taro.navigateTo({
-            url: `/pages/webview/index?url=${encodeURIComponent(webUrl)}&title=${encodeURIComponent(drama.title)}`
+            url: `/pages/webview/index?drama_id=${encodeURIComponent(String(drama.id))}&episode_id=${encodeURIComponent(String(episodeID))}&title=${encodeURIComponent(drama.title)}`
           })
         } else if (res.tapIndex === 1) {
           Taro.setClipboardData({

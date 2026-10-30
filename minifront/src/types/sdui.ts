@@ -56,6 +56,12 @@ export type BlockActionType =
   | 'load_ad'                // 加载广告位
   | 'refresh_wallet'         // 刷新钱包
   | 'request_withdraw'       // 申请提现
+  | 'check_capability'       // 检查租户能力是否启用
+  | 'open_policy'            // 打开隐私政策或合规入口
+  | 'add_to_cart'            // 加入本地购物车
+  | 'update_cart_quantity'   // 更新购物车数量
+  | 'remove_from_cart'       // 移出购物车
+  | 'clear_cart'             // 清空购物车
 
 // 交互前置确认弹窗配置
 export interface ActionConfirm {
@@ -194,6 +200,20 @@ export interface ShareItem {
   image_url?: string
 }
 
+// 分享落地页访问策略
+export interface ShareAccess {
+  // 访问模式：public、auth、membership、owner
+  mode?: 'public' | 'auth' | 'membership' | 'owner'
+  // 拦截提示标题
+  title?: string
+  // 拦截提示正文
+  message?: string
+  // 主按钮文案
+  action_text?: string
+  // 会员页 page_id
+  membership_page_id?: string
+}
+
 // 页面级微信分享整体配置
 export interface PageShareConfig {
   // 默认分享兜底图
@@ -202,6 +222,8 @@ export interface PageShareConfig {
   friend?: ShareItem
   // 分享到朋友圈配置
   timeline?: ShareItem
+  // 分享落地页访问策略
+  access?: ShareAccess
 }
 
 // 动态页面实体传输对象
@@ -318,6 +340,8 @@ export interface PageResponseEnvelope {
   capabilities_required: string[]
   // 缓存控制
   cache: EnvelopeCache
+  // 访问者登录、会员和租户能力摘要；不包含任何凭证
+  viewer?: Record<string, any>
   // 异常降级
   fallback: EnvelopeFallback
 }

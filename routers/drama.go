@@ -16,9 +16,27 @@ func RegisterDramaRoutes(party iris.Party) {
 		dramaParty.Get("/home", GetDramaHomeHandler)
 		// 获取单个短剧详情及选集列表
 		dramaParty.Get("/detail", GetDramaDetailHandler)
+		// 解析短剧或剧集已配置的 HTTPS 网页播放地址
+		dramaParty.Get("/web-url", GetDramaWebURLHandler)
 		// 切换小程序首页展示模式
 		dramaParty.Post("/switch_mode", SwitchDramaModeHandler)
 	}
+}
+
+// GetDramaWebURLHandler 返回服务端保存的短剧网页播放地址，客户端不接受裸 URL。
+func GetDramaWebURLHandler(ctx iris.Context) {
+	dramaID, _ := ctx.URLParamInt64("drama_id")
+	if dramaID <= 0 {
+		dramaID, _ = ctx.URLParamInt64("id")
+	}
+	episodeID, _ := ctx.URLParamInt64("episode_id")
+	targetURL, title, err := services.NewDramaService().GetWebURL(dramaID, episodeID)
+	if err != nil {
+		ctx.StatusCode(iris.StatusNotFound)
+		_ = ctx.JSON(iris.Map{"code": 404, "msg": err.Error()})
+		return
+	}
+	_ = ctx.JSON(iris.Map{"code": 0, "data": iris.Map{"url": targetURL, "title": title}})
 }
 
 // GetDramaDetailHandler 获取单个短剧详情与选集

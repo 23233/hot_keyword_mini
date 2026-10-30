@@ -89,3 +89,34 @@ func TestBuildCapabilityMatrix(t *testing.T) {
 		t.Fatalf("构造完整能力矩阵失败: %s err=%v", raw, err)
 	}
 }
+
+// TestCapabilityKeysForEndpoint 验证公开动作端点与租户能力键的映射。
+func TestCapabilityKeysForEndpoint(t *testing.T) {
+	tests := []struct {
+		endpoint string
+		payload  map[string]interface{}
+		want     string
+	}{
+		{endpoint: "order.create", payload: nil, want: "orders"},
+		{endpoint: "request_payment", payload: nil, want: ""},
+		{endpoint: "after_sale.apply", want: "after_sale"},
+		{endpoint: "logistics.refresh", want: "logistics"},
+		{endpoint: "chat.send", want: "internal_chat,realtime_chat"},
+		{endpoint: "media.delete", want: "media_upload"},
+		{endpoint: "service.accept_task", want: "service_orders"},
+		{endpoint: "wallet.withdraw", want: "wallet"},
+		{endpoint: "address.save", want: "location"},
+		{endpoint: "invoice.save", want: "orders"},
+		{endpoint: "ads.load", want: "ads"},
+		{endpoint: "membership.open", want: "membership"},
+		{endpoint: "domain.list", payload: map[string]interface{}{"kind": "order"}, want: "orders"},
+		{endpoint: "domain.list", payload: map[string]interface{}{"kind": "thread"}, want: "internal_chat,realtime_chat"},
+		{endpoint: "game.redeem", want: ""},
+	}
+	for _, test := range tests {
+		got := strings.Join(CapabilityKeysForEndpoint(test.endpoint, test.payload), ",")
+		if got != test.want {
+			t.Fatalf("%s 能力映射 = %q, want %q", test.endpoint, got, test.want)
+		}
+	}
+}

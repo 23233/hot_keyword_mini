@@ -106,6 +106,15 @@ func RegisterAIBreakthroughRoutes(api iris.Party) {
 
 	api.Post("/membership/orders", requireUser, func(ctx iris.Context) {
 		appID := middleware.GetTenantAppID(ctx)
+		if allowed, capabilityErr := services.EnsureAppCapability(appID, []string{"membership"}); capabilityErr != nil {
+			ctx.StatusCode(500)
+			_ = ctx.JSON(iris.Map{"code": 500, "error_code": "CAPABILITY_CHECK_FAILED", "msg": "能力状态检查失败"})
+			return
+		} else if !allowed {
+			ctx.StatusCode(403)
+			_ = ctx.JSON(iris.Map{"code": 403, "error_code": "CAPABILITY_DISABLED", "msg": "当前小程序未启用会员能力"})
+			return
+		}
 		userID, _ := strconv.ParseInt(ctx.Values().GetString("article_user_id"), 10, 64)
 		openID := ctx.Values().GetString("article_open_id")
 		var req struct {

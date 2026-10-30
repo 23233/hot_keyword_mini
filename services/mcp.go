@@ -311,7 +311,7 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 		},
 		{
 			Name:        "sdui.operation.execute",
-			Description: "执行游戏兑换和查询等通用动作；管理领域写操作请使用 sdui.admin.execute",
+			Description: "执行游戏兑换和查询等通用动作；领域运营写操作请使用 sdui.domain.execute",
 			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "endpoint"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "endpoint": map[string]interface{}{"type": "string"}, "id": map[string]interface{}{"type": "string"}, "payload": map[string]interface{}{"type": "object"}, "idempotency_key": map[string]interface{}{"type": "string"}}},
 		},
 		{
@@ -329,6 +329,16 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 			Description: "内部高权限管理操作：配置小程序、能力、WebView、商品、会员、栏目、文章、评论、短剧和运营记录；管理员账号与 MCP Token 永不开放",
 			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "operation", "confirmed"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "operation": map[string]interface{}{"type": "string", "enum": AdminMCPOperations}, "payload": map[string]interface{}{"type": "object"}, "confirmed": map[string]interface{}{"type": "boolean", "description": "写操作必须为 true；只读操作可为 false"}}},
 		},
+		{
+			Name:        "sdui.domain.list",
+			Description: "只读查询指定租户的领域运营记录：订单、售后、斗师档案、服务任务、会话、提现和媒体",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "kind"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "kind": map[string]interface{}{"type": "string", "enum": []string{"order", "after_sale", "service_profile", "task", "thread", "withdraw", "media"}}, "payload": map[string]interface{}{"type": "object"}}},
+		},
+		{
+			Name:        "sdui.domain.execute",
+			Description: "执行管理员领域运营动作：订单履约、售后裁决、提现审核、斗师认证与报价、客服指派和媒体审核；必须 confirmed=true 且具备 release 权限；chat.send 与钱包操作需在 payload 中提供 user_id",
+			InputSchema: map[string]interface{}{"type": "object", "required": []string{"app_id", "endpoint", "payload", "confirmed", "idempotency_key"}, "properties": map[string]interface{}{"app_id": map[string]interface{}{"type": "string"}, "endpoint": map[string]interface{}{"type": "string", "enum": AdminDomainWriteOperations()}, "payload": map[string]interface{}{"type": "object"}, "confirmed": map[string]interface{}{"type": "boolean"}, "idempotency_key": map[string]interface{}{"type": "string", "description": "写操作幂等键，至少 8 个字符"}}},
+		},
 	}
 	for index := range tools {
 		name := tools[index].Name
@@ -342,9 +352,9 @@ func (m *MCPService) GetToolDefinitions() []MCPToolDefinition {
 // mcpToolRequiredScope 返回工具执行所需的最小权限范围，供 AI 在调用前规划授权。
 func mcpToolRequiredScope(name string) string {
 	switch name {
-	case "sdui.app.list", "sdui.capability.list", "sdui.capability.validate", "sdui.acceptance.run", "sdui.production.readiness", "sdui.webview.list", "sdui.webview.validate", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.template.get", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.revisions":
+	case "sdui.app.list", "sdui.capability.list", "sdui.capability.validate", "sdui.acceptance.run", "sdui.production.readiness", "sdui.webview.list", "sdui.webview.validate", "sdui.page.list", "sdui.page.get", "sdui.template.list", "sdui.template.get", "sdui.page.validate", "sdui.page.preview", "sdui.page.screenshot", "sdui.page.revisions", "sdui.domain.list":
 		return "read"
-	case "sdui.admin.execute":
+	case "sdui.admin.execute", "sdui.domain.execute":
 		return "release"
 	case "sdui.file.prepare_upload", "sdui.template.save", "sdui.template.delete", "sdui.page.create", "sdui.page.patch":
 		return "write:draft"
@@ -1047,6 +1057,69 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 		}
 		return map[string]interface{}{"app_id": appID, "operation": operation, "data": result}, nil
 
+	case "sdui.domain.list":
+		if !hasScope(scopes, "read") {
+			return nil, errors.New("权限不足: 需要 read 权限以读取领域运营记录")
+		}
+		appID, err := resolveMCPAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if err := ensureMCPAppExists(appID); err != nil {
+			return nil, err
+		}
+		kind, _ := args["kind"].(string)
+		kind = strings.TrimSpace(kind)
+		validKinds := map[string]bool{"order": true, "after_sale": true, "service_profile": true, "task": true, "thread": true, "withdraw": true, "media": true}
+		if !validKinds[kind] {
+			return nil, errors.New("kind 必须为 order、after_sale、service_profile、task、thread、withdraw 或 media")
+		}
+		payload, _ := args["payload"].(map[string]interface{})
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		payload["kind"] = kind
+		result, err := ExecuteDomainOperation(appID, 0, "mcp:"+actorID, "domain.list", payload, "", true)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"app_id": appID, "kind": kind, "data": result}, nil
+
+	case "sdui.domain.execute":
+		if !hasScope(scopes, "release") {
+			return nil, errors.New("权限不足: 需要 release 权限以执行领域运营动作")
+		}
+		confirmed, ok := args["confirmed"].(bool)
+		if !ok || !confirmed {
+			return nil, errors.New("领域运营写操作必须传入 confirmed=true 二次确认")
+		}
+		appID, err := resolveMCPAppID(args, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if err := ensureMCPAppExists(appID); err != nil {
+			return nil, err
+		}
+		endpoint, _ := args["endpoint"].(string)
+		endpoint = strings.TrimSpace(endpoint)
+		if endpoint == "domain.list" || !IsAdminDomainOperation(endpoint) {
+			return nil, errors.New("未登记的领域运营动作，请使用 sdui.domain.list 读取记录")
+		}
+		idempotencyKey, _ := args["idempotency_key"].(string)
+		idempotencyKey = strings.TrimSpace(idempotencyKey)
+		if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+			return nil, errors.New("idempotency_key 长度必须为 8-128 个字符")
+		}
+		payload, _ := args["payload"].(map[string]interface{})
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		result, err := ExecuteDomainOperation(appID, 0, "mcp:"+actorID, endpoint, payload, idempotencyKey, true)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"app_id": appID, "endpoint": endpoint, "data": result}, nil
+
 	case "sdui.webview.list":
 		if !hasScope(scopes, "read") {
 			return nil, errors.New("权限不足: 需要 read 权限以读取 WebView 登记表")
@@ -1499,7 +1572,7 @@ func (m *MCPService) ExecuteToolWithContext(actorID, tenantID string, scopes []s
 			return nil, fmt.Errorf("装配草稿预览信封失败: %w", err)
 		}
 		// MCP 预览必须与小程序正式读取共享 AI 破甲业务数据，避免预览只有空组件壳。
-		m.sduiService.attachAIBreakthroughData(envelope, appID, false, 0)
+		applyPageEnvelopeEnrichers(envelope, appID, false, 0)
 		return envelope, nil
 
 	case "sdui.page.screenshot":
@@ -2090,9 +2163,9 @@ func mcpAPIResource(tools []MCPToolDefinition) map[string]interface{} {
 			},
 			"rules": []string{"文章正文权限只能由服务端返回字段 can_read、markdown、preview_markdown、locked_reason 决定", "MCP 不得把完整付费正文写入页面协议或模板", "前端动作只传 SKU，不传金额；金额由商品表读取", "评论图片必须先上传当前租户 COS CDN，再提交 image_url；服务端审核状态为 pending 时不可公开显示"},
 		},
-		"coverage":                  map[string]string{"app_selection": "sdui.app.list", "capability_inspection": "sdui.capability.list", "capability_validation": "sdui.capability.validate", "capability_configuration": "sdui.capability.configure", "acceptance_checklist": "sdui.acceptance.run", "webview_registry": "sdui.webview.list + sdui.webview.validate", "template_inspection": "sdui.template.list + sdui.template.get", "template_save": "sdui.template.save", "template_delete": "sdui.template.delete", "draft_creation": "sdui.page.create", "draft_editing": "sdui.page.patch", "validation": "sdui.page.validate", "preview": "sdui.page.preview", "visual_review": "sdui.page.screenshot", "image_upload": "sdui.file.prepare_upload", "publish": "sdui.page.publish", "history": "sdui.page.revisions", "rollback": "sdui.page.rollback", "homepage_activation": "sdui.page.set_current", "share_assets": "sdui.page.share_card"},
+		"coverage":                  map[string]string{"app_selection": "sdui.app.list", "capability_inspection": "sdui.capability.list", "capability_validation": "sdui.capability.validate", "capability_configuration": "sdui.capability.configure", "acceptance_checklist": "sdui.acceptance.run", "webview_registry": "sdui.webview.list + sdui.webview.validate", "template_inspection": "sdui.template.list + sdui.template.get", "template_save": "sdui.template.save", "template_delete": "sdui.template.delete", "draft_creation": "sdui.page.create", "draft_editing": "sdui.page.patch", "validation": "sdui.page.validate", "preview": "sdui.page.preview", "visual_review": "sdui.page.screenshot", "image_upload": "sdui.file.prepare_upload", "publish": "sdui.page.publish", "history": "sdui.page.revisions", "rollback": "sdui.page.rollback", "homepage_activation": "sdui.page.set_current", "share_assets": "sdui.page.share_card", "domain_operations": "sdui.domain.list + sdui.domain.execute"},
 		"supported_runtime_actions": sortedMapKeys(allowedActionTypes),
-		"unsupported_or_admin_only": []string{"管理员账号与权限管理", "微信 AppSecret 与支付私钥配置", "商品和金额配置", "AI 破甲文章/栏目/会员配置/评论审核管理", "数据库迁移与种子数据", "任意 HTTP 代理或任意脚本执行", "直接上传二进制到 MCP（必须使用预签名 COS PUT）"},
+		"unsupported_or_admin_only": []string{"管理员账号与权限管理", "微信 AppSecret 与支付私钥配置", "数据库迁移与种子数据", "任意 HTTP 代理或任意脚本执行", "批量导出全部租户数据", "直接上传二进制到 MCP（必须使用预签名 COS PUT）"},
 		"coverage_note":             "MCP 完整覆盖 SDUI 页面与模板编排，不等同于覆盖全部业务后台。MCP 与 HTTP 管理接口复用 TemplateService、SDUIService、协议校验和截图服务；业务内容及敏感配置继续由受认证管理接口处理。",
 		"publish_gate":              map[string]interface{}{"required_scope": "release", "required_argument": "confirmed=true", "human_review": true},
 		"image_upload":              map[string]interface{}{"mcp_tool": "sdui.file.prepare_upload", "admin_endpoint": "/api/v1/admin/files/presigned-upload-url", "flow": []string{"调用工具申请预签名 PUT 地址", "调用方按 uploadHeaders 直接 PUT 二进制到 presignedUrl", "将 finalCosFileUrl 写入 page.patch 的图片字段"}, "prefix": "miniapps/{app_id}/", "stored_value": "CDN URL only", "acl": "由 COS 控制台 miniapps/* 规则统一管理"},
@@ -2115,6 +2188,13 @@ func mcpRulesResource() map[string]interface{} {
 			"events":   "对象，键为事件名（通常 tap/change/submit），值为 BlockAction[]；动作按数组顺序执行",
 			"states":   "loading/empty/error/fallback 均为完整 BlockItem，id 必须在页面树中全局唯一",
 		},
+		"limits": map[string]interface{}{
+			"max_blocks_per_page":    maxBlocksPerPage,
+			"max_protocol_bytes":     maxPageProtocolBytes,
+			"max_repeat_items":       maxRepeatItemsPerBlock,
+			"max_request_body_bytes": 2 << 20,
+			"note":                   "超过限制的页面会在发布校验阶段被拒绝；请拆分页面或使用受控数据源分页",
+		},
 		"action_shape": map[string]interface{}{
 			"required": []string{"type"},
 			"fields":   []string{"type", "require_auth", "condition", "confirm", "on_success", "on_error", "track", "endpoint", "url", "payload"},
@@ -2127,13 +2207,13 @@ func mcpRulesResource() map[string]interface{} {
 		"binding_scopes":      []string{"$entity", "$query", "$item", "$state", "$result", "$page", "$session", "$tenant", "$props"},
 		"block_capabilities":  []string{"visible_when", "repeat", "loading", "empty", "error", "fallback", "events"},
 		"action_capabilities": []string{"condition", "confirm", "on_success", "on_error", "track", "payload"},
-		"page_fields":         map[string]interface{}{"required": []string{"app_id", "page_id", "title", "business_type", "blocks"}, "business_type": []string{"drama", "game", "query", "download", "custom", "ai_breakthrough", "ai_article"}, "intent": []string{"watch", "redeem", "query", "download", "buy", "book", "join"}, "theme": []string{"dark_glass", "light_clean", "cyber_neon"}, "status": []string{"draft", "published", "archived", "reviewing"}, "hidden": "boolean；true 时公开路由、导航和首页目标均不可访问", "authoring_shape": "在 MCP page 参数中 blocks 使用 BlockItem 数组、share_config 使用对象；page.get 额外返回同形态 protocol。数据库 JSON 字符串属于内部存储细节。WebView 动作必须使用 payload.url_key，不能直接传 URL。"},
+		"page_fields":         map[string]interface{}{"required": []string{"app_id", "page_id", "title", "business_type", "blocks"}, "business_type": []string{"drama", "game", "query", "download", "custom", "ai_breakthrough", "ai_article"}, "intent": []string{"watch", "redeem", "query", "download", "buy", "book", "join"}, "theme": []string{"dark_glass", "light_clean", "cyber_neon"}, "status": []string{"draft", "published", "archived", "reviewing"}, "hidden": "boolean；true 时公开路由、导航和首页目标均不可访问", "authoring_shape": "在 MCP page 参数中 blocks 使用 BlockItem 数组、share_config 使用对象；page.get 额外返回同形态 protocol。数据库 JSON 字符串属于内部存储细节。WebView 动作必须使用 payload.url_key，不能直接传 URL。", "share_access": "share_config.access.mode 可选 public/auth/membership/owner；owner 模式分享路径需带 share_from，接收者与分享者不一致时服务端清空页面并下发提示。"},
 		"patch_operations":    []string{"replace: path 支持 /title、/theme、/accent_color、/business_type、/intent、/require_auth、/hidden、/share_config、/keyword、/source、/campaign_id、/expires_at、/blocks 或 /blocks/{block_id}", "add_block: value 为完整且 ID 唯一的 BlockItem", "remove_block: value 为已有积木 ID", "所有 patch 必须提交 page.get 返回的 expected_revision"},
-		"request_data_rules":  []string{"优先使用已登记 endpoint", "自定义 URL 只能是同源相对路径", "禁止任意 Authorization、Cookie、内网地址和脚本", "修改/删除请求必须确认并具备幂等策略"},
+		"request_data_rules":  []string{"优先使用已登记 endpoint", "自定义 URL 只能是同源相对路径且必须命中发布白名单", "endpoint 与 url 必须是字面量，禁止动态拼接", "禁止任意 Authorization、Cookie、内网地址和脚本", "修改/删除请求必须确认并具备幂等策略"},
 		"webview_rules":       []string{"open_webview 只能使用当前 AppID 已登记且启用的 url_key", "登记地址必须是无查询参数的 HTTPS 地址", "生产环境仍需配置微信业务域名白名单"},
 		"image_rules":         []string{"后台图片必须通过预签名 PUT 上传", "对象路径固定使用 miniapps/{app_id}/ 前缀", "页面协议只保存 CDN URL", "禁止第三方示例图片 URL"},
 		"state_rules":         []string{"AI 默认只写 draft", "page.create 不覆盖已有 page_id", "patch 和 publish 必须绑定人工实际读取/审查的 expected_revision", "校验通过后再 preview/screenshot", "publish 必须具备 release 且 confirmed=true", "不允许下发任意脚本"},
-		"quality_gate":        []string{"validate.is_valid 必须为 true", "逐项处理 screenshot.issues 中 error", "检查 normal/loading/empty/error/offline/expired/unauthenticated 状态", "检查长标题、缺图、空数组和未知块 fallback", "确认动作所需 payload、登录态、成功链和失败链", "发布前重新 page.get 并由人工确认相同 revision"},
+		"quality_gate":        []string{"validate.is_valid 必须为 true", "逐项处理 screenshot.issues 中 error", "检查 normal/loading/empty/error/offline/expired/unauthenticated 状态", "检查长标题、缺图、空数组和未知块 fallback", "确认动作所需 payload、登录态、成功链和失败链", "navigate_page 目标页面必须已发布且未隐藏", "request_payment/create_order/购物车动作必须带 SKU", "发布前重新 page.get 并由人工确认相同 revision"},
 		"examples": map[string]interface{}{
 			"page":      map[string]interface{}{"app_id": "wxexample", "page_id": "home", "protocol_version": "1.1", "schema_version": 3, "blocks": []map[string]interface{}{{"id": "hero", "type": "text", "props": map[string]interface{}{"text": "标题"}}}},
 			"action":    map[string]interface{}{"type": "copy_text", "payload": map[string]interface{}{"text": "复制内容"}},

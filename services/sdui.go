@@ -2,6 +2,7 @@
 package services
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"hot_keyword/models"
 	"hot_keyword/sdk"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,58 +69,36 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(a
 		pageID = "home"
 	}
 
-	// 1. 若客户端请求主页 home，优先检查该租户 mini_apps 的 current_page 设置
-	actualPageID := pageID
-	if pageID == "home" && db.DB != nil {
-		var app models.MiniApp
-		if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err == nil && app.CurrentPage != "" && app.CurrentPage != "home" {
-			// 若当前激活的主页存在且为已发布状态，优先使用
-			var activePage models.DynamicPage
-			if err := db.DB.Where("app_id = ? AND page_id = ? AND status = 'published' AND hidden = ?", appID, app.CurrentPage, false).First(&activePage).Error; err == nil {
-				actualPageID = app.CurrentPage
-			}
-		}
+	// 1. 读取租户配置，解析当前主页、兜底页和应急发布模式。
+	app := s.loadMiniAppConfig(appID)
+	fallbackPageID := "home"
+	if app != nil && strings.TrimSpace(app.FallbackPageID) != "" {
+		fallbackPageID = strings.TrimSpace(app.FallbackPageID)
+	}
+	requestedPageID := pageID
+	if pageID == "home" && app != nil && app.CurrentPage != "" && app.CurrentPage != "home" {
+		requestedPageID = app.CurrentPage
+	}
+	// 应急模式：忽略请求页，全站强制切到租户兜底页。
+	if app != nil && app.ReleaseMode == "fallback" {
+		requestedPageID = fallbackPageID
 	}
 
-	rawPage, err := s.GetRawPage(appID, actualPageID)
+	// 2. 状态门禁：请求页不可用时按兜底页、home、维护页逐级降级，公开路径永不直接 404。
+	rawPage, resolvedMode := s.resolveSafePage(appID, requestedPageID, fallbackPageID)
+
+	// 3. 组装基础信封
+	envelope, err := s.AssembleEnvelope(rawPage, queryParams, resolvedMode)
 	if err != nil {
 		return nil, err
 	}
-
-	// 2. 状态门禁隔离: 客户端仅允许获取 published 状态，草稿和已下架必须被隔离拦截
-	if rawPage.Status != "published" || rawPage.Hidden {
-		// 尝试降级至兜底安全主页
-		if actualPageID != "home" {
-			if homePage, hErr := s.GetRawPage(appID, "home"); hErr == nil && homePage.Status == "published" && !homePage.Hidden {
-				rawPage = homePage
-			} else {
-				return nil, errors.New("目标页面未发布、已隐藏或已下架，无法对外提供访问")
-			}
-		} else {
-			return nil, errors.New("目标页面未发布、已隐藏或已下架，无法对外提供访问")
-		}
-	}
-
-	// 3. 过期检测
-	if rawPage.ExpiresAt != nil && rawPage.ExpiresAt.Before(time.Now()) {
-		if actualPageID != "home" {
-			if homePage, hErr := s.GetRawPage(appID, "home"); hErr == nil && homePage.Status == "published" && !homePage.Hidden {
-				rawPage = homePage
-			} else {
-				return nil, errors.New("页面已过期失效")
-			}
-		} else {
-			return nil, errors.New("页面已过期失效")
-		}
-	}
-
-	// 4. 组装基础信封
-	envelope, err := s.AssembleEnvelope(rawPage, queryParams, "client_published")
-	if err != nil {
-		return nil, err
+	if resolvedMode == "client_published" {
+		envelope.Fallback.PageID = fallbackPageID
+	} else {
+		envelope.Fallback.PageID = rawPage.PageID
 	}
 	// AI 破甲首页和文章导航只下发摘要与权限结果，正文仍由文章详情接口按会员等级裁剪。
-	s.attachAIBreakthroughData(envelope, appID, isAuthenticated, userID)
+	applyPageEnvelopeEnrichers(envelope, appID, isAuthenticated, userID)
 	// 资讯块高度依赖动态文章和套餐数据，装配后同步刷新 IR。
 	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 
@@ -138,60 +118,114 @@ func (s *SDUIService) GetPublishedDynamicPageEnvelopeWithCapabilitiesAndViewer(a
 		s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 	}
 
+	// 7. 分享落地访问策略：接收者不满足 auth/membership/owner 时清空积木与衍生数据，只下发提示策略。
+	s.attachViewerIdentity(envelope, appID, isAuthenticated, userID)
+	s.applyShareAccess(envelope, rawPage, queryParams, isAuthenticated, userID)
+
+	// 8. ETag 必须覆盖查询参数、客户端能力、登录态和访问者摘要，避免不同用户/客户端错误命中 304。
+	envelope.Cache.ETag = computePersonalizedETag(rawPage, queryParams, clientCapabilities, isAuthenticated, envelope.Viewer)
+
 	return envelope, nil
 }
 
-// attachAIBreakthroughData 将资讯导航、会员方案和访问者权益摘要附加到统一信封。
-func (s *SDUIService) attachAIBreakthroughData(envelope *models.PageResponseEnvelope, appID string, authenticated bool, userID int64) {
-	if envelope == nil || db.DB == nil || (envelope.Page.BusinessType != "ai_breakthrough" && envelope.Page.BusinessType != "ai_article") {
-		return
+// computePersonalizedETag 生成与页面版本、查询参数、客户端能力、登录态和访问者摘要绑定的 ETag。
+// 任何一项变化都会产生不同 ETag，防止公共缓存或条件请求把个性化响应串给其他访问者。
+func computePersonalizedETag(page *models.DynamicPage, query map[string]string, capabilities string, authenticated bool, viewer map[string]interface{}) string {
+	if page == nil {
+		return ""
 	}
-	level := 0
-	var membership *models.UserMembership
-	if userID > 0 {
-		membership, _ = NewMembershipService().GetMembership(appID, userID)
-		if membership != nil && membership.ExpiresAt.After(time.Now()) {
-			level = membership.Level
+	keys := make([]string, 0, len(query))
+	for key := range query {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var queryBuilder strings.Builder
+	for _, key := range keys {
+		queryBuilder.WriteString(key)
+		queryBuilder.WriteByte('=')
+		queryBuilder.WriteString(query[key])
+		queryBuilder.WriteByte('&')
+	}
+	viewerJSON := ""
+	if len(viewer) > 0 {
+		if encoded, err := json.Marshal(viewer); err == nil {
+			viewerJSON = string(encoded)
 		}
 	}
-	viewer := map[string]interface{}{"logged_in": authenticated, "membership_level": level}
-	if membership != nil && membership.ExpiresAt.After(time.Now()) {
-		viewer["membership_expires_at"] = membership.ExpiresAt
+	signature := fmt.Sprintf("%s|%d|%d|%s|%s|%t|%s",
+		page.PageID, page.Revision, page.UpdatedAt.Unix(), queryBuilder.String(), capabilities, authenticated, viewerJSON)
+	sum := sha256.Sum256([]byte(signature))
+	return fmt.Sprintf(`W/"%s-%d-%x"`, page.PageID, page.Revision, sum[:8])
+}
+
+// loadMiniAppConfig 读取租户配置；数据库不可用或租户不存在时返回 nil。
+func (s *SDUIService) loadMiniAppConfig(appID string) *models.MiniApp {
+	if db.DB == nil || strings.TrimSpace(appID) == "" {
+		return nil
 	}
-	var categories []models.ArticleCategory
-	_ = db.DB.Where("app_id = ? AND status = ?", appID, "active").Order("sort asc, id asc").Find(&categories).Error
-	categorySlugs := make(map[int64]string, len(categories))
-	categoryNames := make(map[int64]string, len(categories))
-	for _, category := range categories {
-		categorySlugs[category.ID] = category.Slug
-		categoryNames[category.ID] = category.Name
+	var app models.MiniApp
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		return nil
 	}
-	var articles []models.Article
-	_ = db.DB.Where("app_id = ? AND status = ?", appID, "published").Order("published_at desc, id desc").Limit(12).Find(&articles).Error
-	items := make([]map[string]interface{}, 0, len(articles))
-	articleService := NewArticleService()
-	for _, article := range articles {
-		categorySlug := categorySlugs[article.CategoryID]
-		categoryName := categoryNames[article.CategoryID]
-		purchased := userID > 0 && articleService.hasPurchase(appID, userID, article.ID)
-		summary := toArticleSummaryForViewer(article, level, purchased)
-		item := map[string]interface{}{"id": article.ID, "title": article.Title, "summary": article.Summary, "cover_url": article.CoverURL, "category_id": article.CategoryID, "category_slug": categorySlug, "category_name": categoryName, "featured": categorySlug == "featured" && !article.IsPaid && article.RequiredLevel == 0, "published_at": article.PublishedAt, "required_level": article.RequiredLevel, "is_paid": article.IsPaid, "pay_sku": article.PaySKU, "price_fen": article.PriceFen, "allow_comments": article.AllowComments, "can_read": summary.CanRead, "display_meta": summary.DisplayMeta, "access_badge": summary.AccessBadge, "key": article.ID, "image": article.CoverURL, "meta": summary.DisplayMeta, "badge": summary.AccessBadge}
-		items = append(items, item)
+	return &app
+}
+
+// resolveSafePage 按请求页、租户兜底页、home、维护页逐级解析可用页面。
+// 公开路径不允许直接 404，任何不可用页面都必须安全降级。
+func (s *SDUIService) resolveSafePage(appID, requestedPageID, fallbackPageID string) (*models.DynamicPage, string) {
+	if page, ok := s.fetchUsablePage(appID, requestedPageID); ok {
+		return page, "client_published"
 	}
-	var plans []models.MembershipLevel
-	_ = db.DB.Where("app_id = ? AND status = ?", appID, "active").Order("level asc").Find(&plans).Error
-	offers := make([]map[string]interface{}, 0, len(plans))
-	for _, plan := range plans {
-		offers = append(offers, map[string]interface{}{
-			"key": plan.SKU, "title": plan.Name, "summary": plan.Description,
-			"caption": fmt.Sprintf("有效期 %d 天", plan.DurationDays), "price": fmt.Sprintf("¥%.2f", float64(plan.PriceFen)/100), "purchase_value": plan.SKU,
-		})
+	candidates := make([]string, 0, 2)
+	if fallbackPageID != "" && fallbackPageID != requestedPageID {
+		candidates = append(candidates, fallbackPageID)
 	}
-	envelope.Viewer = viewer
-	content := map[string]interface{}{"categories": categories, "items": items, "offers": offers, "articles": items, "membership_plans": plans}
-	envelope.Data["content"] = content
-	// 兼容旧页面协议；新模板只使用通用 content 数据键。
-	envelope.Data["ai_breakthrough"] = content
+	if requestedPageID != "home" && fallbackPageID != "home" {
+		candidates = append(candidates, "home")
+	}
+	for _, candidate := range candidates {
+		if page, ok := s.fetchUsablePage(appID, candidate); ok {
+			logger.JM.Warnf("页面 %s 不可用，租户 %s 已降级到兜底页 %s", requestedPageID, appID, candidate)
+			return page, "fallback"
+		}
+	}
+	logger.JM.Warnf("租户 %s 的页面 %s 与兜底页均不可用，返回维护页", appID, requestedPageID)
+	return buildMaintenancePage(appID), "maintenance"
+}
+
+// fetchUsablePage 判断页面是否处于可公开访问状态。
+func (s *SDUIService) fetchUsablePage(appID, pageID string) (*models.DynamicPage, bool) {
+	if strings.TrimSpace(pageID) == "" {
+		return nil, false
+	}
+	page, err := s.GetRawPage(appID, pageID)
+	if err != nil {
+		return nil, false
+	}
+	if page.Status != "published" || page.Hidden {
+		return nil, false
+	}
+	if page.ExpiresAt != nil && page.ExpiresAt.Before(time.Now()) {
+		return nil, false
+	}
+	return page, true
+}
+
+// buildMaintenancePage 生成不依赖数据库的最小维护页，保证公开路径始终有可渲染内容。
+func buildMaintenancePage(appID string) *models.DynamicPage {
+	blocks := []models.BlockItem{
+		{ID: "maintenance_notice", Type: "notice", Props: map[string]interface{}{"text": "服务维护中，请稍后重试", "icon": "🛠"}},
+		{ID: "maintenance_empty", Type: "empty", Props: map[string]interface{}{"state": "offline", "title": "服务维护中", "desc": "页面暂时不可用，请稍后重新加载"}},
+		{ID: "maintenance_refresh", Type: "action_button", Props: map[string]interface{}{"text": "重新加载"}, Action: &models.BlockAction{Type: "refresh"}},
+	}
+	encoded, _ := json.Marshal(blocks)
+	now := time.Now()
+	return &models.DynamicPage{
+		AppID: appID, PageID: "maintenance", Revision: 1, Status: "published", Hidden: false,
+		Title: "服务维护中", BusinessType: "custom", Intent: "watch", Theme: "light_clean", AccentColor: "#0A84FF",
+		ShareConfig: "{}", Blocks: string(encoded), Keyword: "服务维护中",
+		Source: "system_fallback", CampaignID: "system_fallback", CreatedAt: now, UpdatedAt: now,
+	}
 }
 
 // GetDynamicPageEnvelope 获取组装后的 SDUI 统一响应信封 (供管理后台线上版本预览使用)
@@ -205,7 +239,7 @@ func (s *SDUIService) GetDynamicPageEnvelope(appID, pageID string, queryParams m
 	if err != nil {
 		return nil, err
 	}
-	s.attachAIBreakthroughData(envelope, appID, false, 0)
+	applyPageEnvelopeEnrichers(envelope, appID, false, 0)
 	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 	return envelope, nil
 }
@@ -241,7 +275,7 @@ func (s *SDUIService) GetDynamicDraftEnvelope(appID, pageID string, queryParams 
 	if err != nil {
 		return nil, err
 	}
-	s.attachAIBreakthroughData(envelope, draft.AppID, false, 0)
+	applyPageEnvelopeEnrichers(envelope, draft.AppID, false, 0)
 	s.rebuildEnvelopeLayoutIR(tempPage, envelope)
 	return envelope, nil
 }
@@ -295,7 +329,7 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 	}
 
 	// 按业务领域分类装配真实实体，不泄露未授权敏感数据
-	entityMap := s.assembleDomainEntity(rawPage.AppID, rawPage.BusinessType, rawPage.Keyword, queryParams)
+	entityMap := AssemblePageEntity(rawPage.AppID, rawPage.BusinessType, rawPage.Keyword, queryParams)
 	for k, v := range entityMap {
 		if _, exists := dataPayload[k]; !exists {
 			dataPayload[k] = v
@@ -323,9 +357,46 @@ func (s *SDUIService) AssembleEnvelope(rawPage *models.DynamicPage, queryParams 
 			Mode:   mode,
 		},
 	}
+	s.attachCapabilityViewer(envelope, rawPage.AppID)
 	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
 
 	return envelope, nil
+}
+
+// attachCapabilityViewer 将租户已启用的公共能力写入 viewer，供 check_capability 动作使用。
+// 只下发能力键，不包含任何密钥或配置详情。
+func (s *SDUIService) attachCapabilityViewer(envelope *models.PageResponseEnvelope, appID string) {
+	if envelope == nil || db.DB == nil || strings.TrimSpace(appID) == "" {
+		return
+	}
+	var app models.MiniApp
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		return
+	}
+	matrix, err := CapabilityMatrixForApp(&app)
+	if err != nil {
+		return
+	}
+	enabled := make([]string, 0, len(matrix))
+	if len(matrix) == 0 {
+		// 兼容尚未配置能力矩阵的旧租户：与发布门禁一致，视为全部已实现能力可用。
+		for _, definition := range ListCapabilityDefinitions() {
+			if definition.ImplementationStatus == "ready" {
+				enabled = append(enabled, definition.Key)
+			}
+		}
+	} else {
+		for key, entry := range matrix {
+			if entry.State == "enabled" {
+				enabled = append(enabled, key)
+			}
+		}
+	}
+	sort.Strings(enabled)
+	if envelope.Viewer == nil {
+		envelope.Viewer = map[string]interface{}{}
+	}
+	envelope.Viewer["capabilities"] = enabled
 }
 
 // resolveWebViewActions 递归解析页面所有动作链中的 WebView 登记键。
@@ -335,12 +406,16 @@ func resolveWebViewActions(appID string, blocks []models.BlockItem) error {
 		if action == nil {
 			return nil
 		}
-		if action.Type == "open_webview" {
-			payload, err := ResolveWebViewPayload(appID, action.Payload)
-			if err != nil {
-				return err
+		if action.Type == "open_webview" || action.Type == "open_policy" {
+			urlKey, _ := action.Payload["url_key"].(string)
+			// open_policy 未配置 url_key 时使用微信原生隐私协议入口，无需解析登记地址。
+			if strings.TrimSpace(urlKey) != "" {
+				payload, err := ResolveWebViewPayload(appID, action.Payload)
+				if err != nil {
+					return err
+				}
+				action.Payload = payload
 			}
-			action.Payload = payload
 		}
 		for index := range action.OnSuccess {
 			if err := resolveAction(&action.OnSuccess[index]); err != nil {
@@ -759,6 +834,16 @@ func (s *SDUIService) SavePage(page *models.DynamicPage) error {
 
 // SavePageWithAudit 保存或发布动态页面协议 (支持操作人审计、发布备注与版本乐观锁 CAS 强一致性)
 func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, remark string, expectedRevision int) error {
+	return s.savePageWithAudit(page, operator, remark, expectedRevision, true)
+}
+
+// SaveSystemSeedPage 仅供系统初始化页面族使用：仍校验协议、能力、WebView、端点和 SKU，
+// 但跳过导航目标页存在性检查，避免同一批互链页面按顺序发布时被相互阻断。
+func (s *SDUIService) SaveSystemSeedPage(page *models.DynamicPage, operator, remark string, expectedRevision int) error {
+	return s.savePageWithAudit(page, operator, remark, expectedRevision, false)
+}
+
+func (s *SDUIService) savePageWithAudit(page *models.DynamicPage, operator, remark string, expectedRevision int, checkNavigationTargets bool) error {
 	if page == nil || page.AppID == "" || page.PageID == "" {
 		return errors.New("AppID 与 PageID 不能为空")
 	}
@@ -773,7 +858,7 @@ func (s *SDUIService) SavePageWithAudit(page *models.DynamicPage, operator, rema
 	// 1. 强制协议合法性与安全规则强校验
 	var report ValidationReport
 	if page.Status == "published" {
-		report = ValidateDynamicPageForRelease(page)
+		report = validateDynamicPageForRelease(page, checkNavigationTargets)
 	} else {
 		report = ValidateDynamicPage(page)
 	}
@@ -1197,6 +1282,9 @@ func (s *SDUIService) RollbackPageRevision(appID, pageID string, targetRevision 
 		if capabilityReport := ValidatePageCapabilitiesForMatrix(capabilityBlocks, matrix, len(matrix) > 0); !capabilityReport.IsValid {
 			return fmt.Errorf("历史版本能力发布门禁未通过: %s", strings.Join(capabilityReport.Errors, "; "))
 		}
+		if err := validateActionTargetsForRelease(&models.DynamicPage{AppID: appID, PageID: pageID}, capabilityBlocks, true); err != nil {
+			return fmt.Errorf("历史版本动作目标发布门禁未通过: %w", err)
+		}
 
 		if err := tx.Where("app_id = ? AND page_id = ?", appID, pageID).First(&current).Error; err != nil {
 			return err
@@ -1293,97 +1381,6 @@ func (s *SDUIService) SetCurrentPage(appID, pageID string) error {
 			"current_page": pageID,
 			"updated_at":   time.Now(),
 		}).Error
-}
-
-// assembleDomainEntity 按业务领域分类装配受控业务实体 (支持 short drama, game package, query 等，防止数据暴露与状态污染)
-func (s *SDUIService) assembleDomainEntity(appID, businessType, keyword string, queryParams map[string]string) map[string]interface{} {
-	entity := make(map[string]interface{})
-	if keyword != "" {
-		entity["title"] = keyword
-	}
-
-	if db.DB == nil {
-		return entity
-	}
-
-	switch businessType {
-	case "drama":
-		// 短剧领域实体装配: 优先根据 queryParams["id"] 查询，若未指定则查询当前热门短剧
-		var drama models.Drama
-		queryID := ""
-		if queryParams != nil {
-			queryID = queryParams["id"]
-		}
-
-		var err error
-		if queryID != "" {
-			err = db.DB.Where("id = ?", queryID).First(&drama).Error
-		} else if keyword != "" {
-			err = db.DB.Where("title = ?", keyword).First(&drama).Error
-		}
-		if err != nil || drama.ID == 0 {
-			// 兜底查询爆款短剧：优先按热度降序取当前最热门短剧，无则回退查询种子短剧《猴王下山》
-			if errFallback := db.DB.Order("hot_score desc, id asc").First(&drama).Error; errFallback != nil {
-				_ = db.DB.Where("title = ?", "猴王下山").First(&drama).Error
-			}
-		}
-
-		if drama.ID != 0 {
-			entity["id"] = drama.ID
-			entity["title"] = drama.Title
-			entity["subtitle"] = drama.Subtitle
-			entity["cover_url"] = drama.CoverUrl
-			entity["banner_url"] = drama.BannerUrl
-			entity["rating"] = drama.Rating
-			entity["hot_score"] = drama.HotScore
-			entity["total_episodes"] = drama.TotalEpisodes
-			entity["updated_episodes"] = drama.UpdatedEpisodes
-			entity["tags"] = drama.Tags
-			entity["description"] = drama.Description
-			entity["is_locked"] = false
-		}
-
-	case "game":
-		// 游戏领域实体装配: 查询该小程序下的公测礼包信息 (未领取前不提前下发真实兑换码)
-		var pkg models.GameRedeemPackage
-		queryPkgID := ""
-		if queryParams != nil {
-			queryPkgID = queryParams["package_id"]
-			if queryPkgID == "" {
-				queryPkgID = queryParams["game_id"]
-			}
-		}
-
-		var err error
-		if queryPkgID != "" {
-			err = db.DB.Where("app_id = ? AND (package_id = ? OR game_id = ?)", appID, queryPkgID, queryPkgID).First(&pkg).Error
-		}
-		if err != nil || pkg.ID == 0 {
-			_ = db.DB.Where("app_id = ?", appID).First(&pkg).Error
-		}
-
-		if pkg.ID != 0 {
-			entity["package_id"] = pkg.PackageID
-			entity["game_id"] = pkg.GameID
-			entity["title"] = pkg.Title
-			entity["description"] = pkg.Description
-			entity["total_stock"] = pkg.TotalStock
-			entity["remaining_stock"] = pkg.RemainingStock
-			entity["claim_status"] = "unclaimed"
-		}
-
-	case "query":
-		if queryParams != nil && queryParams["query_value"] != "" {
-			entity["query_value"] = queryParams["query_value"]
-		}
-		entity["status"] = "ready"
-
-	case "download":
-		entity["platform"] = "Android / iOS"
-		entity["status"] = "verified"
-	}
-
-	return entity
 }
 
 // FilterBlocksByCapabilities 根据客户端声明的 X-Client-Capabilities 能力集对积木树执行受控协商过滤与 Fallback 降级
@@ -1599,4 +1596,132 @@ func filterTabsBlocks(value interface{}, capSet map[string]bool) interface{} {
 		result = append(result, filteredTab)
 	}
 	return result
+}
+
+// attachViewerIdentity 为所有页面补全登录态、用户 ID 与会员等级，供分享访问策略使用。
+func (s *SDUIService) attachViewerIdentity(envelope *models.PageResponseEnvelope, appID string, authenticated bool, userID int64) {
+	if envelope == nil {
+		return
+	}
+	if envelope.Viewer == nil {
+		envelope.Viewer = map[string]interface{}{}
+	}
+	envelope.Viewer["logged_in"] = authenticated
+	if userID > 0 {
+		envelope.Viewer["user_id"] = userID
+	}
+	if _, exists := envelope.Viewer["membership_level"]; !exists {
+		level := 0
+		if authenticated && userID > 0 && db.DB != nil {
+			if membership, err := NewMembershipService().GetMembership(appID, userID); err == nil && membership != nil && membership.ExpiresAt.After(time.Now()) {
+				level = membership.Level
+			}
+		}
+		envelope.Viewer["membership_level"] = level
+	}
+}
+
+// applyShareAccess 对分享落地页执行访问策略；未通过时清空页面内容并下发结构化提示。
+func (s *SDUIService) applyShareAccess(envelope *models.PageResponseEnvelope, rawPage *models.DynamicPage, query map[string]string, authenticated bool, userID int64) {
+	if envelope == nil {
+		return
+	}
+	from := strings.TrimSpace(query["from"])
+	if from != "share" && from != "timeline" {
+		return
+	}
+	mode := ""
+	access := (*models.ShareAccess)(nil)
+	if envelope.Page.ShareConfig != nil && envelope.Page.ShareConfig.Access != nil {
+		access = envelope.Page.ShareConfig.Access
+		mode = strings.ToLower(strings.TrimSpace(access.Mode))
+	}
+	if mode == "" {
+		// 业务 Provider 可声明默认分享模式（如付费文章默认会员）；否则受保护页回退登录。
+		if defaultMode := DefaultShareMode(envelope.Page.BusinessType); defaultMode != "" {
+			mode = defaultMode
+		} else if envelope.Page.RequireAuth {
+			mode = "auth"
+		}
+	}
+	if mode == "" || mode == "public" {
+		return
+	}
+
+	level := 0
+	switch value := envelope.Viewer["membership_level"].(type) {
+	case float64:
+		level = int(value)
+	case int:
+		level = value
+	case int64:
+		level = int(value)
+	}
+	blocked := false
+	action := "home"
+	switch mode {
+	case "auth":
+		blocked = !authenticated
+		action = "login"
+	case "membership":
+		blocked = !authenticated || level <= 0
+		if authenticated {
+			action = "membership"
+		} else {
+			action = "login"
+		}
+	case "owner":
+		sharedFrom := strings.TrimSpace(query["share_from"])
+		blocked = !authenticated || sharedFrom == "" || sharedFrom != strconv.FormatInt(userID, 10)
+		action = "home"
+	default:
+		return
+	}
+	if !blocked {
+		return
+	}
+
+	// 拦截时必须清空积木与衍生数据，避免仅靠客户端隐藏造成内容泄露。
+	envelope.Page.Blocks = []models.BlockItem{}
+	envelope.Data = map[string]interface{}{}
+	s.rebuildEnvelopeLayoutIR(rawPage, envelope)
+
+	title, message, actionText := "", "", ""
+	membershipPageID := "membership"
+	if access != nil {
+		title = strings.TrimSpace(access.Title)
+		message = strings.TrimSpace(access.Message)
+		actionText = strings.TrimSpace(access.ActionText)
+		if strings.TrimSpace(access.MembershipPageID) != "" {
+			membershipPageID = strings.TrimSpace(access.MembershipPageID)
+		}
+	}
+	switch action {
+	case "login":
+		title = firstNonEmpty(title, "该分享需要登录查看")
+		message = firstNonEmpty(message, "为保护分享内容，请先完成微信授权后查看。")
+		actionText = firstNonEmpty(actionText, "微信授权登录")
+	case "membership":
+		title = firstNonEmpty(title, "会员专属分享")
+		message = firstNonEmpty(message, "该内容由会员分享，开通会员后可查看。")
+		actionText = firstNonEmpty(actionText, "开通会员")
+	default:
+		title = firstNonEmpty(title, "该分享暂不可查看")
+		message = firstNonEmpty(message, "分享内容受访问权限保护，请按提示操作。")
+		actionText = firstNonEmpty(actionText, "返回首页")
+	}
+	envelope.Viewer["share_guard"] = map[string]interface{}{
+		"mode": mode, "title": title, "message": message,
+		"action": action, "action_text": actionText, "membership_page_id": membershipPageID,
+	}
+}
+
+// firstNonEmpty 返回第一个非空字符串，用于分享提示默认文案。
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"hot_keyword/db"
 	"hot_keyword/models"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/23233/ggg/logger"
@@ -546,4 +548,34 @@ func (s *DramaService) generateEpisodesForDrama(drama *models.Drama) []*models.D
 		})
 	}
 	return episodes
+}
+
+// GetWebURL 返回指定短剧或剧集已配置的 HTTPS 网页播放地址。
+// 客户端不再接收裸 URL，WebView 页面只能通过本方法解析服务端保存的地址。
+func (s *DramaService) GetWebURL(dramaID, episodeID int64) (string, string, error) {
+	if db.DB == nil {
+		return "", "", errors.New("数据库未初始化")
+	}
+	if dramaID <= 0 {
+		return "", "", errors.New("短剧 ID 不能为空")
+	}
+	var drama models.Drama
+	if err := db.DB.First(&drama, dramaID).Error; err != nil {
+		return "", "", errors.New("短剧不存在")
+	}
+	target := strings.TrimSpace(drama.WebUrl)
+	if episodeID > 0 {
+		var episode models.DramaEpisode
+		if err := db.DB.Where("id = ? AND drama_id = ?", episodeID, dramaID).First(&episode).Error; err == nil && strings.TrimSpace(episode.WebUrl) != "" {
+			target = strings.TrimSpace(episode.WebUrl)
+		}
+	}
+	if target == "" {
+		return "", "", errors.New("该剧集未配置网页播放地址")
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return "", "", errors.New("网页播放地址必须是有效的 HTTPS 地址")
+	}
+	return target, drama.Title, nil
 }

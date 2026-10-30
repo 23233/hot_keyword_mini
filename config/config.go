@@ -156,6 +156,12 @@ func CheckSecurityCredentials() error {
 			return errors.New("【生产环境致命安全错误】环境变量 MCP_AUTH_KEY 必须配置且长度不少于16位，禁止使用 CHANGEME 或默认弱密钥")
 		}
 
+		// CSRF 密钥必须跨重启与多副本一致，否则后台表单校验会随机失败。
+		csrfSecret := os.Getenv("CSRF_SECRET")
+		if isWeakOrPlaceholderCredential(csrfSecret) || len(csrfSecret) < 16 {
+			return errors.New("【生产环境致命安全错误】环境变量 CSRF_SECRET 必须配置且长度不少于16位，禁止使用 CHANGEME 或默认弱密钥")
+		}
+
 		// 生产环境强制校验数据库密码
 		if isWeakOrPlaceholderCredential(Cfg.DBPassword) {
 			return errors.New("【生产环境致命安全错误】数据库密码 DB_PASSWORD 必须配置真实生产密码，禁止使用 CHANGEME 或占位默认值")

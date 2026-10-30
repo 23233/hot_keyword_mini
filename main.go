@@ -2,6 +2,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"github.com/23233/ggg/logger"
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/middleware/cors"
@@ -10,8 +12,12 @@ import (
 	"github.com/kataras/realip"
 	"hot_keyword/routers"
 	"hot_keyword/routers/middleware"
+	"hot_keyword/services"
 	"io/fs"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"hot_keyword/config"
 	"hot_keyword/db"
@@ -64,10 +70,32 @@ func main() {
 			panic(err)
 		}
 	}
+	// 优惠券锁定定时回收：清理超过 TTL 的支付中断残留，避免优惠券长期不可用。
+	go func() {
+		cleanup := func() {
+			released, err := services.CleanupStaleCouponReservations()
+			if err != nil {
+				logger.JM.Warnf("优惠券锁定回收失败: %v", err)
+			} else if released > 0 {
+				logger.JM.Infof("已回收 %d 张超时锁定优惠券", released)
+			}
+		}
+		cleanup()
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanup()
+		}
+	}()
+
 	app := iris.New()
 	app.Use(iris.Compression)
 	app.Use(irisRecover.New())
 	app.Use(irisLogger.New())
+	// 应用层全局限流作为网关限流的兜底，跳过健康检查与静态资源。
+	app.Use(middleware.GlobalRateLimit())
+	// 单请求体上限 2MB；页面协议另有 1MB 上限，避免超大 JSON 占用内存与带宽。
+	app.Use(middleware.BodyLimit(2 << 20))
 
 	// 跨域
 	crs := cors.New()
@@ -128,9 +156,40 @@ func main() {
 
 	app.HandleDir("/assets", iris.Dir("./assets"))
 
-	err = app.Run(iris.Addr(":8080"), iris.WithoutServerError(iris.ErrServerClosed), iris.WithoutBodyConsumptionOnUnmarshal, iris.WithOptimizations)
-	if err != nil {
-		logger.JM.ErrorE(err, "服务器启动失败")
+	// 显式设置服务器读写与空闲超时，避免慢连接长期占用资源。
+	app.ConfigureHost(func(su *iris.Supervisor) {
+		su.Server.ReadHeaderTimeout = 10 * time.Second
+		su.Server.ReadTimeout = 30 * time.Second
+		su.Server.WriteTimeout = 60 * time.Second
+		su.Server.IdleTimeout = 120 * time.Second
+	})
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- app.Run(
+			iris.Addr(":8080"),
+			iris.WithoutServerError(iris.ErrServerClosed),
+			iris.WithoutInterruptHandler,
+			iris.WithoutBodyConsumptionOnUnmarshal,
+			iris.WithOptimizations,
+		)
+	}()
+
+	// 收到退出信号后停止接收新请求，并给在途请求 15 秒收尾时间。
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	select {
+	case err := <-runErr:
+		if err != nil && !errors.Is(err, iris.ErrServerClosed) {
+			logger.JM.ErrorE(err, "服务器启动失败")
+		}
+	case sig := <-quit:
+		logger.JM.Infof("收到退出信号 %s，开始优雅关闭", sig)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := app.Shutdown(shutdownCtx); err != nil {
+			logger.JM.ErrorE(err, "优雅关闭超时")
+		}
 	}
 }
 

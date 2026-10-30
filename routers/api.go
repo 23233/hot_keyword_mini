@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/23233/ggg/sv"
 	"github.com/23233/ggg/ut"
@@ -19,10 +20,8 @@ import (
 )
 
 func registerAPIRoutes(party iris.Party) {
-	api := party.Party("/api/v1")
-
-	// 自动识别与注入多小程序租户 AppID
-	api.Use(middleware.TenantMiddleware)
+	// 直接以受控中间件创建子 Party，强制复制父级中间件切片，避免兄弟 Party 相互覆盖。
+	api := party.Party("/api/v1", middleware.TenantMiddleware)
 
 	// 注册双 Token 微信登录与会话管理 API 路由
 	RegisterAuthRoutes(api)
@@ -49,24 +48,24 @@ func registerAPIRoutes(party iris.Party) {
 	api.Get("/sdui/screenshot", RenderSDUIScreenshotHandler)
 
 	// 注册受控业务动作执行接口 (如游戏礼包兑换码防超发领取)
-	api.Post("/action/execute", ExecuteActionHandler)
-	api.Post("/payment/orders", CreatePaymentOrderHandler)
+	api.Post("/action/execute", middleware.ViewerRateLimit(120, time.Minute), ExecuteActionHandler)
+	api.Post("/payment/orders", middleware.ViewerRateLimit(20, time.Minute), CreatePaymentOrderHandler)
 	api.Post("/payment/notify/{app_id:string}", PaymentNotifyHandler)
 	api.Get("/payment/orders/{out_trade_no:string}", PaymentOrderStatusHandler)
 	api.Post("/payment/sandbox/orders", CreateSandboxPaymentOrderHandler)
 	api.Post("/payment/sandbox/transition", TransitionSandboxPaymentHandler)
 	api.Post("/payment/sandbox/notify/{app_id:string}", SandboxPaymentNotifyHandler)
 
-	// 注册登录 WebView 一次性票据接口
+	// 注册登录 WebView 一次性票据与受控入口解析接口
 	api.Post("/webview/ticket", CreateWebViewTicketHandler)
 	api.Get("/webview/ticket/consume", ConsumeWebViewTicketHandler)
+	api.Get("/webview/resolve", ResolveWebViewHandler)
 
 	// 注册 AI Model Context Protocol (MCP) 编排端点 (受 MCP 专属认证与多租户权限中间件保护)
 	api.Post("/mcp", middleware.MCPAuthMiddleware, HandleMCPRequest)
 
 	// Protected routes
-	userParty := api.Party("/user")
-	userParty.Use(jwtToken.SidAndJwtMiddleware, jwtToken.TokenToUserUidMiddleware)
+	userParty := api.Party("/user", jwtToken.SidAndJwtMiddleware, jwtToken.TokenToUserUidMiddleware)
 	userParty.Get("/info", GetNewInfo)
 }
 

@@ -190,10 +190,17 @@ export const GridBlock: React.FC<LayoutBlockProps> = ({ block, onAction, context
   const justify = props.justify || props.justify_items || undefined
   const rawChildren = (props.children || props.items || props.blocks) as BlockItem[]
   const children = flattenContainerChildren(rawChildren, context)
+  // 表单/交易/地址等密集交互块在半屏以下会挤压变形，窄屏时由样式层自动折叠为单列
+  const denseChildTypes = new Set([
+    'form', 'cart_item_list', 'cart_summary', 'address_book', 'address_form',
+    'invoice_form', 'coupon_list', 'sku_selector', 'quantity_stepper',
+    'filter_bar', 'review_summary', 'order_card', 'order_summary', 'wallet_card'
+  ])
+  const hasDenseChild = Array.isArray(children) && children.some((child) => denseChildTypes.has(child.type))
 
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: `repeat(${columns}, 1fr)`,
+    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
     gap: gap,
     width: '100%',
     ...(align ? { alignItems: align } : {}),
@@ -209,7 +216,7 @@ export const GridBlock: React.FC<LayoutBlockProps> = ({ block, onAction, context
   }
 
   return (
-    <View className="sdui-grid-layout-block" style={gridStyle} onClick={handleGridClick}>
+    <View className={`sdui-grid-layout-block ${hasDenseChild ? 'has-dense-child' : ''}`.trim()} style={gridStyle} onClick={handleGridClick}>
       {Array.isArray(children) &&
         children.map((child, idx) => {
           const childProps = child.props || {}
@@ -226,11 +233,12 @@ export const GridBlock: React.FC<LayoutBlockProps> = ({ block, onAction, context
           const childCtx = childProps._repeat_item !== undefined
             ? { ...context, isNested: true, index: idx, item: childProps._repeat_item, $item: childProps._repeat_item }
             : { ...context, isNested: true, index: idx }
+          const isDense = denseChildTypes.has(child.type)
 
           return (
             <View
               key={child.id || `grid_item_${idx}`}
-              className="sdui-grid-cell"
+              className={`sdui-grid-cell ${isDense ? 'is-dense' : ''}`.trim()}
               onClick={(e) => {
                 if (hasChildInteraction) {
                   e.stopPropagation?.()

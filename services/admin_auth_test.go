@@ -3,6 +3,7 @@ package services
 
 import (
 	"hot_keyword/models"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,37 @@ func TestAdminPasswordHashAndVerify(t *testing.T) {
 
 	if service.VerifyPassword("wrong_password", salt, hash) {
 		t.Fatalf("错误密码不应通过哈希核验")
+	}
+}
+
+// TestAdminPasswordBcryptAndLegacy 验证新 bcrypt 哈希与历史 SHA-256 哈希的双向兼容。
+func TestAdminPasswordBcryptAndLegacy(t *testing.T) {
+	service := NewAdminAuthService()
+	const password = "MyStrongAdminPwd!2026"
+
+	secureHash, err := service.HashPasswordSecure(password)
+	if err != nil {
+		t.Fatalf("生成 bcrypt 哈希失败: %v", err)
+	}
+	if !strings.HasPrefix(secureHash, "$2") {
+		t.Fatalf("新密码哈希应为 bcrypt 格式，实际为 %q", secureHash)
+	}
+	if !service.VerifyPassword(password, adminPasswordSaltMarker, secureHash) {
+		t.Fatal("bcrypt 正确密码应校验通过")
+	}
+	if service.VerifyPassword("wrong_password", adminPasswordSaltMarker, secureHash) {
+		t.Fatal("bcrypt 错误密码不应通过")
+	}
+	if needsPasswordUpgrade(secureHash) {
+		t.Fatal("bcrypt 记录不应再次触发升级")
+	}
+
+	legacyHash := service.HashPassword(password, "legacy_salt")
+	if !service.VerifyPassword(password, "legacy_salt", legacyHash) {
+		t.Fatal("历史 SHA-256 密码应继续兼容")
+	}
+	if !needsPasswordUpgrade(legacyHash) {
+		t.Fatal("历史 SHA-256 记录应在登录后升级")
 	}
 }
 

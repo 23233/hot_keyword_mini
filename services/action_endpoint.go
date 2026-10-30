@@ -61,6 +61,22 @@ func NewActionEndpointService() *ActionEndpointService {
 		Handler:     s.handleQueryScore,
 	})
 
+	// 注册官方内置受控端点: 商品评价列表 (公开只读，按 sku/product_id 返回统计)
+	s.RegisterEndpoint(ActionEndpointMeta{
+		Name:        "review.list",
+		Description: "读取商品已发布评价、均分与分布",
+		RequireAuth: false,
+		Handler:     s.handleReviewList,
+	})
+
+	// 注册官方内置受控端点: 购物车服务端报价 (公开只读，忽略客户端金额，按商品配置重算)
+	s.RegisterEndpoint(ActionEndpointMeta{
+		Name:        "cart.quote",
+		Description: "按服务端商品配置重算购物车价格与合计",
+		RequireAuth: false,
+		Handler:     s.handleCartQuote,
+	})
+
 	// 通用领域沙箱端点：用于本地协议、Block、MCP 和微信运行时验收。
 	// 这些端点只返回受控状态数据，不连接生产支付、资金、即时通讯或物流服务。
 	for _, meta := range []ActionEndpointMeta{
@@ -88,7 +104,7 @@ func NewActionEndpointService() *ActionEndpointService {
 	} {
 		s.RegisterEndpoint(meta)
 	}
-	for _, name := range []string{"domain.list", "service.apply", "service.configure", "service.request", "chat.recall", "media.prepare"} {
+	for _, name := range []string{"domain.list", "order.list", "service.apply", "service.configure", "service.request", "chat.recall", "media.prepare", "address.list", "address.save", "address.delete", "invoice.get", "invoice.save", "review.submit", "coupon.claim", "coupon.list"} {
 		s.RegisterEndpoint(ActionEndpointMeta{Name: name, Description: "通用领域持久化操作", RequireAuth: true, Handler: func(appID, openID string, p map[string]interface{}, key string) (interface{}, error) {
 			copy := map[string]interface{}{}
 			for k, v := range p {
@@ -107,6 +123,28 @@ func (s *ActionEndpointService) RegisterEndpoint(meta ActionEndpointMeta) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.endpoints[meta.Name] = meta
+}
+
+// HasEndpoint 判断受控端点是否已登记；供发布门禁与运行时共用同一份注册表。
+func (s *ActionEndpointService) HasEndpoint(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.endpoints[name]
+	return ok
+}
+
+// 发布门禁始终复用同一份端点注册表，避免每次校验重复构造处理器。
+var (
+	actionEndpointRegistryOnce sync.Once
+	actionEndpointRegistry     *ActionEndpointService
+)
+
+// IsRegisteredActionEndpoint 判断端点名称是否已登记，供协议发布校验使用。
+func IsRegisteredActionEndpoint(name string) bool {
+	actionEndpointRegistryOnce.Do(func() {
+		actionEndpointRegistry = NewActionEndpointService()
+	})
+	return actionEndpointRegistry.HasEndpoint(name)
 }
 
 // ExecuteActionEndpoint 执行受控业务端点
@@ -298,6 +336,19 @@ func (s *ActionEndpointService) handleQueryScore(appID, openID string, payload m
 // handlePlatformSandbox 兼容既有入口；数据库可用时执行真实持久化领域逻辑。
 func (s *ActionEndpointService) handlePlatformSandbox(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
 	endpoint := domainText(payload, "_endpoint")
+
+	// 广告位解析是匿名只读能力，不依赖用户登录，也不能回落到领域写操作。
+	if endpoint == "ads.load" {
+		if db.DB == nil {
+			return ResolveAdSlot(nil, domainText(payload, "slot_id")), nil
+		}
+		var app models.MiniApp
+		if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
+			return nil, domainError("NOT_FOUND", "租户不存在")
+		}
+		return ResolveAdSlot(&app, domainText(payload, "slot_id")), nil
+	}
+
 	if db.DB == nil {
 		status, err := nextPlatformStatus(endpoint, "", payload)
 		if err != nil {
@@ -431,4 +482,49 @@ func platformSandboxResult(appID, openID, endpoint, entityID, idempotencyKey str
 		result["payload"] = payload
 	}
 	return result
+}
+
+// handleReviewList 公开读取商品评价；product_id 缺失时按 sku 解析当前租户商品。
+func (s *ActionEndpointService) handleReviewList(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
+	if db.DB == nil {
+		return nil, domainError("UNAVAILABLE", "数据库未初始化")
+	}
+	productID, _ := domainNumber(payload, "product_id")
+	if productID <= 0 {
+		sku := domainText(payload, "sku")
+		if sku == "" {
+			return nil, domainError("INVALID_ARGUMENT", "product_id 或 sku 不能为空")
+		}
+		var product models.Product
+		if err := db.DB.Where("app_id = ? AND sku = ? AND status = ?", appID, sku, models.ProductStatusActive).First(&product).Error; err != nil {
+			return nil, domainError("NOT_FOUND", "商品不存在或已下架")
+		}
+		productID = product.ID
+	}
+	limit := 20
+	if value, err := domainNumber(payload, "limit"); err == nil && value > 0 {
+		limit = int(value)
+	}
+	offset := 0
+	if value, err := domainNumber(payload, "offset"); err == nil && value > 0 {
+		offset = int(value)
+	}
+	return ListProductReviews(appID, productID, limit, offset)
+}
+
+// handleCartQuote 公开购物车报价；只接受 sku 与数量，金额一律由服务端商品配置计算。
+func (s *ActionEndpointService) handleCartQuote(appID, openID string, payload map[string]interface{}, idempotencyKey string) (interface{}, error) {
+	rawItems, ok := payload["items"].([]interface{})
+	if !ok || len(rawItems) == 0 {
+		return nil, domainError("INVALID_ARGUMENT", "购物车不能为空")
+	}
+	items := make([]map[string]interface{}, 0, len(rawItems))
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, domainError("INVALID_ARGUMENT", "购物车条目格式无效")
+		}
+		items = append(items, item)
+	}
+	return QuoteCart(appID, items)
 }

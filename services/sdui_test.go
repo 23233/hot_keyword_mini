@@ -70,6 +70,8 @@ func TestValidation_AllStandardBlocksAndActions(t *testing.T) {
 			return map[string]interface{}{"url": "https://example.com/customer-service.png"}
 		case "open_internal_chat":
 			return map[string]interface{}{"page_id": "customer_service"}
+		case "check_capability":
+			return map[string]interface{}{"capability": "payment"}
 		default:
 			return map[string]interface{}{}
 		}
@@ -976,5 +978,267 @@ func TestFilterBlocksByCapabilitiesForNativeActions(t *testing.T) {
 	}
 	if supported := FilterBlocksByCapabilities(blocks, "action_button,text,clipboard,subscribe_message,request_payment"); len(supported) != 2 {
 		t.Fatalf("声明全部动作能力后应保留所有积木，实际: %+v", supported)
+	}
+}
+
+// TestPersonalizedETagIsolation 验证 ETag 会随登录态、能力、查询参数和访问者摘要变化。
+func TestPersonalizedETagIsolation(t *testing.T) {
+	page := &models.DynamicPage{PageID: "home", Revision: 2, UpdatedAt: time.Unix(1700000000, 0)}
+	base := computePersonalizedETag(page, nil, "", false, nil)
+	if base == "" {
+		t.Fatal("ETag 不应为空")
+	}
+	if base != computePersonalizedETag(page, nil, "", false, nil) {
+		t.Fatal("相同输入应生成相同 ETag")
+	}
+	variants := map[string]string{
+		"登录态": computePersonalizedETag(page, nil, "", true, nil),
+		"能力":  computePersonalizedETag(page, nil, "video", false, nil),
+		"查询":  computePersonalizedETag(page, map[string]string{"id": "1"}, "", false, nil),
+		"访问者": computePersonalizedETag(page, nil, "", false, map[string]interface{}{"membership_level": 1}),
+	}
+	for name, etag := range variants {
+		if etag == base {
+			t.Fatalf("%s 变化后 ETag 不应相同", name)
+		}
+	}
+}
+
+// releaseTestPage 构造只包含一个动作按钮的发布页面。
+func releaseTestPage(t *testing.T, actionType string, payload map[string]interface{}) *models.DynamicPage {
+	t.Helper()
+	blocks := []models.BlockItem{{
+		ID: "release_action", Type: "action_button",
+		Props:  map[string]interface{}{"text": "执行"},
+		Action: &models.BlockAction{Type: actionType, Payload: payload},
+	}}
+	encoded, err := json.Marshal(blocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &models.DynamicPage{
+		AppID: "wx_release_test", PageID: "release_test", Title: "发布校验",
+		BusinessType: "custom", Intent: "watch", Theme: "light_clean", Status: "published", Blocks: string(encoded),
+	}
+}
+
+// TestReleaseValidation_RejectsUnregisteredEndpoint 验证发布门禁拒绝未登记的受控端点。
+func TestReleaseValidation_RejectsUnregisteredEndpoint(t *testing.T) {
+	page := releaseTestPage(t, "request_data", map[string]interface{}{"endpoint": "not.registered"})
+	report := ValidateDynamicPageForRelease(page)
+	if report.IsValid || !strings.Contains(strings.Join(report.Errors, ";"), "未登记") {
+		t.Fatalf("未登记端点应阻断发布: %+v", report)
+	}
+}
+
+// TestReleaseValidation_RejectsUnsafeURL 验证发布门禁拒绝内部路由和动态 URL。
+func TestReleaseValidation_RejectsUnsafeURL(t *testing.T) {
+	for _, rawURL := range []string{"/api/v1/admin/pages", "https://example.com/x", "/api/v1/articles/$item.id"} {
+		page := releaseTestPage(t, "request_data", map[string]interface{}{"url": rawURL})
+		report := ValidateDynamicPageForRelease(page)
+		if report.IsValid {
+			t.Fatalf("URL %q 不应通过发布校验", rawURL)
+		}
+	}
+	allowed := releaseTestPage(t, "request_data", map[string]interface{}{"url": "/api/v1/articles?id=1"})
+	if report := ValidateDynamicPageForRelease(allowed); !report.IsValid {
+		t.Fatalf("同源白名单 URL 应通过: %+v", report)
+	}
+}
+
+// TestReleaseValidation_RequiresSKU 验证支付、订单和购物车动作必须带 SKU。
+func TestReleaseValidation_RequiresSKU(t *testing.T) {
+	for _, actionType := range []string{"request_payment", "create_order", "add_to_cart", "remove_from_cart"} {
+		page := releaseTestPage(t, actionType, map[string]interface{}{})
+		if report := ValidateDynamicPageForRelease(page); report.IsValid {
+			t.Fatalf("%s 缺少 SKU 时不应通过发布校验", actionType)
+		}
+		valid := releaseTestPage(t, actionType, map[string]interface{}{"sku": "sku-1"})
+		if report := ValidateDynamicPageForRelease(valid); !report.IsValid {
+			t.Fatalf("%s 携带 SKU 时应通过: %+v", actionType, report)
+		}
+	}
+}
+
+// TestValidation_RejectsOversizedPageAndRepeat 验证页面积木数、序列化大小与 repeat 上限。
+func TestValidation_RejectsOversizedPageAndRepeat(t *testing.T) {
+	blocks := make([]models.BlockItem, 0, maxBlocksPerPage+1)
+	for index := 0; index <= maxBlocksPerPage; index++ {
+		blocks = append(blocks, models.BlockItem{ID: "block_" + string(rune('a'+index%26)) + string(rune('a'+index/26)), Type: "text", Props: map[string]interface{}{"text": "块"}})
+	}
+	encoded, _ := json.Marshal(blocks)
+	page := &models.DynamicPage{AppID: "wx_test", PageID: "too_many", Title: "超限", Blocks: string(encoded)}
+	if report := ValidateDynamicPage(page); report.IsValid {
+		t.Fatal("超过顶层积木上限应被拒绝")
+	}
+
+	repeatItems := make([]interface{}, 0, maxRepeatItemsPerBlock+1)
+	for index := 0; index <= maxRepeatItemsPerBlock; index++ {
+		repeatItems = append(repeatItems, map[string]interface{}{"title": "项"})
+	}
+	repeatBlocks, _ := json.Marshal([]models.BlockItem{{
+		ID: "repeat_block", Type: "custom", Props: map[string]interface{}{"title": "循环"},
+		Repeat: map[string]interface{}{"items": repeatItems},
+	}})
+	repeatPage := &models.DynamicPage{AppID: "wx_test", PageID: "too_many_repeat", Title: "超限", Blocks: string(repeatBlocks)}
+	if report := ValidateDynamicPage(repeatPage); report.IsValid {
+		t.Fatal("超过 repeat 上限应被拒绝")
+	}
+}
+
+// TestBuildMaintenancePageIsValid 验证兜底维护页始终可以渲染。
+func TestBuildMaintenancePageIsValid(t *testing.T) {
+	page := buildMaintenancePage("wx_fallback_test")
+	if report := ValidateDynamicPage(page); !report.IsValid {
+		t.Fatalf("维护页协议应合法: %+v", report.Errors)
+	}
+	ir, err := BuildPageLayoutIR(page, DefaultDeviceParams(), "normal")
+	if err != nil || len(ir.Nodes) == 0 {
+		t.Fatalf("维护页应生成非空 Layout IR: err=%v nodes=%d", err, len(ir.Nodes))
+	}
+}
+
+// TestRequestPaymentPayloadSupportsCartItems 验证支付动作支持购物车明细与数量边界。
+func TestRequestPaymentPayloadSupportsCartItems(t *testing.T) {
+	valid := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{"sku": "sku-a", "quantity": float64(2)},
+			map[string]interface{}{"sku": "sku-b", "quantity": float64(1)},
+		},
+	}
+	if !isValidRequestPaymentPayload(valid) {
+		t.Fatal("合法购物车明细应通过校验")
+	}
+	invalidQuantity := map[string]interface{}{
+		"items": []interface{}{map[string]interface{}{"sku": "sku-a", "quantity": float64(0)}},
+	}
+	if isValidRequestPaymentPayload(invalidQuantity) {
+		t.Fatal("数量为 0 应被拒绝")
+	}
+	missingSKU := map[string]interface{}{
+		"items": []interface{}{map[string]interface{}{"quantity": float64(1)}},
+	}
+	if isValidRequestPaymentPayload(missingSKU) {
+		t.Fatal("缺少 SKU 应被拒绝")
+	}
+	if isValidRequestPaymentPayload(map[string]interface{}{"items": []interface{}{}}) {
+		t.Fatal("空购物车应被拒绝")
+	}
+}
+
+// TestShareAccessGuard 验证分享落地的 auth/membership/owner 策略会清空内容并下发提示。
+func TestShareAccessGuard(t *testing.T) {
+	service := NewSDUIService()
+	raw := &models.DynamicPage{AppID: "app", PageID: "shared", Title: "分享页", Theme: "dark_glass", Blocks: "[]"}
+	block := models.BlockItem{ID: "secret", Type: "text", Props: map[string]interface{}{"content": "secret"}}
+
+	build := func(mode string, viewer map[string]interface{}) *models.PageResponseEnvelope {
+		return &models.PageResponseEnvelope{
+			Page: models.DynamicPageDTO{
+				PageID: "shared", Title: "分享页", BusinessType: "custom",
+				ShareConfig: &models.PageShareConfig{Access: &models.ShareAccess{Mode: mode}},
+				Blocks:      []models.BlockItem{block},
+			},
+			Viewer: viewer,
+			Data:   map[string]interface{}{"secret": "data"},
+		}
+	}
+
+	// auth：未登录被拦截，登录后放行。
+	authEnvelope := build("auth", map[string]interface{}{"logged_in": false})
+	service.applyShareAccess(authEnvelope, raw, map[string]string{"from": "share"}, false, 0)
+	if len(authEnvelope.Page.Blocks) != 0 || len(authEnvelope.Data) != 0 {
+		t.Fatal("auth 分享未登录时必须清空内容和数据")
+	}
+	guard, _ := authEnvelope.Viewer["share_guard"].(map[string]interface{})
+	if guard == nil || guard["action"] != "login" {
+		t.Fatalf("auth 分享提示错误: %#v", authEnvelope.Viewer)
+	}
+
+	// membership：已登录但非会员被拦截，会员放行。
+	memberEnvelope := build("membership", map[string]interface{}{"logged_in": true, "membership_level": float64(0)})
+	service.applyShareAccess(memberEnvelope, raw, map[string]string{"from": "timeline"}, true, 7)
+	guard, _ = memberEnvelope.Viewer["share_guard"].(map[string]interface{})
+	if len(memberEnvelope.Page.Blocks) != 0 || guard == nil || guard["action"] != "membership" {
+		t.Fatalf("membership 非会员应被拦截: %#v", memberEnvelope.Viewer)
+	}
+	vipEnvelope := build("membership", map[string]interface{}{"logged_in": true, "membership_level": float64(2)})
+	service.applyShareAccess(vipEnvelope, raw, map[string]string{"from": "share"}, true, 7)
+	if len(vipEnvelope.Page.Blocks) != 1 || vipEnvelope.Viewer["share_guard"] != nil {
+		t.Fatal("会员访问分享不应被拦截")
+	}
+
+	// owner：只有 share_from 与当前用户一致时放行。
+	ownerEnvelope := build("owner", map[string]interface{}{"logged_in": true, "membership_level": float64(0)})
+	service.applyShareAccess(ownerEnvelope, raw, map[string]string{"from": "share", "share_from": "42"}, true, 42)
+	if len(ownerEnvelope.Page.Blocks) != 1 {
+		t.Fatal("分享者本人访问 owner 分享不应被拦截")
+	}
+	otherEnvelope := build("owner", map[string]interface{}{"logged_in": true, "membership_level": float64(0)})
+	service.applyShareAccess(otherEnvelope, raw, map[string]string{"from": "share", "share_from": "42"}, true, 43)
+	if len(otherEnvelope.Page.Blocks) != 0 {
+		t.Fatal("非分享者访问 owner 分享必须被拦截")
+	}
+
+	// 非分享来源不受策略影响。
+	normalEnvelope := build("owner", map[string]interface{}{"logged_in": true})
+	service.applyShareAccess(normalEnvelope, raw, map[string]string{}, true, 43)
+	if len(normalEnvelope.Page.Blocks) != 1 {
+		t.Fatal("普通入口不应触发分享拦截")
+	}
+}
+
+// TestShareAccessModeValidation 验证分享访问策略只接受受控模式。
+func TestShareAccessModeValidation(t *testing.T) {
+	valid := &models.DynamicPage{AppID: "app", PageID: "p", Title: "t", Blocks: "[]", ShareConfig: `{"access":{"mode":"owner"}}`}
+	if report := ValidateDynamicPage(valid); !report.IsValid {
+		t.Fatalf("合法分享模式不应被拒绝: %#v", report.Errors)
+	}
+	invalid := &models.DynamicPage{AppID: "app", PageID: "p", Title: "t", Blocks: "[]", ShareConfig: `{"access":{"mode":"friends"}}`}
+	if report := ValidateDynamicPage(invalid); report.IsValid {
+		t.Fatal("未知分享模式必须被拒绝")
+	}
+	broken := &models.DynamicPage{AppID: "app", PageID: "p", Title: "t", Blocks: "[]", ShareConfig: `{bad`}
+	if report := ValidateDynamicPage(broken); report.IsValid {
+		t.Fatal("非法 share_config JSON 必须被拒绝")
+	}
+}
+
+// TestShareAccessInference 验证仅付费文章默认会员守卫，AI 门户保持公开分享。
+func TestShareAccessInference(t *testing.T) {
+	service := NewSDUIService()
+	raw := &models.DynamicPage{AppID: "app", PageID: "p", Theme: "dark_glass", Blocks: "[]"}
+	build := func(businessType string) *models.PageResponseEnvelope {
+		return &models.PageResponseEnvelope{
+			Page:   models.DynamicPageDTO{PageID: "p", Title: "t", BusinessType: businessType, Blocks: []models.BlockItem{{ID: "b", Type: "text"}}},
+			Viewer: map[string]interface{}{"logged_in": false, "membership_level": float64(0)},
+			Data:   map[string]interface{}{},
+		}
+	}
+	article := build("ai_article")
+	service.applyShareAccess(article, raw, map[string]string{"from": "share"}, false, 0)
+	if article.Viewer["share_guard"] == nil {
+		t.Fatal("付费文章分享应默认触发会员/登录守卫")
+	}
+	portal := build("ai_breakthrough")
+	service.applyShareAccess(portal, raw, map[string]string{"from": "share"}, false, 0)
+	if portal.Viewer["share_guard"] != nil || len(portal.Page.Blocks) != 1 {
+		t.Fatal("AI 门户分享不应被默认会员守卫拦截")
+	}
+}
+
+// TestPageEntityProviders 验证内核按 business_type 调度领域装配器，未知类型只返回通用字段。
+func TestPageEntityProviders(t *testing.T) {
+	entity := AssemblePageEntity("app", "query", "查询词", map[string]string{"query_value": "42"})
+	if entity["title"] != "查询词" || entity["query_value"] != "42" || entity["status"] != "ready" {
+		t.Fatalf("query 领域装配结果错误: %#v", entity)
+	}
+	download := AssemblePageEntity("app", "download", "", nil)
+	if download["platform"] != "Android / iOS" || download["status"] != "verified" {
+		t.Fatalf("download 领域装配结果错误: %#v", download)
+	}
+	unknown := AssemblePageEntity("app", "unknown", "标题", nil)
+	if unknown["title"] != "标题" || len(unknown) != 1 {
+		t.Fatalf("未知业务类型应只返回通用字段: %#v", unknown)
 	}
 }

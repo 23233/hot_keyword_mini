@@ -1549,6 +1549,64 @@ func CalculateAdaptiveBlockHeight(block *models.BlockItem, props map[string]inte
 		return 150, ""
 	case "withdraw_form":
 		return 190, ""
+	case "dialog", "action_sheet", "bottom_sheet":
+		// 弹层展开时覆盖在文档流之上，未展开时只占触发按钮高度。
+		return 52, "sdui_overlay_stub"
+	case "sku_selector":
+		count := sliceLength(props["skus"])
+		if count == 0 {
+			count = sliceLength(props["options"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		rows := int(math.Ceil(float64(count) / 2.0))
+		return 70 + rows*46 + 60, ""
+	case "quantity_stepper":
+		return 64, ""
+	case "cart_item_list":
+		count := sliceLength(props["items"])
+		if count == 0 {
+			count = sliceLength(props["cart_items"])
+		}
+		if count == 0 {
+			count = 1
+		}
+		return 50 + count*88, ""
+	case "cart_summary":
+		return 120, ""
+	case "address_book":
+		count := sliceLength(props["items"])
+		if count == 0 {
+			count = 1
+		}
+		return 56 + count*86 + 48, ""
+	case "address_form":
+		return 50 + 4*56 + 54, ""
+	case "coupon_list":
+		count := sliceLength(props["items"])
+		if count == 0 {
+			count = 1
+		}
+		return 50 + count*84, ""
+	case "invoice_form":
+		return 50 + 3*56 + 54, ""
+	case "filter_bar":
+		return 48, ""
+	case "filter_sheet":
+		return 52, "sdui_overlay_stub"
+	case "rating":
+		return 60, ""
+	case "review_summary":
+		count := sliceLength(props["items"])
+		if count == 0 {
+			count = 1
+		}
+		return 90 + count*64, ""
+	case "profile_card":
+		return 140, ""
+	case "user_header":
+		return 150, ""
 
 	default:
 		return 90, ""

@@ -12,6 +12,8 @@
 
 线上公共访问地址：`https://wx.a0free.com`。本地开发仍使用 `localhost`，生产部署通过 `PUBLIC_BASE_URL=https://wx.a0free.com` 注入。
 
+生产部署的必填环境变量、迁移步骤、微信配置、冒烟项与回滚流程见 [doc/部署上线清单.md](doc/部署上线清单.md)。
+
 本地地图统一使用腾讯地图；客服默认使用微信小程序内置客服组件，同时预置小程序内客服能力。支付、上传、订单、物流、售后、斗师接单、会员、广告和提现等能力必须先按规范完成通用能力包，再通过租户矩阵启用。
 
 ---
@@ -28,11 +30,20 @@
   - `FormBlock`：考分/物流/证件受控查询输入表单（支持 `input_label` 与自适应提交）；
   - `ActionButtonBlock`：苹果高光大胶囊主操作按钮；
   - `NoticeBlock`：跑马灯通告栏；
+  - **通用交互与交易积木**：多字段表单、弹窗/动作面板/底部面板、SKU 选择、数量步进、购物车列表与汇总、地址簿、优惠券、发票、筛选栏、筛选面板、星级评分、评价汇总、资料卡和用户头部；
+  - **本地购物车与资料**：`add_to_cart` / `update_cart_quantity` / `remove_from_cart` / `clear_cart` 按租户保存在小程序本地；地址与发票通过 `address.*`、`invoice.*` 受控端点持久化；商品评价通过公开 `review.list` 与需登录的 `review.submit` 持久化，一单一评；均分与分布由 SQL 聚合，列表支持 limit/offset；`review_summary` 传 `product_id`/`sku` 时自动加载；购物车可开启 `server_quote`，由公开 `cart.quote` 按服务端商品配置重算金额，忽略客户端传入的价格，并把报价写入 `cart_quote` 供购物车行项目覆盖标题与单价；`request_payment` 支持多 SKU `items`，支付成功后自动落地购物车订单，退款同步订单状态；用户可通过 `order.list` 分页读取本人订单（offset/limit，最多 50 条，返回 total/has_more）；优惠券由管理员通过 `coupon.define` 定义，用户通过 `coupon.claim` 领取、`coupon.list` 查看，`coupon_list` 可开启 `auto_load`，结算时传 `coupon_id` 由服务端校验门槛并抵扣，锁定超过 3 小时（大于微信预支付订单有效期）可由进程内定时任务自动回收，管理员也可用 `coupon.cleanup` 批量释放；
+  - **窄屏与弹层适配**：弹层通过 `RootPortal` 挂到页面根节点，避免被毛玻璃容器限制固定定位；网格使用 `minmax(0, 1fr)`，≤480px 时网格内的表单/交易/地址等密集单元独占整行，普通卡片保持多列；`repeat` 动态数组在客户端统一截断 200 项；
+  - **重复提交防护**：同一积木的 `request_data` / `request_payment` 在途时拒绝再次触发，避免双击生成重复订单；
+  - **主题与字号**：支持 `dark_glass`/`light_clean`/`cyber_neon` 主题；按微信 `fontSizeSetting` 对 SDUI 文本与交互控件做 1.0-1.35 倍受控缩放，按钮/输入框/弹层使用自适应高度；
+  - **单一 SDUI 容器**：首页与动态页共用 `SDUIPageContainer`，协议拉取、分享/分享守卫、主题、字号、弹层滚动锁、块级错误边界与空/错态完全同源；
   - **优雅降级调度器 (`BlockRenderer`)**：具备组件版本检查与降级策略，遇到未知新积木优先读取 fallback 块或优雅占位，杜绝全页白屏崩溃；
+  - **真机可靠性**：块级 `ErrorBoundary` + 页面顶层 `SafeBlockRenderer` 隔离单块异常；消息列表使用小程序原生 `ScrollView`；单页顶层积木 ≤500、Blocks JSON ≤1MB、`repeat.items` ≤200，请求体 ≤2MB；
+  - **兜底与缓存隔离**：按租户 `fallback_page_id` / `release_mode` 逐级降级，无可用页面返回维护页；个性化页面使用 `private, no-store`，ETag 覆盖页面版本、查询参数、客户端能力、登录态和访问者摘要；
+  - **运行时能力与 WebView 门禁**：公开动作、支付/会员下单、WebView 票据与解析实时校验租户能力矩阵；WebView 页面只接受 `url_key` 或短剧/剧集 ID，由服务端解析已登记地址，不接受裸 URL；打开时追加 `sdui_client=weapp`、`sdui_font_size`、`sdui_font_scale`、`sdui_theme`，目标网页可按参数适配字体与主题；WebView 支持好友/朋友圈分享，登录失效或链接无效时展示权限提示；
 - **万能动态承载页 (`pages/dynamic/index`)**：
   - 动态导航栏标题与毛玻璃吸顶；
   - 骨架屏秒开体验与空错态优雅回退；
-  - 微信好友分享与朋友圈分享全生命周期动态绑定。
+  - 微信好友分享与朋友圈分享全生命周期动态绑定；`share_config.access.mode` 支持 `public`/`auth`/`membership`/`owner`，接收者不满足条件时服务端清空页面内容并下发登录、会员或“仅分享者本人”提示。
 
 ### 2. 企业级多租户矩阵与双 Token 会话底层
 - **多租户数据物理隔离**：
@@ -61,6 +72,13 @@
   - 左侧模拟器采用真实 CSS 毛玻璃磨砂与苹果质感，与小程序同构渲染；
   - 右侧改动标题、积木内容、样式或动作后，左侧模拟器实时刷新，所见即所得。
 
+### 3.1 SDUI 内核与业务边界
+
+- **内核**：`SDUIService` 只负责协议校验、页面解析/兜底、ETag 与缓存、能力协商、分享访问策略、Layout IR 生成和积木树下发，不直接查询 AI/短剧/游戏等业务表。
+- **领域装配**：业务数据通过 `PageEntityAssembler`/`PageEnvelopeEnricher` 注册表注入，现有 drama、game、query、download 与 AI 破甲 Provider 位于独立文件；新增业务只需注册 Provider，不改内核 switch。
+- **页面层**：首页与动态页共用 `SDUIPageContainer`；AI 门户/文章/会员页和组件实验室通过 `tpl_*` 模板生成；本地演示租户仍有少量 Go 内联 blocks 的 seed，仅用于非生产环境。
+- **积木层**：前端 Block 组件是原子渲染库，模板只负责组合与动作编排。
+
 ### 4. 后端无头截屏与微信分享卡片生成服务
 - **纯 Go 原生图层渲染引擎**：
   - 零外部 Chromium / Puppeteer 依赖，使用 Go 图层合成；具体资源占用和耗时以部署环境监控为准；
@@ -87,6 +105,7 @@
 - **`sdui.page.set_current`**：将已发布页面切换为小程序当前主页；
 - **`sdui.page.share_card`**：生成并持久化好友/朋友圈分享图；
 - **`sdui.admin.execute`**：内部高权限代理管理后台的租户配置、能力、WebView、商品、会员、栏目、文章、评论、短剧和运营记录操作；写操作必须 `confirmed: true`。管理员账号和 MCP Token 管理永久禁止通过 MCP 执行；
+- **`sdui.domain.list` / `sdui.domain.execute`**：只读查询与运营执行订单履约、售后裁决、提现审核、斗师认证与报价、客服指派、会话管理和媒体审核；写操作必须具备 `release` 权限、`confirmed: true` 和幂等键；
 - **标准资源**：通过 `resources/list`、`resources/read` 提供 `sdui://api` 与 `sdui://rules`，AI 可直接读取完整接口和 SDUI 规则；
 - **双通道接入**：支持 HTTP 端点 `POST /api/v1/mcp` 与独立 Stdio 命令行服务 `go run ./cmd/mcp-server`。
 
@@ -253,6 +272,8 @@ AI 必须先读取 `sdui://rules` 和 `sdui://api`，再调用 `tools/list`。�
 MCP 的安全边界：内部 MCP 可通过 `sdui.admin.execute` 代理已登记的管理后台业务操作，但不开放管理员账号和 MCP Token 管理；不允许任意数据库迁移、任意 HTTP 代理或任意脚本执行。敏感配置写入必须显式二次确认并记录审计。
 
 ### 8. 生产上线预检
+
+服务提供无鉴权 `GET /healthz` 健康探针，返回服务与数据库连通状态；全局限流按来源地址计数（默认 600 次/分钟，可通过 `HTTP_RATE_LIMIT_PER_MINUTE` 调整），`/action/execute`（120 次/分钟）与支付下单（20 次/分钟）优先按“租户 + 登录用户”计数，匿名请求回退到客户端地址，避免同一出口 IP 下的不同用户互相挤占额度。反向代理必须覆盖或追加 `X-Real-IP` / `X-Forwarded-For`，否则匿名访客与全局限流会按代理地址聚合。
 
 后台通过 `GET /api/v1/admin/production-readiness?app_id=...`，MCP 通过只读工具 `sdui.production.readiness` 检查每个租户的生产配置。报告只返回缺失或格式错误的字段名，不返回 AppSecret、支付私钥、API v3 Key、地图 Key 等原文。
 

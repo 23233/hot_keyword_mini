@@ -22,7 +22,7 @@
       min-width: 0;
 
       .nav-title {
-        font-size: 32rpx;
+        font-size: calc(32rpx * var(--sdui-font-scale, 1));
         font-weight: 700;
         color: #ffffff;
         letter-spacing: 0;
@@ -33,7 +33,7 @@
       }
 
       .nav-subtitle {
-        font-size: 20rpx;
+        font-size: calc(20rpx * var(--sdui-font-scale, 1));
         color: rgba(235, 235, 245, 0.6);
         margin-top: 2rpx;
         max-width: 100%;

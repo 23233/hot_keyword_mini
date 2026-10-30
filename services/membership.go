@@ -121,6 +121,10 @@ func applyOrderGrant(tx *gorm.DB, order *models.PaymentOrder, reverse bool) erro
 	if order == nil || order.AppID == "" || order.UserID <= 0 {
 		return errors.New("会员权益订单参数不完整")
 	}
+	// 购物车订单不绑定单一商品，不参与会员/文章权益发放。
+	if order.Kind == models.PaymentOrderKindCart || order.ProductID <= 0 {
+		return nil
+	}
 	if (!reverse && order.Status != models.PaymentOrderPaid) || (reverse && order.Status != models.PaymentOrderRefunded) {
 		return errors.New("订单状态与权益操作不一致")
 	}

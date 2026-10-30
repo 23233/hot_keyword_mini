@@ -26,6 +26,36 @@ type DomainError struct {
 func (e *DomainError) Error() string         { return e.Code + ": " + e.Message }
 func domainError(code, message string) error { return &DomainError{code, message} }
 
+// AdminDomainOperations 是管理员入口允许执行的领域运营动作白名单。
+// 这里只登记已经有真实处理分支的端点，避免出现“接口存在但必然失败”的死操作。
+var AdminDomainOperations = []string{
+	"domain.list", "order.fulfill", "after_sale.review", "service.offer",
+	"service.profile.review", "service.configure", "chat.assign", "chat.send",
+	"chat.block", "chat.recall", "media.review", "media.delete",
+	"wallet.adjust", "wallet.review", "wallet.refresh", "coupon.define", "coupon.cleanup",
+}
+
+// IsAdminDomainOperation 判断操作是否属于管理员领域运营动作。
+func IsAdminDomainOperation(endpoint string) bool {
+	for _, item := range AdminDomainOperations {
+		if item == endpoint {
+			return true
+		}
+	}
+	return false
+}
+
+// AdminDomainWriteOperations 返回可对外暴露的领域写操作，排除只读的 domain.list。
+func AdminDomainWriteOperations() []string {
+	result := make([]string, 0, len(AdminDomainOperations)-1)
+	for _, item := range AdminDomainOperations {
+		if item != "domain.list" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
 // domainContext 在单个数据库事务中执行权限、状态和账本更新。
 type domainContext struct {
 	tx      *gorm.DB
@@ -41,12 +71,38 @@ func domainText(p map[string]interface{}, key string) string {
 	return strings.TrimSpace(value)
 }
 func domainNumber(p map[string]interface{}, key string) (int64, error) {
-	v, ok := p[key].(float64)
-	if !ok || math.IsNaN(v) || math.IsInf(v, 0) || v != math.Trunc(v) || v < 0 || v > 9007199254740991 {
+	var v float64
+	switch value := p[key].(type) {
+	case float64:
+		v = value
+	case int:
+		v = float64(value)
+	case int64:
+		v = float64(value)
+	case int32:
+		v = float64(value)
+	default:
+		return 0, domainError("INVALID_ARGUMENT", key+" 必须为非负安全整数")
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) || v != math.Trunc(v) || v < 0 || v > 9007199254740991 {
 		return 0, domainError("INVALID_ARGUMENT", key+" 必须为非负安全整数")
 	}
 	return int64(v), nil
 }
+
+// recordInt 将快照 JSON 中的数值安全转换为 int。
+func recordInt(value interface{}) int {
+	switch number := value.(type) {
+	case float64:
+		return int(number)
+	case int:
+		return number
+	case int64:
+		return int(number)
+	}
+	return 0
+}
+
 func recordData(r *models.DomainRecord) map[string]interface{} {
 	p := map[string]interface{}{}
 	_ = json.Unmarshal([]byte(r.Data), &p)
@@ -95,7 +151,8 @@ func ExecuteDomainOperation(app string, user int64, actor, endpoint string, p ma
 	if p == nil {
 		p = map[string]interface{}{}
 	}
-	read := endpoint == "chat.poll" || endpoint == "wallet.refresh" || endpoint == "logistics.refresh" || endpoint == "domain.list" || endpoint == "domain.get"
+	// 只读端点不要求幂等键，也不会写入 platform_operations。
+	read := endpoint == "chat.poll" || endpoint == "wallet.refresh" || endpoint == "logistics.refresh" || endpoint == "domain.list" || endpoint == "membership.open" || endpoint == "address.list" || endpoint == "invoice.get" || endpoint == "review.list" || endpoint == "order.list" || endpoint == "coupon.list"
 	if !read && strings.TrimSpace(idem) == "" {
 		return nil, domainError("INVALID_ARGUMENT", "写操作必须携带幂等键")
 	}
@@ -109,8 +166,8 @@ func ExecuteDomainOperation(app string, user int64, actor, endpoint string, p ma
 			return domainError("NOT_FOUND", "租户不存在")
 		}
 		if admin {
-			allowed := map[string]bool{"domain.list": true, "order.fulfill": true, "after_sale.review": true, "service.offer": true, "service.profile.review": true, "service.configure": true, "chat.assign": true, "chat.send": true, "chat.block": true, "chat.recall": true, "media.review": true, "media.delete": true, "wallet.adjust": true, "wallet.review": true, "wallet.refresh": true, "ads.configure": true, "membership.status": true}
-			if !allowed[endpoint] {
+			// 管理员入口只允许执行已登记的后台运营动作，未实现的操作不进入白名单。
+			if !IsAdminDomainOperation(endpoint) {
 				return domainError("FORBIDDEN", "管理员入口不允许冒充用户发起业务")
 			}
 		}
@@ -119,6 +176,9 @@ func ExecuteDomainOperation(app string, user int64, actor, endpoint string, p ma
 			if err := tx.Where("app_id = ? AND id = ?", app, user).First(&u).Error; err != nil {
 				return domainError("UNAUTHORIZED", "用户不存在")
 			}
+		} else if targetUser, err := domainNumber(p, "user_id"); err == nil && targetUser > 0 {
+			// 管理员代用户执行会话、钱包等动作时，显式指定目标用户；其余后台动作不受影响。
+			user = targetUser
 		}
 		payloadJSON, err := json.Marshal(p)
 		if err != nil {
@@ -169,9 +229,17 @@ func (c *domainContext) execute(endpoint string) (interface{}, error) {
 		return c.service(endpoint)
 	case strings.HasPrefix(endpoint, "media."):
 		return c.media(endpoint)
+	case endpoint == "membership.open":
+		return c.membershipOpen()
+	case strings.HasPrefix(endpoint, "address."), strings.HasPrefix(endpoint, "invoice."):
+		return c.profileData(endpoint)
+	case strings.HasPrefix(endpoint, "review."):
+		return c.review(endpoint)
+	case strings.HasPrefix(endpoint, "coupon."):
+		return c.coupon(endpoint)
 	case endpoint == "domain.list":
 		kind := domainText(c.payload, "kind")
-		allowed := map[string]bool{"order": true, "after_sale": true, "service_profile": true, "task": true, "thread": true, "withdraw": true, "media": true}
+		allowed := map[string]bool{"order": true, "after_sale": true, "service_profile": true, "task": true, "thread": true, "withdraw": true, "media": true, "address": true, "invoice": true}
 		if !allowed[kind] {
 			return nil, domainError("INVALID_ARGUMENT", "未知领域类型")
 		}

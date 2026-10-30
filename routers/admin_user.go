@@ -5,6 +5,7 @@ import (
 	"hot_keyword/routers/middleware"
 	"hot_keyword/services"
 	"strconv"
+	"strings"
 
 	"github.com/kataras/iris/v12"
 )
@@ -43,11 +44,25 @@ func RegisterAdminUserRoutes(adminParty iris.Party) {
 			return
 		}
 
+		// 按账号与真实来源地址做登录失败限流，防止单点暴力破解。
+		loginKey := strings.ToLower(strings.TrimSpace(req.Username)) + "@" + middleware.ClientIP(ctx)
+		if allowed, retryAfter := services.CheckAdminLoginAllowed(loginKey); !allowed {
+			ctx.StatusCode(iris.StatusTooManyRequests)
+			ctx.JSON(iris.Map{
+				"code":                429,
+				"msg":                 "登录失败次数过多，请稍后再试",
+				"retry_after_seconds": int(retryAfter.Seconds()) + 1,
+			})
+			return
+		}
+
 		user, token, err := authService.AdminLogin(req.Username, req.Password)
 		if err != nil {
+			services.RecordAdminLoginFailure(loginKey)
 			ctx.JSON(iris.Map{"code": 401, "msg": err.Error()})
 			return
 		}
+		services.ResetAdminLoginFailures(loginKey)
 
 		// 写入 Cookie 便于浏览器会话维护
 		ctx.SetCookieKV("admin_token", token, iris.CookieExpires(24*60*60))

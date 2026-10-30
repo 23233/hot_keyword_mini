@@ -2,9 +2,34 @@
 import assert from 'node:assert/strict'
 import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
+import http from 'node:http'
 import test from 'node:test'
 import path from 'node:path'
 import ts from 'typescript'
+
+// 真机验收所有后端请求使用短连接，避免 Node keep-alive 与开发者工具长时间运行互相影响。
+function fetchJSON(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const request = http.request(url, {
+      method: options.method || 'GET',
+      headers: { connection: 'close', ...(options.headers || {}) }
+    }, (response) => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => { body += chunk })
+      response.on('end', () => {
+        try {
+          resolve(JSON.parse(body))
+        } catch (error) {
+          reject(new Error(`响应不是合法 JSON (HTTP ${response.statusCode}): ${body.slice(0, 200)}`))
+        }
+      })
+    })
+    request.on('error', reject)
+    if (options.body) request.write(options.body)
+    request.end()
+  })
+}
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const distRoot = path.join(projectRoot, 'dist')
@@ -155,7 +180,7 @@ function labDom() {
 test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, async () => {
   runWechatIDE(['open_project_window', '--project', wechatProjectRoot, '--window-mode', 'liteMode'])
   const pageId = process.env.WECHAT_AGENT_PAGE_ID || 'component_lab_acceptance_20260907'
-  const backend = await fetch(`http://127.0.0.1:8080/api/v1/page/${pageId}`, { headers: { 'X-WX-AppID': targetAppId } }).then(response => response.json())
+  const backend = await fetchJSON(`http://127.0.0.1:8080/api/v1/page/${pageId}`, { headers: { 'X-WX-AppID': targetAppId } })
   assert.ok(backend.page, '后端未返回验收页面')
   runWechatIDE(['simulator_open_page', '--project', wechatProjectRoot, '--page', 'pages/dynamic/index', '--query', `page_id=${pageId}`])
   assert.match(labDom(), /lab_action_request_payment/)
@@ -164,7 +189,7 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
     evaluateRuntime(function () {
     const app = getApp()
     app.sduiAcceptance = { originals: {}, calls: [] }
-    for (const method of ['setClipboardData', 'showToast', 'showShareMenu', 'previewImage', 'navigateToMiniProgram', 'openChannelsActivity', 'requestSubscribeMessage']) {
+    for (const method of ['setClipboardData', 'showToast', 'showShareMenu', 'previewImage', 'navigateToMiniProgram', 'openChannelsActivity', 'requestSubscribeMessage', 'openPrivacyContract']) {
       app.sduiAcceptance.originals[method] = wx[method]
       wx[method] = function (options) {
         app.sduiAcceptance.calls.push({ method: method, options: JSON.parse(JSON.stringify(options)) })
@@ -186,7 +211,7 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
     }
     return true
     })
-    for (const type of ['copy_text', 'toast', 'set_state', 'toggle_state', 'set_state', 'reset_state', 'show_loading_state', 'show_empty_state', 'show_error_state', 'reset_block_state', 'show_error_state', 'refresh', 'request', 'request_data', 'require_auth', 'share', 'preview_image', 'open_mini_program', 'open_channels_activity', 'subscribe_message', 'request_payment']) {
+    for (const type of ['copy_text', 'toast', 'set_state', 'toggle_state', 'set_state', 'reset_state', 'show_loading_state', 'show_empty_state', 'show_error_state', 'reset_block_state', 'show_error_state', 'refresh', 'request', 'request_data', 'require_auth', 'share', 'preview_image', 'open_mini_program', 'open_channels_activity', 'subscribe_message', 'request_payment', 'check_capability', 'open_policy', 'add_to_cart', 'update_cart_quantity', 'remove_from_cart', 'clear_cart']) {
       tapAction(type)
       const dom = labDom()
       const denied = ['subscribe_message', 'request_payment'].includes(type)
@@ -206,10 +231,10 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
     assert.equal(calls.find(call => call.method === 'paymentOrder').options.data.sku, 'sdui-lab-sku')
     assert.ok(calls.some(call => call.method === 'showShareMenu'))
     assert.match(calls.find(call => call.method === 'previewImage').options.urls[0], /assets\/sdui-component-lab.png$/)
-    const expected = await fetch('http://127.0.0.1:8080/api/v1/action/execute', {
+    const expected = await fetchJSON('http://127.0.0.1:8080/api/v1/action/execute', {
       method: 'POST', headers: { 'X-WX-AppID': targetAppId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint: 'query.score', payload: { query_value: 'SDUI-QUERY' } })
-    }).then(response => response.json())
+    })
     assert.equal(expected.data.status, 'success')
   } finally {
     evaluateRuntime(function () {
@@ -227,7 +252,12 @@ test('微信 MCP 独立动作与失败分支验收', { skip: !ideRequired }, asy
   tapAction('open_webview')
   const webview = currentPageEventually(page => page.path === 'pages/webview/index')
   assert.equal(webview.path, 'pages/webview/index')
-  assert.equal(decodeURIComponent(webview.query.url), 'https://wx.a0free.com')
+  assert.equal(decodeURIComponent(webview.query.url_key), 'component-lab')
+  assert.equal(webview.query.url, undefined)
+  const resolved = await fetchJSON(`http://127.0.0.1:8080/api/v1/webview/resolve?url_key=component-lab`, {
+    headers: { 'X-WX-AppID': targetAppId }
+  })
+  assert.equal(resolved.data.url, 'https://wx.a0free.com')
 })
 
 test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ideRequired }, () => {
@@ -272,7 +302,10 @@ test('微信开发者工具 MCP 模拟器复杂 SDUI 渲染验收', { skip: !ide
     'episode_list', 'item_grid', 'score_panel', 'coupon_card', 'countdown', 'result_table', 'contact_card', 'map_card',
     'game_header', 'redeem_code_card', 'server_status', 'product_card', 'download_card', 'event_card', 'poll', 'feed_list',
     'category_nav', 'article_feed', 'article_detail', 'membership_plan_list', 'comment_thread', 'collection_nav',
-    'content_feed', 'content_detail', 'offer_list', 'discussion_thread', 'custom', 'custom_block'
+    'content_feed', 'content_detail', 'offer_list', 'discussion_thread', 'custom', 'custom_block',
+    'dialog', 'action_sheet', 'bottom_sheet', 'sku_selector', 'quantity_stepper', 'cart_item_list', 'cart_summary',
+    'address_book', 'address_form', 'coupon_list', 'invoice_form', 'filter_bar', 'filter_sheet', 'rating',
+    'review_summary', 'profile_card', 'user_header'
   ]
   // empty/skeleton 属于状态分支，custom_block 属于条件分支，分别在后续真实交互中验收。
   const normalBlockTypes = registeredBlocks.filter((type) => !['empty', 'skeleton', 'custom_block'].includes(type))

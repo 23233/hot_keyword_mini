@@ -17,6 +17,27 @@
   &.theme-light_clean {
     background: #f9f9f9;
     color: #1d1d1f;
+
+    .sdui-loading-skeleton {
+      .skeleton-hero,
+      .skeleton-card,
+      .skeleton-btn {
+        background: rgba(15, 23, 42, 0.06);
+      }
+    }
+
+    .sdui-error-panel,
+    .sdui-empty-panel {
+      .error-title,
+      .empty-title {
+        color: #111827;
+      }
+
+      .error-desc,
+      .empty-desc {
+        color: #64748b;
+      }
+    }
   }
 
   &.theme-light_clean .apple-navbar-container { background: rgba(249,249,249,.96); border-bottom-color: #e6e6e6; }
@@ -24,6 +45,11 @@
   .page-scroll-body {
     padding: 24rpx 32rpx;
     box-sizing: border-box;
+  }
+
+  // 弹层打开时禁止底层内容滚动（scrollY 已关闭，样式作为 H5 兜底）
+  .page-scroll-body.is-overlay-locked {
+    overflow: hidden;
   }
 
   // 骨架屏 / 加载中
@@ -57,6 +83,43 @@
     }
   }
 
+  // 分享落地访问拦截
+  .sdui-share-guard {
+    padding: 120rpx 40rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+
+    .share-guard-emoji {
+      margin-bottom: 24rpx;
+      font-size: calc(80rpx * var(--sdui-font-scale, 1));
+    }
+
+    .share-guard-title {
+      margin-bottom: 12rpx;
+      color: var(--sdui-text, #ffffff);
+      font-size: calc(32rpx * var(--sdui-font-scale, 1));
+      font-weight: 700;
+    }
+
+    .share-guard-desc {
+      margin-bottom: 40rpx;
+      color: var(--sdui-text-muted, rgba(255, 255, 255, 0.5));
+      font-size: calc(24rpx * var(--sdui-font-scale, 1));
+      line-height: 1.5;
+    }
+
+    .share-guard-action {
+      padding: 18rpx 48rpx;
+      border-radius: 999rpx;
+      background: #0a84ff;
+      color: #ffffff;
+      font-size: calc(26rpx * var(--sdui-font-scale, 1));
+      font-weight: 600;
+    }
+  }
+
   // 异常与空态
   .sdui-error-panel,
   .sdui-empty-panel {
@@ -68,13 +131,13 @@
 
     .error-emoji,
     .empty-emoji {
-      font-size: 80rpx;
+      font-size: calc(80rpx * var(--sdui-font-scale, 1));
       margin-bottom: 24rpx;
     }
 
     .error-title,
     .empty-title {
-      font-size: 32rpx;
+      font-size: calc(32rpx * var(--sdui-font-scale, 1));
       font-weight: 700;
       color: #fff;
       margin-bottom: 12rpx;
@@ -82,7 +145,7 @@
 
     .error-desc,
     .empty-desc {
-      font-size: 24rpx;
+      font-size: calc(24rpx * var(--sdui-font-scale, 1));
       color: rgba(255, 255, 255, 0.5);
       line-height: 1.5;
       margin-bottom: 40rpx;
@@ -93,7 +156,7 @@
       background: #ff9f0a;
       border-radius: 999rpx;
       color: #fff;
-      font-size: 26rpx;
+      font-size: calc(26rpx * var(--sdui-font-scale, 1));
       font-weight: 600;
     }
   }

@@ -106,6 +106,20 @@ type ShareItem struct {
 	ImageUrl string `json:"image_url,omitempty"`
 }
 
+// ShareAccess 分享落地页的访问策略；分享者打开不受限，接收者按此策略展示提示。
+type ShareAccess struct {
+	// 访问模式：public、auth、membership、owner。
+	Mode string `json:"mode,omitempty"`
+	// 拦截提示标题，留空使用默认文案。
+	Title string `json:"title,omitempty"`
+	// 拦截提示正文。
+	Message string `json:"message,omitempty"`
+	// 主按钮文案，留空按模式使用默认值。
+	ActionText string `json:"action_text,omitempty"`
+	// 会员页 page_id，membership 模式使用，默认 membership。
+	MembershipPageID string `json:"membership_page_id,omitempty"`
+}
+
 // PageShareConfig 页面级微信分享整体配置
 type PageShareConfig struct {
 	// 默认兜底分享图片
@@ -114,6 +128,8 @@ type PageShareConfig struct {
 	Friend *ShareItem `json:"friend,omitempty"`
 	// 分享到朋友圈配置
 	Timeline *ShareItem `json:"timeline,omitempty"`
+	// 分享落地页访问策略
+	Access *ShareAccess `json:"access,omitempty"`
 }
 
 // DynamicPage 表示服务端驱动的动态页面配置实体 (多租户物理隔离)

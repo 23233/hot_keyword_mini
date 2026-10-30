@@ -190,10 +190,8 @@ type AdminPresignedUploadReq struct {
 
 // RegisterAdminRoutes 注册管理后台相关路由
 func RegisterAdminRoutes(party iris.Party) {
-	adminParty := party.Party("/api/v1/admin")
-
-	// 挂载管理员认证拦截中间件 (保护所有后续敏感接口，放行 /auth/login)
-	adminParty.Use(middleware.AdminAuthMiddleware)
+	// 直接以管理员认证中间件创建子 Party，强制复制父级中间件切片，避免覆盖同级 API 的租户中间件。
+	adminParty := party.Party("/api/v1/admin", middleware.AdminAuthMiddleware)
 	// 挂载只读角色写操作防御门禁 (viewer 角色禁止变更数据)
 	adminParty.Use(middleware.ViewerReadOnlyMiddleware)
 

@@ -1,6 +1,6 @@
 // DomainBlocks.tsx
 import React, { useState } from 'react'
-import { Button, Input, Text, Textarea, View } from '@tarojs/components'
+import { Button, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
 import { BlockAction, BlockItem } from '../../types/sdui'
 
 interface DomainBlockProps {
@@ -24,7 +24,7 @@ const listOf = (props: Record<string, any>, key = 'items'): any[] => Array.isArr
 export const MessageListBlock: React.FC<DomainBlockProps> = ({ block }) => {
   const props = block.props || {}
   const messages = listOf(props, 'messages').length > 0 ? listOf(props, 'messages') : listOf(props)
-  return <View className='sdui-message-list'>
+  return <ScrollView scrollY className='sdui-message-list'>
     {messages.length === 0 && <Text className='domain-empty-text'>{String(props.empty_text || '暂无消息')}</Text>}
     {messages.map((message: any, index: number) => {
       const mine = message.mine === true || message.role === 'self' || message.sender === 'me'
@@ -36,7 +36,7 @@ export const MessageListBlock: React.FC<DomainBlockProps> = ({ block }) => {
         </View>
       </View>
     })}
-  </View>
+  </ScrollView>
 }
 
 /** 通用消息输入框，发送内容通过标准 send_message Action 提交。 */
@@ -115,7 +115,7 @@ export const AfterSaleFormBlock: React.FC<DomainBlockProps> = ({ block, onAction
   const props = block.props || {}
   const [reason, setReason] = useState(String(props.reason || ''))
   const submit = () => emit(block, onAction, actionFor(block, 'apply_after_sale', { order_id: props.order_id, reason }), { ...props, reason })
-  return <View className='sdui-domain-card sdui-after-sale-form'><Text className='domain-title'>{String(props.title || '申请售后')}</Text><Textarea className='domain-textarea' value={reason} onInput={(event) => setReason(event.detail.value)} placeholder={String(props.placeholder || '请填写申请原因')} maxlength={500} /><Button className='domain-primary-button' onClick={submit}>{String(props.submit_text || '提交申请')}</Button></View>
+  return <View className='sdui-domain-card sdui-after-sale-form'><Text className='domain-title'>{String(props.title || '申请售后')}</Text><Textarea className='domain-textarea' value={reason} cursorSpacing={24} adjustPosition onInput={(event) => setReason(event.detail.value)} placeholder={String(props.placeholder || '请填写申请原因')} maxlength={500} /><Button className='domain-primary-button' onClick={submit}>{String(props.submit_text || '提交申请')}</Button></View>
 }
 
 /** 通用证据附件列表。 */

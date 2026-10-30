@@ -1,0 +1,348 @@
+{
+  "generatedAt": "2026-10-30T11:23:12.895Z",
+  "appID": "wx516563cfe994bbc6",
+  "pageID": "component_lab_acceptance_20260907",
+  "device": "iPhone 5 320x568",
+  "items": [
+    {
+      "id": "lab_form_v2",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\form-v2.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "60162458101e461eec7d2a229aafac784bf3b16f52e534cb56a40a3bb424b5d4"
+    },
+    {
+      "id": "lab_dialog",
+      "state": "open",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\dialog-open.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "d05a513fc9970e3a3cc99d8fede016a748dbe68c23f1b4a8b5e579e20d278ab7"
+    },
+    {
+      "id": "lab_action_sheet",
+      "state": "open",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\action-sheet-open.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "5880fef9492b4c5264692315157c5e9e9edec717c00709e2734ffafc9182147a"
+    },
+    {
+      "id": "lab_bottom_sheet",
+      "state": "open",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\bottom-sheet-open.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "619b5dc7c62299a417529a33f10ee66f0d2f6fbcfedc3364a9946a5bae9aa1bc"
+    },
+    {
+      "id": "lab_sku_selector",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\sku-selector.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "7c2392289b9e460850591db93d7a51eee4e658cdac6466792d2c34a6054bc8bd"
+    },
+    {
+      "id": "lab_quantity_stepper",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\quantity-stepper.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "cd8111f5d1a16fcb0194bd03d775661a197c997e58396dc5a30dcd18c1e6a538"
+    },
+    {
+      "id": "lab_cart_item_list",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\cart-item-list.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "3ce0d1ca9e5f2843c00def294b4398d80f83a1c4ebc67d68807c706e9e79c201"
+    },
+    {
+      "id": "lab_cart_summary",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\cart-summary.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "7ada60396b9d6f3432dd79975833cf8635e629f8105b89db4d00d3ad9bc768f6"
+    },
+    {
+      "id": "lab_address_book",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\address-book.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "50af10a8332c141dce3227fc4549704542795d9995e4298afd8fa7fc28e43c17"
+    },
+    {
+      "id": "lab_address_form",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\address-form.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "cf061c10fe1411565af9d7823c1016be9d64af16151d38eb0059cfa0679207b6"
+    },
+    {
+      "id": "lab_coupon_list",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\coupon-list.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "9c7c5fbf4474dd2f0a38593016333238b60d58813657927b9707e2ba55c05d73"
+    },
+    {
+      "id": "lab_invoice_form",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\invoice-form.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "e8e33b98b80b54259c107bacffb83099d46edf58d379433d05c14f0c66360cd2"
+    },
+    {
+      "id": "lab_filter_bar",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\filter-bar.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "00f31ed7da57dc25ac626de6bbdc4316b486faa9f1225207e35e45d287a77c4c"
+    },
+    {
+      "id": "lab_filter_sheet",
+      "state": "open",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\filter-sheet-open.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "bf9fefe5f145d665335bb9ba3695ff9aff7f09e1f6af70dff7107b0ca2c54433"
+    },
+    {
+      "id": "lab_rating",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\rating.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "1f01706e5af06a8884b936e12b231a0a4e321ac27d9e5192539fb72098a3a960"
+    },
+    {
+      "id": "lab_review_summary",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\review-summary.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "b0d05bbe1dcb85b4a12b5153bc9f33a22849d67d0942e154627b49ada3d8dce7"
+    },
+    {
+      "id": "lab_profile_card",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\profile-card.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "edc8c6299186cbe204bd5bb2a8d1d8e981a4ec1c9c5965404be9dd47a6a5a190"
+    },
+    {
+      "id": "lab_user_header",
+      "state": "normal",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\user-header.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "e825e8276060eccd7828e1074632e3ca934ff7f900daab5f8ec40131794362ac"
+    },
+    {
+      "id": "lab_tab_empty",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-empty.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "91bc521c4c213b45faab92b1c09b160255a0d84772acdce276747dc4398b8cf2"
+    },
+    {
+      "id": "lab_tab_skeleton",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-skeleton.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "a33704afde368a1f28539d94afc48e0928cbb342e4f6ca1c9ef56fa40c050a8a"
+    },
+    {
+      "id": "lab_state_cart_empty",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-cart-empty.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "e79fb22c7abd22d46c6f1663d012005658ba66ba2a76a0ad40876e4ef11dd7b6"
+    },
+    {
+      "id": "lab_state_address_empty",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-address-empty.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "101a7a85924d7738ca065983e22b7849df2ba7f82cbb2279285263ddda12dd12"
+    },
+    {
+      "id": "lab_state_coupon_empty",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-coupon-empty.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "87323da9700f2b4ad70ac8927e584dcbbc50c58b026de60eb454c827622639b8"
+    },
+    {
+      "id": "lab_state_review_empty",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-review-empty.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "85f4a69eea95935c7a508f7cba9934b27c15fe0835afb26768856aa99f735a06"
+    },
+    {
+      "id": "lab_state_sku_disabled",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-sku-sold-out.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "42d5170f7ac80450874388ee123bd77296fa0f353031eeec7c756159bf1e0b02"
+    },
+    {
+      "id": "lab_state_form_loading_fallback",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-form-loading.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "d3f1c9e44650bf6d034d8f1653b218eb5280f7ebec45848fc54db7ecad35577c"
+    },
+    {
+      "id": "lab_state_form_error_fallback",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-form-error.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "7d22254cb43416865e64d138291726be72b8f263ed375b36eea8a1541bbfb7a8"
+    },
+    {
+      "id": "lab_state_long_text",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-long-text.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "eb902f5f821db21c0e2752cc9e8d5675f80c2c1d20eb06d736619a896e61e42f"
+    },
+    {
+      "id": "lab_state_long_list",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-long-list.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "5361f218569f181a910965283f0a560a15303409a1cf741511bfd3f6454e744d"
+    },
+    {
+      "id": "lab_state_review_live",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-review-live.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "e179c812c9a9232a971c31e04af0c6361aef2cd732aa70b6c146fb7af2e9853f"
+    },
+    {
+      "id": "lab_state_cart_quote",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-cart-quote.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "aae192e510742678325e1026b1a1a1f113dc09edc5c39a92d9004fb85f117347"
+    },
+    {
+      "id": "lab_state_coupon_live",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-coupon-live.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "96a46141565106e64a61a6e0e3cfd6636464332939c7ca737df6d9ae57dc36cf"
+    },
+    {
+      "id": "lab_state_cart_quote_items",
+      "state": "variant",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-cart-quote-items.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "7ff9bb8ba3773d36a7331e272d73b34fc9dfbcb5579138c3d4c0ae4b97733d22"
+    },
+    {
+      "id": "lab_state_async_error",
+      "state": "open",
+      "app_id": "wx516563cfe994bbc6",
+      "page_id": "component_lab_acceptance_20260907",
+      "file": "C:\\Users\\Admin\\Desktop\\projects\\hot_keyword_mini\\doc\\acceptance\\visual\\2026-10-30\\iphone-5-320x568\\state-async-error-open.png",
+      "width": 320,
+      "height": 568,
+      "sha256": "afb28cca2bdab952b8b341b9eb5cf8451e9cae28fbc5b5960481988719210d19"
+    }
+  ]
+}

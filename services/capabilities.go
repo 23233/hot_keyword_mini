@@ -55,11 +55,11 @@ var capabilityDefinitions = []CapabilityDefinition{
 	{Key: "clipboard", Version: "1.0", Blocks: []string{"redeem_code_card", "resource_card"}, Actions: []string{"copy_text"}, Native: []string{"wx.setClipboardData"}, ImplementationStatus: "ready"},
 	{Key: "payment", Version: "1.0", Blocks: []string{"product_card", "order_summary", "payment_result", "price_breakdown"}, Actions: []string{"request_payment"}, Native: []string{"wx.requestPayment", "payment.sandbox"}, ImplementationStatus: "ready"},
 	{Key: "media_upload", Version: "1.0", Blocks: []string{"media_picker", "upload_progress", "media_gallery"}, Actions: []string{"choose_media", "upload_file", "delete_media"}, Native: []string{"wx.chooseMedia", "cos.presigned_upload"}, ImplementationStatus: "ready"},
-	{Key: "location", Version: "1.0", Blocks: []string{"map_card", "address_card", "location_picker"}, Actions: []string{"request_location", "choose_location", "open_map"}, Native: []string{"wx.getLocation", "wx.chooseLocation", "tencent.map"}, ImplementationStatus: "ready"},
+	{Key: "location", Version: "1.0", Blocks: []string{"map_card", "address_card", "location_picker", "address_book", "address_form"}, Actions: []string{"request_location", "choose_location", "open_map"}, Native: []string{"wx.getLocation", "wx.chooseLocation", "tencent.map"}, ImplementationStatus: "ready"},
 	{Key: "wechat_customer_service", Version: "1.0", Blocks: []string{"contact_card", "service_entry", "qr_code"}, Actions: []string{"open_wechat_service", "save_qr"}, Native: []string{"wx.openCustomerServiceChat", "wx.open-type.contact"}, ImplementationStatus: "ready"},
 	{Key: "internal_chat", Version: "1.0", Blocks: []string{"chat_thread", "message_list", "message_composer", "unread_badge"}, Actions: []string{"open_internal_chat", "send_message", "mark_read"}, Native: []string{"sdui.chat", "platform_operations"}, ImplementationStatus: "ready"},
 	{Key: "realtime_chat", Version: "1.0", Blocks: []string{"chat_thread", "message_list", "message_composer", "unread_badge"}, Actions: []string{"poll_messages", "connect_message", "upload_chat_media"}, Native: []string{"polling", "platform_operations"}, ImplementationStatus: "ready"},
-	{Key: "orders", Version: "1.0", Blocks: []string{"order_card", "order_summary", "order_timeline"}, Actions: []string{"create_order", "confirm_order", "cancel_order", "confirm_receipt"}, Native: []string{"platform_operations"}, ImplementationStatus: "ready"},
+	{Key: "orders", Version: "1.0", Blocks: []string{"order_card", "order_summary", "order_timeline", "sku_selector", "quantity_stepper", "cart_item_list", "cart_summary", "coupon_list", "invoice_form"}, Actions: []string{"create_order", "confirm_order", "cancel_order", "confirm_receipt", "add_to_cart", "update_cart_quantity", "remove_from_cart", "clear_cart"}, Native: []string{"platform_operations"}, ImplementationStatus: "ready"},
 	{Key: "logistics", Version: "1.0", Blocks: []string{"logistics_track"}, Actions: []string{"refresh_logistics"}, Native: []string{"platform_operations"}, ImplementationStatus: "ready"},
 	{Key: "after_sale", Version: "1.0", Blocks: []string{"after_sale_form", "evidence_list"}, Actions: []string{"apply_after_sale", "upload_evidence"}, Native: []string{"platform_operations"}, ImplementationStatus: "ready"},
 	{Key: "service_orders", Version: "1.0", Blocks: []string{"service_card", "task_card", "quote_card", "schedule_picker"}, Actions: []string{"accept_task", "reject_task", "submit_quote", "update_service_status"}, Native: []string{"platform_operations"}, ImplementationStatus: "ready"},
@@ -88,6 +88,8 @@ var capabilityBlockKeys = map[string]string{
 	"order_card": "orders", "order_timeline": "orders", "logistics_track": "logistics", "after_sale_form": "after_sale", "evidence_list": "after_sale",
 	"service_card": "service_orders", "task_card": "service_orders", "quote_card": "service_orders", "schedule_picker": "service_orders",
 	"webview_entry": "webview", "webview_state": "webview", "membership_card": "membership", "ad_slot": "ads", "wallet_card": "wallet", "withdraw_form": "wallet",
+	"sku_selector": "orders", "quantity_stepper": "orders", "cart_item_list": "orders", "cart_summary": "orders", "coupon_list": "orders", "invoice_form": "orders",
+	"address_book": "location", "address_form": "location",
 }
 
 // ListCapabilityDefinitions 返回公共能力注册表的副本，供后台和 MCP 使用。
@@ -178,7 +180,7 @@ func actionCapabilities(action models.BlockAction) []string {
 		result = append(result, "internal_chat")
 	case "poll_messages", "connect_message", "upload_chat_media":
 		result = append(result, "realtime_chat")
-	case "create_order", "confirm_order", "cancel_order", "confirm_receipt":
+	case "create_order", "confirm_order", "cancel_order", "confirm_receipt", "add_to_cart", "update_cart_quantity", "remove_from_cart", "clear_cart":
 		result = append(result, "orders")
 	case "refresh_logistics":
 		result = append(result, "logistics")
@@ -376,4 +378,78 @@ func ConfigureAppCapability(appID, capability string, entry models.CapabilityMat
 			ConfigSnapshot: string(snapshot), CreatedBy: operator, CreatedAt: time.Now(),
 		}).Error
 	})
+}
+
+// CapabilityKeysForEndpoint 返回执行受控端点至少需要启用其中一项的能力键。
+// 返回空切片表示该端点不依赖租户能力矩阵。
+func CapabilityKeysForEndpoint(endpoint string, payload map[string]interface{}) []string {
+	switch {
+	case strings.HasPrefix(endpoint, "chat."):
+		return []string{"internal_chat", "realtime_chat"}
+	case strings.HasPrefix(endpoint, "media."):
+		return []string{"media_upload"}
+	case strings.HasPrefix(endpoint, "order."), strings.HasPrefix(endpoint, "invoice."):
+		return []string{"orders"}
+	case strings.HasPrefix(endpoint, "after_sale."):
+		return []string{"after_sale"}
+	case endpoint == "logistics.refresh":
+		return []string{"logistics"}
+	case strings.HasPrefix(endpoint, "service."):
+		return []string{"service_orders"}
+	case endpoint == "membership.open":
+		return []string{"membership"}
+	case endpoint == "ads.load":
+		return []string{"ads"}
+	case strings.HasPrefix(endpoint, "wallet."):
+		return []string{"wallet"}
+	case strings.HasPrefix(endpoint, "address."):
+		return []string{"location"}
+	case endpoint == "domain.list":
+		kind, _ := payload["kind"].(string)
+		switch kind {
+		case "order", "invoice":
+			return []string{"orders"}
+		case "after_sale":
+			return []string{"after_sale"}
+		case "service_profile", "task":
+			return []string{"service_orders"}
+		case "thread":
+			return []string{"internal_chat", "realtime_chat"}
+		case "withdraw":
+			return []string{"wallet"}
+		case "media":
+			return []string{"media_upload"}
+		case "address":
+			return []string{"location"}
+		}
+	}
+	return nil
+}
+
+// EnsureAppCapability 检查租户是否启用所需能力中的至少一项。
+// 未配置能力矩阵的旧租户按兼容模式放行，与发布门禁保持一致；数据库不可用时也放行。
+func EnsureAppCapability(appID string, required []string) (bool, error) {
+	if len(required) == 0 || db.DB == nil || strings.TrimSpace(appID) == "" {
+		return true, nil
+	}
+	var app models.MiniApp
+	if err := db.DB.Where("app_id = ?", appID).First(&app).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	matrix, err := CapabilityMatrixForApp(&app)
+	if err != nil {
+		return false, err
+	}
+	if len(matrix) == 0 {
+		return true, nil
+	}
+	for _, key := range required {
+		if entry, ok := matrix[key]; ok && entry.State == "enabled" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
